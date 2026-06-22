@@ -41,6 +41,9 @@ const activeRuns = new Map<string, AbortController>();
 /** Turns the user preempted (Stop) before the executor registered — honored at the decide/confirm
  *  boundary and again right before dispatch, so a barge-in during decide/confirm never runs. */
 const preemptedTurns = new Set<string>();
+/** The most recently minted turn/task runId — the no-id Stop fallback, which must also reach a turn
+ *  still in decide/confirm (when activeRuns is still empty). */
+let lastTurnId: string | null = null;
 
 /** Resolve the scratch git repo the coding agents run in. */
 function workdir(): string {
@@ -350,6 +353,7 @@ async function dispatchExecutor(
 export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
   const { transcript, sessionId } = input;
   const runId = newRunId();
+  lastTurnId = runId;
 
   // Recall BEFORE storing this turn's transcript so the query isn't matched
   // against itself.
@@ -561,6 +565,7 @@ async function runFactExtraction(sessionId: string, input: FactExtractInput): Pr
  */
 export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId: string }> {
   const runId = newRunId();
+  lastTurnId = runId;
   // runTask bypasses the brain, so the destructive gate MUST run here too (or a renderer caller
   // could `rm -rf` unconfirmed). Gate then dispatch off the critical path; return {runId} now.
   void (async () => {
@@ -568,6 +573,11 @@ export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId
     if (!gate.ok) {
       emitNarration(runId, `Skipping that — ${gate.reason ?? "it was blocked"}.`);
       pushRunEnd(runId);
+      return;
+    }
+    // Honor a Stop that arrived while confirm/clean-tree was pending (same as run_agent).
+    if (preemptedTurns.has(runId)) {
+      pushStopped(runId);
       return;
     }
     void dispatchExecutor(runId, `task_${runId}`, prompt, agent);
@@ -581,7 +591,9 @@ export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId
  * Stop watchdog). If runId is omitted, targets the most recent run.
  */
 export function cancelTask(runId?: string): void {
-  const id = runId ?? [...activeRuns.keys()].pop();
+  // Prefer an explicit id; else the latest running executor; else the latest minted turn (which may
+  // still be in decide/confirm with no executor registered yet — that Stop must still be honored).
+  const id = runId ?? [...activeRuns.keys()].pop() ?? lastTurnId;
   if (!id) return;
   preemptedTurns.add(id);
   activeRuns.get(id)?.abort();

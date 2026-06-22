@@ -10,6 +10,9 @@ describe('classifyDestructive', () => {
     expect(D('sudo rm -rf /')).toBe(true);
     expect(D('please run: rm -r -f dist')).toBe(true);
     expect(D('rm -R coverage')).toBe(true);
+    expect(D('rm -f -r build')).toBe(true); // force before recursive
+    expect(D('rm --force --recursive build')).toBe(true); // long flags, separate tokens
+    expect(D('rm --recursive node_modules')).toBe(true);
   });
 
   it('does NOT flag a single-file rm or a natural-language "remove"', () => {

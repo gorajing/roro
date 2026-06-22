@@ -12,7 +12,10 @@ export interface DestructiveVerdict {
 }
 
 const PATTERNS: Array<{ re: RegExp; reason: string }> = [
-  { re: /\brm\s+(?:-\S*r|--recursive)/i, reason: 'recursive file deletion (rm -r)' },
+  // rm with a recursive flag in ANY of its leading flag tokens (-r / -rf / -fr / -f -r /
+  // --recursive). The flag tokens must be contiguous after `rm` so an unrelated later `-r…` in
+  // prose doesn't false-flag; a non-flag operand (a filename) ends the flag run.
+  { re: /\brm(?:\s+-\S+)*\s+-\S*r/i, reason: 'recursive file deletion (rm -r)' },
   { re: /\bgit\s+push\b[^\n]*(?:--force\b|--force-with-lease\b|--mirror\b|\s-f(?:\s|$))/i, reason: 'force/mirror git push (rewrites history)' },
   { re: /\bgit\s+reset\b[^\n]*--hard/i, reason: 'git reset --hard (discards local changes)' },
   { re: /\b(?:filter-branch|filter-repo)\b/i, reason: 'git history rewrite' },
