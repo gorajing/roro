@@ -20,6 +20,8 @@ interface CompanionBridgeLike {
   moveWindowBy?(delta: { dx: number; dy: number }): Promise<void>;
   /** Subscribe to global demo mute toggles. */
   onMicToggleMute?(cb: () => void): () => void;
+  /** MAIN asks the renderer to open + focus the floating Ask input (⌘⇧Space summon). */
+  onFocusAsk?(cb: () => void): () => void;
   /** Subscribe to normalized cursor-gaze targets pushed from MAIN. */
   onCursor?(cb: (t: { x: number; y: number }) => void): () => void;
 }

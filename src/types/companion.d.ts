@@ -34,6 +34,8 @@ export interface CompanionBridge {
   onRunEnd(cb: (p: { runId: string }) => void): () => void;
   /** Subscribe to global demo mute toggles; returns an unsubscribe fn. */
   onMicToggleMute(cb: () => void): () => void;
+  /** MAIN asks the renderer to open + focus the floating Ask input (⌘⇧Space summon). */
+  onFocusAsk(cb: () => void): () => void;
 }
 
 export type AgentKindArg = 'codex' | 'claude';

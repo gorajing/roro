@@ -8,6 +8,7 @@ import { BrowserWindow, globalShortcut, screen } from 'electron';
 import path from 'node:path';
 import { CH } from '../shared/ipc';
 import { cursorToGazeTarget } from '../shared/gaze';
+import { decideSummonAction } from './summon';
 
 const SUMMON_ACCELERATOR = 'CommandOrControl+Shift+Space';
 const MUTE_ACCELERATOR = 'CommandOrControl+Shift+M';
@@ -98,15 +99,21 @@ export function registerSummonShortcut(): void {
   const summonOk = globalShortcut.register(SUMMON_ACCELERATOR, () => {
     const win = BrowserWindow.getAllWindows()[0];
     if (!win) return;
-    if (win.isVisible() && win.isFocused()) {
+    const action = decideSummonAction({
+      visible: win.isVisible(),
+      focused: win.isFocused(),
+      floating: FLOATING_WINDOW_FLAG,
+    });
+    if (action === 'hide') {
       win.hide();
+    } else if (action === 'show-and-focus-ask') {
+      // Floating: reveal without stealing focus, then tell the renderer to open + focus the Ask
+      // input and poke the cat (ears perk). The renderer never gets focus-stolen mid-task.
+      win.showInactive();
+      win.webContents.send(CH.focusAsk);
     } else {
-      if (FLOATING_WINDOW_FLAG) {
-        win.showInactive();
-      } else {
-        win.show();
-        win.focus();
-      }
+      win.show();
+      win.focus();
     }
   });
   if (!summonOk) {
