@@ -6,9 +6,11 @@
 // typed via forge.env.d.ts — do NOT redeclare them.
 import { BrowserWindow, globalShortcut, screen } from 'electron';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { CH } from '../shared/ipc';
 import { cursorToGazeTarget } from '../shared/gaze';
 import { decideSummonAction } from './summon';
+import { isSafeNavigation } from './navigation';
 
 const SUMMON_ACCELERATOR = 'CommandOrControl+Shift+Space';
 const MUTE_ACCELERATOR = 'CommandOrControl+Shift+M';
@@ -60,13 +62,26 @@ export function createWindow(): BrowserWindow {
     mainWindow.setFullScreenable(false);
   }
 
+  // ---- Security: lock the renderer to its OWN document. The renderer holds the full privileged
+  // bridge (incl. companion.runTask -> a workspace-write coding agent); a navigation or window.open
+  // to an attacker origin would inherit it. Deny ALL new windows + webviews, and permit navigation
+  // only to the app's own document (isSafeNavigation). Set BEFORE load so nothing slips through.
+  const indexFile = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
+  const appUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL || pathToFileURL(indexFile).href;
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!isSafeNavigation(url, appUrl)) {
+      event.preventDefault();
+      console.warn('[security] blocked renderer navigation to', url);
+    }
+  });
+  mainWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
+
   // Keep the template's MAIN_WINDOW_VITE_* loading logic (dev server vs packaged file).
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
+    mainWindow.loadFile(indexFile);
   }
 
   return mainWindow;

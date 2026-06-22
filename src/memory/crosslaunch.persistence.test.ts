@@ -2,7 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import { createMemoryStore, type Embedder } from './index';
+import { SCHEMA_SQL } from './schema';
 import { extractAndStoreFact } from '../main/factStore';
 import { buildRecallContext } from '../main/memoryContext';
 import type { FactPayload } from '../shared/memory';
@@ -81,6 +84,30 @@ describe('MEMORY SPINE — real PGlite persistence across launches', () => {
     } finally {
       await launchC.close();
     }
+  });
+
+  it('heals pre-existing duplicate active facts when (re)applying the unique-index schema', async () => {
+    // A LEGACY store: the memory table WITHOUT the partial-unique index, carrying a duplicate the old
+    // non-atomic insert-before-supersede path could leave (two active facts for the same owner+key).
+    const db = await PGlite.create('memory://', { extensions: { vector } });
+    await db.exec(`create extension if not exists vector;
+      create table memory (
+        id uuid primary key default gen_random_uuid(), seq bigserial,
+        owner_id text not null, session_id text not null, kind text not null, text text not null,
+        payload jsonb, superseded boolean not null default false,
+        embed_model text, embed_dim int, embedding vector(1536),
+        created_at timestamptz not null default now());`);
+    await db.exec(`insert into memory (owner_id, session_id, kind, text, payload) values
+      ('O','s','fact','uses npm',  '{"key":"pkg"}'),
+      ('O','s','fact','uses pnpm', '{"key":"pkg"}');`); // two ACTIVE facts, same (owner,key)
+
+    // Applying the new schema must HEAL the duplicate AND build the unique index without throwing.
+    await db.exec(SCHEMA_SQL);
+
+    const active = await db.query<{ text: string }>(`select text from memory where kind='fact' and superseded=false order by seq`);
+    expect(active.rows).toHaveLength(1); // collapsed to one active row
+    expect(active.rows[0].text).toBe('uses pnpm'); // the newest (max seq) is kept
+    await db.close();
   });
 
   it('a different owner on the same machine/db sees none of it', async () => {

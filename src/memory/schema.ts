@@ -30,4 +30,28 @@ create index if not exists memory_owner_idx on memory (owner_id);
 create index if not exists memory_owner_fact_idx
   on memory (owner_id, seq desc)
   where kind = 'fact' and superseded = false;
+
+-- Heal any pre-existing duplicate ACTIVE facts (residue of the old non-atomic insert-before-
+-- supersede path) BEFORE building the unique index below, so applying this schema to a legacy store
+-- can never fail the index build (which would brick startup). Supersede every active fact that has a
+-- NEWER active sibling for the same (owner_id, key), keeping only the newest (max seq). On a clean
+-- store this updates zero rows. NULL-key facts are unaffected (NULL = NULL is not true).
+update memory m set superseded = true
+where m.kind = 'fact' and m.superseded = false
+  and exists (
+    select 1 from memory n
+    where n.kind = 'fact' and n.superseded = false
+      and n.owner_id = m.owner_id
+      and n.payload->>'key' = m.payload->>'key'
+      and n.seq > m.seq
+  );
+
+-- The supersede-not-overwrite invariant made STRUCTURAL: at most ONE active fact per (owner, key).
+-- replaceFact() supersedes the prior active row in the SAME transaction as the insert, so a real
+-- correction never trips this; what it forbids is a duplicate active fact slipping in by any path
+-- (a buggy writer, a crash mid-replace). Facts without a 'key' (NULL) are exempt — NULLs are
+-- distinct in a unique index — but factStore always writes a key.
+create unique index if not exists memory_active_fact_key_uidx
+  on memory (owner_id, (payload->>'key'))
+  where kind = 'fact' and superseded = false;
 `;

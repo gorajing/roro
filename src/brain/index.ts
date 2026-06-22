@@ -46,7 +46,11 @@ const DEFAULT_MODELS: ModelIds = {
   embed: 'Qwen/Qwen3-Embedding-8B',
 };
 
-const COMMANDS: Command[] = ['run_agent', 'answer', 'capture_screen', 'clarify'];
+// Exhaustive Command map: the runtime list derives from its keys, so COMMANDS can never drift from
+// the Command union — a missing key fails the build (Record<Command,…> demands all), an unknown key
+// too. Adding a Command forces a deliberate entry here and in every Command switch.
+const COMMAND_SET: Record<Command, true> = { run_agent: true, answer: true, capture_screen: true, clarify: true };
+const COMMANDS = Object.keys(COMMAND_SET) as Command[];
 
 const SYSTEM_PROMPT = `You are Roro, the brain of a desktop pixel-cat coding agent. The user talks to you by voice; an animated character speaks your words and a coding agent executes your commands.
 

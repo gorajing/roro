@@ -1,23 +1,28 @@
 import { describe, it, expect } from 'vitest';
 import { extractAndStoreFact, type FactStoreDeps } from './factStore';
 import { buildRecallContext, type RecallDeps } from './memoryContext';
-import type { MemoryRow, MemoryMatch, RememberInput, FactPayload } from '../shared/memory';
+import type { MemoryRow, MemoryMatch, ReplaceFactInput, FactPayload } from '../shared/memory';
+
+const factKeyOf = (r: MemoryRow): string | undefined => (r.payload as FactPayload | null)?.key;
 
 // One in-memory store implementing the SAME owner-scoped, superseded-aware contract the live SQL must.
 function makeStore() {
   const rows: MemoryRow[] = [];
   let n = 0;
-  const remember = async (input: RememberInput): Promise<MemoryRow> => {
-    const row: MemoryRow = { id: `id-${n++}`, owner_id: input.owner_id, session_id: input.session_id, kind: input.kind, text: input.text, payload: input.payload ?? null, superseded: false, created_at: new Date(n).toISOString() };
+  // Atomic supersede-all-for-key + insert — the same contract the real PGlite replaceFact upholds.
+  const replaceFact = async (input: ReplaceFactInput): Promise<MemoryRow> => {
+    for (const r of rows) {
+      if (r.owner_id === input.owner_id && r.kind === 'fact' && factKeyOf(r) === input.key && !r.superseded) r.superseded = true;
+    }
+    const row: MemoryRow = { id: `id-${n++}`, owner_id: input.owner_id, session_id: input.session_id, kind: 'fact', text: input.text, payload: input.payload ?? null, superseded: false, created_at: new Date(n).toISOString() };
     rows.push(row);
     return row;
   };
   const getProfile = async (ownerId: string) => rows.filter((r) => r.owner_id === ownerId && r.kind === 'fact' && !r.superseded);
-  const supersede = async (id: string) => { const r = rows.find((x) => x.id === id); if (r) r.superseded = true; };
   // recall: naive substring match scoped to owner (stands in for pgvector cosine + owner filter).
   const recall = async ({ query, ownerId }: { query: string; ownerId: string; k?: number; sessionId?: string }): Promise<MemoryMatch[]> =>
     rows.filter((r) => r.owner_id === ownerId && r.kind !== 'fact' && query.split(' ').some((w) => r.text.includes(w))).map((r) => ({ ...r, similarity: 0.9 }));
-  return { rows, deps: { getProfile, remember, supersede, recall } as FactStoreDeps & RecallDeps };
+  return { rows, deps: { getProfile, replaceFact, recall } as FactStoreDeps & RecallDeps };
 }
 
 const OWNER = 'owner-A';
