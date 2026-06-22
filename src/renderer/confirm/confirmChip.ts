@@ -45,6 +45,18 @@ export function mountConfirmChip(): () => void {
   if (companion?.onConfirmRequest) {
     unsubs.push(companion.onConfirmRequest((req) => show(req)));
   }
+  // Dismiss the chip when the pending request's turn ends — e.g. the 15s default-DENY timeout fires
+  // server-side and pushes runEnd. Otherwise the chip would keep offering approval for a dead request.
+  if (companion?.onRunEnd) {
+    unsubs.push(
+      companion.onRunEnd((p) => {
+        if (p.runId === activeRunId) {
+          activeRunId = null;
+          chip.classList.remove('shown');
+        }
+      }),
+    );
+  }
 
   return () => {
     for (const u of unsubs) u();

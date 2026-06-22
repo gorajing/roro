@@ -71,6 +71,25 @@ function pushStopped(runId: string, error = 'stopped'): void {
   pushRunEnd(runId);
 }
 
+/**
+ * Destructive-confirm gate (used by BOTH run_agent and the brain-bypassing runTask). Classify the
+ * task; if dangerous, require explicit approval via the dedicated CH.confirmResolve channel (15s
+ * default-DENY) AND a clean git tree. Returns ok:false with a reason when the run must be skipped.
+ */
+async function passesDestructiveGate(
+  runId: string,
+  task: string,
+): Promise<{ ok: boolean; reason?: string }> {
+  const verdict = classifyDestructive(task);
+  if (!verdict.destructive) return { ok: true };
+  const approved = await requestConfirm(runId, verdict.reason ?? 'destructive command', pushConfirmRequest);
+  if (!approved) return { ok: false, reason: `it looked destructive (${verdict.reason}) and wasn't approved` };
+  if (!(await isCleanTree(workdir()))) {
+    return { ok: false, reason: "the git tree isn't clean, so a destructive step couldn't be safely undone — commit or stash first" };
+  }
+  return { ok: true };
+}
+
 function pushReasoning(delta: string): void {
   getWindow()?.webContents.send(CH.brainReasoning, delta);
 }
@@ -137,6 +156,8 @@ function summarizeEvent(e: ActionEvent): string {
       return `message: ${e.text.slice(0, 200)}`;
     case 'message.delta':
       return e.text;
+    case 'status':
+      return `status: ${e.text.slice(0, 200)}`;
     case 'run.completed':
       return `run completed${e.finalText ? `: ${e.finalText.slice(0, 200)}` : ''}`;
     case 'run.failed':
@@ -268,12 +289,16 @@ async function dispatchExecutor(
       signal: controller.signal,
     })) {
       if (finished) break; // watchdog already finalized this run; ignore (and unwind) late events
-      pushEvent(ev);
+      // Re-stamp to the orchestrator's runId — the executors mint their OWN run ids, but activeRuns
+      // (and so Stop/cancelTask) is keyed by THIS runId. Without this, a targeted Stop from the
+      // renderer (which sees the event's runId) never finds the controller. One id per turn.
+      const stamped = { ...ev, runId } as ActionEvent;
+      pushEvent(stamped);
       // Native "job done" notification on terminal events — visible even when the
       // window is hidden or in floating mode.
-      if (ev.kind === 'run.completed' || ev.kind === 'run.failed') {
+      if (stamped.kind === 'run.completed' || stamped.kind === 'run.failed') {
         terminalSeen = true;
-        notifyJobDone(ev.kind === 'run.completed', terminalEventText(ev));
+        notifyJobDone(stamped.kind === 'run.completed', terminalEventText(stamped));
         // Off-critical-path: extract AT MOST one durable fact from this turn (supersede-not-
         // overwrite). Fire-and-forget; this survives the Phase-B dispatch-return change.
         if (factCtx) {
@@ -281,12 +306,12 @@ async function dispatchExecutor(
             transcript: factCtx.transcript,
             narration: factCtx.narration,
             task: factCtx.task,
-            outcome: ev.kind === 'run.completed' ? 'completed' : 'failed',
+            outcome: stamped.kind === 'run.completed' ? 'completed' : 'failed',
           });
         }
       }
       // Fire-and-forget memory persistence so it never stalls the event stream.
-      void rememberEvent(sessionId, ev);
+      void rememberEvent(sessionId, stamped);
     }
     if (!terminalSeen && !finished && !controller.signal.aborted) {
       const completed: ActionEvent = {
@@ -453,22 +478,12 @@ async function actOnDecision(
         decision.args.agent === 'claude' ? 'claude' : DEFAULT_AGENT;
 
       // C1 destructive-confirm gate (BEFORE dispatch). A spoken/typed word can NEVER approve —
-      // approval comes only from the dedicated CH.confirmResolve channel; a 15s timeout
-      // default-denies; and a confirmed-destructive run additionally requires a clean git tree so
-      // it can always be undone.
-      const verdict = classifyDestructive(task);
-      if (verdict.destructive) {
-        const approved = await requestConfirm(runId, verdict.reason ?? 'destructive command', pushConfirmRequest);
-        if (!approved) {
-          emitNarration(runId, `Skipping that — it looked destructive (${verdict.reason}) and wasn't approved.`);
-          pushRunEnd(runId);
-          return;
-        }
-        if (!(await isCleanTree(workdir()))) {
-          emitNarration(runId, "Skipping that — the git tree isn't clean, so a destructive step couldn't be safely undone. Commit or stash first.");
-          pushRunEnd(runId);
-          return;
-        }
+      // approval is only the dedicated CH.confirmResolve channel; 15s default-deny; clean-tree required.
+      const gate = await passesDestructiveGate(runId, task);
+      if (!gate.ok) {
+        emitNarration(runId, `Skipping that — ${gate.reason ?? "it was blocked"}.`);
+        pushRunEnd(runId);
+        return;
       }
 
       // Honor a Stop that arrived during decide/confirm (pre-executor preempt).
@@ -546,8 +561,17 @@ async function runFactExtraction(sessionId: string, input: FactExtractInput): Pr
  */
 export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId: string }> {
   const runId = newRunId();
-  // Fire the dispatch but DON'T await it — the renderer gets {runId} now and the stream later.
-  void dispatchExecutor(runId, `task_${runId}`, prompt, agent);
+  // runTask bypasses the brain, so the destructive gate MUST run here too (or a renderer caller
+  // could `rm -rf` unconfirmed). Gate then dispatch off the critical path; return {runId} now.
+  void (async () => {
+    const gate = await passesDestructiveGate(runId, prompt);
+    if (!gate.ok) {
+      emitNarration(runId, `Skipping that — ${gate.reason ?? "it was blocked"}.`);
+      pushRunEnd(runId);
+      return;
+    }
+    void dispatchExecutor(runId, `task_${runId}`, prompt, agent);
+  })();
   return { runId };
 }
 

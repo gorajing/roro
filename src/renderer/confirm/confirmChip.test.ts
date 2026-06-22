@@ -9,11 +9,13 @@ function setCompanion(stub: unknown): void {
 function setup() {
   document.body.innerHTML = '<div id="app"></div>';
   let reqCb: ((req: { runId: string; summary: string }) => void) | null = null;
+  let runEndCb: ((p: { runId: string }) => void) | null = null;
   const confirmResolve = vi.fn().mockResolvedValue(undefined);
   const unsub = (): void => undefined;
   setCompanion({
     confirmResolve,
     onConfirmRequest: (cb: (req: { runId: string; summary: string }) => void): (() => void) => { reqCb = cb; return unsub; },
+    onRunEnd: (cb: (p: { runId: string }) => void): (() => void) => { runEndCb = cb; return unsub; },
   });
   const unmount = mountConfirmChip();
   return {
@@ -23,6 +25,7 @@ function setup() {
     approve: document.getElementById('confirm-approve') as HTMLButtonElement,
     deny: document.getElementById('confirm-deny') as HTMLButtonElement,
     fireRequest: (req: { runId: string; summary: string }) => reqCb?.(req),
+    fireRunEnd: (runId: string) => runEndCb?.({ runId }),
   };
 }
 
@@ -54,5 +57,15 @@ describe('confirmChip (jsdom)', () => {
     h.fireRequest({ runId: 'r2', summary: 's' });
     h.deny.click();
     expect(h.confirmResolve).toHaveBeenCalledWith('r2', false);
+  });
+
+  it('dismisses when the request\'s turn ends (15s timeout default-deny -> runEnd)', () => {
+    h.fireRequest({ runId: 'r3', summary: 's' });
+    expect(h.chip.classList.contains('shown')).toBe(true);
+    h.fireRunEnd('r3');
+    expect(h.chip.classList.contains('shown')).toBe(false);
+    // a later click after dismissal is a no-op (no double-resolve)
+    h.approve.click();
+    expect(h.confirmResolve).not.toHaveBeenCalled();
   });
 });
