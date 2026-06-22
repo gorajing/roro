@@ -41,6 +41,9 @@ const activeRuns = new Map<string, AbortController>();
 /** Turns the user preempted (Stop) before the executor registered — honored at the decide/confirm
  *  boundary and again right before dispatch, so a barge-in during decide/confirm never runs. */
 const preemptedTurns = new Set<string>();
+/** Every turn from mint to runEnd (covers decide/confirm/exec). Stop is only honored for an id in
+ *  this set, which bounds preemptedTurns against stale/garbage ids from the public cancelTask IPC. */
+const inFlightTurns = new Set<string>();
 /** The most recently minted turn/task runId — the no-id Stop fallback, which must also reach a turn
  *  still in decide/confirm (when activeRuns is still empty). */
 let lastTurnId: string | null = null;
@@ -60,6 +63,7 @@ function pushEvent(e: ActionEvent): void {
 
 function pushRunEnd(runId: string): void {
   preemptedTurns.delete(runId);
+  inFlightTurns.delete(runId);
   getWindow()?.webContents.send(CH.runEnd, { runId });
 }
 
@@ -354,6 +358,7 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
   const { transcript, sessionId } = input;
   const runId = newRunId();
   lastTurnId = runId;
+  inFlightTurns.add(runId);
 
   // Recall BEFORE storing this turn's transcript so the query isn't matched
   // against itself.
@@ -467,6 +472,11 @@ async function actOnDecision(
         pushRunEnd(runId);
         return;
       }
+      // Honor a Stop that arrived during the vision capture / second decide before recursing.
+      if (preemptedTurns.has(runId)) {
+        pushStopped(runId);
+        return;
+      }
       await actOnDecision(runId, input, next, /* screenAlreadyCaptured */ true, recalledMemory);
       return;
     }
@@ -566,6 +576,7 @@ async function runFactExtraction(sessionId: string, input: FactExtractInput): Pr
 export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId: string }> {
   const runId = newRunId();
   lastTurnId = runId;
+  inFlightTurns.add(runId);
   // runTask bypasses the brain, so the destructive gate MUST run here too (or a renderer caller
   // could `rm -rf` unconfirmed). Gate then dispatch off the critical path; return {runId} now.
   void (async () => {
@@ -595,6 +606,7 @@ export function cancelTask(runId?: string): void {
   // destructive-confirm immediately (so the turn ends promptly instead of hanging until the 15s
   // timeout), and abort its executor if running (arming the watchdog).
   const stop = (id: string): void => {
+    if (!inFlightTurns.has(id)) return; // ignore stale/unknown ids -> bounds preemptedTurns
     preemptedTurns.add(id);
     resolveConfirm(id, false);
     activeRuns.get(id)?.abort();
