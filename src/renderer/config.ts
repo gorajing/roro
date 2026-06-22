@@ -24,7 +24,7 @@ export interface CompanionConfig {
   vapiPublicKey: string;
   /**
    * Server-side Vapi assistant id. When non-empty, the renderer starts the call
-   * with this id (the existing hosted Nero assistant) instead of the
+   * with this id (the existing hosted Roro assistant) instead of the
    * inline custom-llm assistant — no local proxy needed.
    */
   vapiAssistantId: string;

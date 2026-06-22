@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="920" height="440" viewBox="0 0 920 440" role="img" aria-labelledby="title desc">
-  <title id="title">Floating mute badge experiments for Nero</title>
-  <desc id="desc">Two pixel-art Nero concepts comparing a floating muted microphone badge and a floating muted speaker badge.</desc>
+  <title id="title">Floating mute badge experiments for Roro</title>
+  <desc id="desc">Two pixel-art Roro concepts comparing a floating muted microphone badge and a floating muted speaker badge.</desc>
   <defs>
     <pattern id="checker" width="20" height="20" patternUnits="userSpaceOnUse">
       <rect width="20" height="20" fill="#fbfbfd"/>
@@ -26,7 +26,7 @@
       .lav { fill: #c9c4ff; }
       .blue { fill: #8fd7ff; }
     </style>
-    <g id="nero-cat" class="px">
+    <g id="roro-cat" class="px">
       <rect class="black" x="28" y="78" width="10" height="60"/>
       <rect class="black" x="18" y="48" width="10" height="40"/>
       <rect class="black" x="18" y="48" width="20" height="10"/>
@@ -65,7 +65,7 @@
   <g transform="translate(58,92)">
     <rect class="panel" x="0" y="0" width="374" height="298" rx="12" filter="url(#softShadow)"/>
     <g transform="translate(96,66)">
-      <use href="#nero-cat"/>
+      <use href="#roro-cat"/>
       <g transform="translate(126,-32)">
         <rect class="badge" x="0" y="0" width="74" height="58" rx="16"/>
         <rect class="lav px" x="16" y="10" width="22" height="8"/>
@@ -87,7 +87,7 @@
   <g transform="translate(488,92)">
     <rect class="panel" x="0" y="0" width="374" height="298" rx="12" filter="url(#softShadow)"/>
     <g transform="translate(96,66)">
-      <use href="#nero-cat"/>
+      <use href="#roro-cat"/>
       <g transform="translate(126,-32)">
         <rect class="badge" x="0" y="0" width="74" height="58" rx="16"/>
         <rect class="ink px" x="14" y="24" width="12" height="14"/>
@@ -105,6 +105,6 @@
       </g>
     </g>
     <text x="187" y="246" class="label">speaker-muted badge</text>
-    <text x="187" y="269" class="small">Best meaning: Nero/audio output is quiet.</text>
+    <text x="187" y="269" class="small">Best meaning: Roro/audio output is quiet.</text>
   </g>
 </svg>

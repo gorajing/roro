@@ -115,7 +115,7 @@ export function subscribeActionEvents(opts: SubscribeOptions): () => void {
       }),
     );
   } else {
-    console.warn('[events] Nero bridge unavailable: window.companion.onActionEvent missing.');
+    console.warn('[events] Roro bridge unavailable: window.companion.onActionEvent missing.');
   }
 
   if (companion?.onRunEnd) {

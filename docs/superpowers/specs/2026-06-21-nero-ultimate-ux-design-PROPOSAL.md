@@ -1,4 +1,4 @@
-# Nero — Unified Design Spine (Final, Hardened)
+# Roro — Unified Design Spine (Final, Hardened)
 
 *The cute companion you talk to, that drives your coding tools, and remembers across them — with every click optimized.*
 
@@ -8,13 +8,13 @@ Lead-architect synthesis of six pillar designs + the ground brief, hardened agai
 
 ## Status — ADOPTED (founder review, 2026-06-21)
 
-**This is the governing v2 spine.** Adopted by the founder on 2026-06-21; it **supersedes `docs/ARCHITECTURE.md`** for all near-term decisions. Build order is locked: **A.5 → B → C1 → C2 → D** (owner_id + migration + extractor → floating Ask/Stop + dispatch-return → status/preempt/confirm → `.nero/PROFILE.md` → voice). **Do not start with voice or MoodCore; do not build a memory panel yet.** (The filename keeps its `-PROPOSAL` suffix only to preserve existing links; the status is adopted.)
+**This is the governing v2 spine.** Adopted by the founder on 2026-06-21; it **supersedes `docs/ARCHITECTURE.md`** for all near-term decisions. Build order is locked: **A.5 → B → C1 → C2 → D** (owner_id + migration + extractor → floating Ask/Stop + dispatch-return → status/preempt/confirm → `.roro/PROFILE.md` → voice). **Do not start with voice or MoodCore; do not build a memory panel yet.** (The filename keeps its `-PROPOSAL` suffix only to preserve existing links; the status is adopted.)
 
 ### Founder amendment — memory facts are durable product data (folds into Pillar IV / Phase A.5)
 
 The thin 1-fact-per-turn extractor must treat facts as **durable product data, not vibes**. Beyond owner-scoped + forgettable + null-when-unsure (already in Pillar IV), A.5 adds two cheap requirements:
 
-- **Source-linked.** Every `fact` row carries provenance in its `payload`: `{ key, value, source: { session_id, turn_ts } }` — so any surfaced fact traces to the turn that taught it (and later feeds the deferred "What Nero knows…" panel).
+- **Source-linked.** Every `fact` row carries provenance in its `payload`: `{ key, value, source: { session_id, turn_ts } }` — so any surfaced fact traces to the turn that taught it (and later feeds the deferred "What Roro knows…" panel).
 - **Superseded, never silently overwritten.** When a new fact's `key` matches an existing *active* fact for the owner and the value changed, **mark the prior row superseded and insert the new one** (append-only history) instead of UPDATE-in-place. `getProfile()` returns only non-superseded facts. This is the thin stand-in for the deferred typed confidence/supersede engine: it costs one extra column (`superseded boolean default false`) + a key lookup, and it makes user correction a first-class, auditable operation.
 
 ---
@@ -37,9 +37,9 @@ Six pillars disagreed on five real things. The rulings stand; three are now tigh
 
 ## 1. NORTH STAR
 
-**The product truth:** Nero is a cute desktop companion that is the embodiment of a coding-agent runner with a memory. You talk or type to it, it drives Codex/Claude to do real work in your repo, it shows you exactly what ran (network-tab honesty made cute), and — the moat — it remembers you across launches. Cuteness is the wrapper on competence; memory is why you reinstall. It costs nothing while idle and never nags.
+**The product truth:** Roro is a cute desktop companion that is the embodiment of a coding-agent runner with a memory. You talk or type to it, it drives Codex/Claude to do real work in your repo, it shows you exactly what ran (network-tab honesty made cute), and — the moat — it remembers you across launches. Cuteness is the wrapper on competence; memory is why you reinstall. It costs nothing while idle and never nags.
 
-**THE single magic moment (the demo) — now told honestly.** In a session days ago you asked Nero to add a feature and accepted its offer to write a test alongside it; that taught it one fact, persisted to disk. Today — app fully quit and relaunched since, fresh `session_id`, **same `owner_id`** — you type *"add a logout route"* into the slim Ask line under the floating cat. Before the narration finishes, the cat says, unprompted: **"On it — and like last time I'll add a test alongside it."** You never made an account. The continuity survived a full process restart. The cat drops into thinking, walks (working) as Codex edits your repo, throws a green check, self-decays to idle.
+**THE single magic moment (the demo) — now told honestly.** In a session days ago you asked Roro to add a feature and accepted its offer to write a test alongside it; that taught it one fact, persisted to disk. Today — app fully quit and relaunched since, fresh `session_id`, **same `owner_id`** — you type *"add a logout route"* into the slim Ask line under the floating cat. Before the narration finishes, the cat says, unprompted: **"On it — and like last time I'll add a test alongside it."** You never made an account. The continuity survived a full process restart. The cat drops into thinking, walks (working) as Codex edits your repo, throws a green check, self-decays to idle.
 
 **The honest mechanism (Coherence fix):** the line is **recall of a fact taught in a *prior* turn**, not extraction on the demoed turn. The fact was written post-turn last session, persisted to the store under `owner_id`, and on *this* turn is read by `getProfile()` into a **labeled segment** of `DecideInput.memory` (kept separate from truncated episodic summaries) so the brain narrates with the relationship in context. On a **first-ever turn with no facts, the cat says no continuity line** — it just acknowledges and acts (cold-start narration is specified, §4). Everything in this document exists to earn that one recalled line and make every click around it instant.
 
@@ -49,7 +49,7 @@ Six pillars disagreed on five real things. The rulings stand; three are now tigh
 
 ### Pillar I — COMPANION (the soul) — *radically trimmed*
 
-**What GREAT means:** a developer leaves Nero running for weeks because closing it feels like dismissing a colleague mid-thought; the cat visibly listens, leans into hard problems, winces at a red test and *recovers*, celebrates a green run, dozes when you walk away without nagging.
+**What GREAT means:** a developer leaves Roro running for weeks because closing it feels like dismissing a colleague mid-thought; the cat visibly listens, leans into hard problems, winces at a red test and *recovers*, celebrates a green run, dozes when you walk away without nagging.
 
 **Key decisions (Scope/Coherence rulings applied — MoodCore and Bond are CUT from the committed plan):**
 1. **No persistent inner-state primitive in the wedge.** The draft's `MoodCore {valence,energy}` scalar, `bond.json`, the monotonic Bond integer, and the wake-stretch greeting tier system are **cut from Phases A.5–C entirely.** Three critiques independently flagged them as soul-polish with zero leverage on "remembers across launches," and as Tamagotchi-adjacent risk the doc itself disavows. They earn nothing toward the magic line.
@@ -60,7 +60,7 @@ Six pillars disagreed on five real things. The rulings stand; three are now tigh
 
 ### Pillar II — TALK (the voice you summon, never always-on) — *one backend*
 
-**What GREAT means:** you glance at the cat, say *"Nero, fix the failing test,"* its ears snap up the instant the first sound leaves your mouth (sub-100ms, before any network), it thinks, then answers in its own voice with words the *real brain* chose. In an open office you do the identical thing silently by typing.
+**What GREAT means:** you glance at the cat, say *"Roro, fix the failing test,"* its ears snap up the instant the first sound leaves your mouth (sub-100ms, before any network), it thinks, then answers in its own voice with words the *real brain* chose. In an open office you do the identical thing silently by typing.
 
 **Key decisions:**
 1. **The speech model is a MOUTH and EARS, never a BRAIN.** STT/VAD/barge-in/TTS live at the edge; the committed transcript *always* routes through the single chokepoint `companion.turnRun({transcript, sessionId})` so recall→decide→remember→executor stays authoritative. **The Vapi-inline-LLM-speaks path is deleted** (the "two unequal brains" bug). One integration test is the guard: a spoken "fix the test" must produce a `CH.turnRun` *and* an executor `run.started`.
@@ -105,9 +105,9 @@ Six pillars disagreed on five real things. The rulings stand; three are now tigh
 
 2. **The thin 1-fact-per-turn extractor is specified, not hand-waved (Scope/Feasibility CRITICAL fix).** After a turn completes, **off the critical path**, a second cheap Nebius call takes `{transcript, decision, terminal outcome}` and returns **at most one `{key, value}` or `null`** (returns `null` when unsure — write no row). It writes the existing-but-unwritten `MemoryKind:'fact'` row under `owner_id`. The fact written in session N is recallable in session N+1 across a restart because it persists to the store. **The proof is a fixture (extends the A.5 cross-launch fixture):** "add a feature with a test" in simulated launch A produces a `fact` row that, in simulated launch B (fresh `session_id`, same `owner_id`), is read by `getProfile()` and its text appears in the recalled context. Until that fixture is green, the magic moment is unproven.
 
-3. **Cross-agent exposure: markdown mirror ONLY for the wedge; MCP server CUT from the committed plan (Scope CRITICAL fix).** The distiller writes a size-capped `<repo>/.nero/PROFILE.md` (<150 lines, plaintext = the privacy proof; zero-integration = any file-reading agent gets the profile free — Claude Code and Codex read it with no config). This delivers ~90% of "across them" at ~zero protocol surface. **The 4-tool stdio MCP server, the `MemoryDistiller`-as-sole-promoter ceremony, the `source_agent` append-only protocol, and the typed confidence engine are all deferred to genuinely-later** — they are an irreversible coupling contract external agents lock onto, and must not be built before the single-tool continuity moment is demonstrably retaining users. Positioning discipline holds: headline is "the coding pet that remembers you"; cross-agent is *sentence two*; "Memory API" framing is **banned.**
+3. **Cross-agent exposure: markdown mirror ONLY for the wedge; MCP server CUT from the committed plan (Scope CRITICAL fix).** The distiller writes a size-capped `<repo>/.roro/PROFILE.md` (<150 lines, plaintext = the privacy proof; zero-integration = any file-reading agent gets the profile free — Claude Code and Codex read it with no config). This delivers ~90% of "across them" at ~zero protocol surface. **The 4-tool stdio MCP server, the `MemoryDistiller`-as-sole-promoter ceremony, the `source_agent` append-only protocol, and the typed confidence engine are all deferred to genuinely-later** — they are an irreversible coupling contract external agents lock onto, and must not be built before the single-tool continuity moment is demonstrably retaining users. Positioning discipline holds: headline is "the coding pet that remembers you"; cross-agent is *sentence two*; "Memory API" framing is **banned.**
 
-**On the real architecture:** `recallContext` composes a **labeled two-part string** — `getProfile()` facts (a distinct, labeled segment) + episodic `recall()` matches — into the *existing* `DecideInput.memory` field. **No change to the Decision contract or the frozen union.** `buildDecisionPrompt` is updated to consume the labeled fact segment (so facts aren't lost in truncated episodic noise — the lossiness the ground brief flagged). Every surfaced fact is forgettable via a "What Nero knows…" panel (console-hosted first, deferred to post-wedge). **Credibility guard:** in the thin version, a fact surfaces if it exists (the extractor's `null`-when-unsure is the gate); the typed `confidence ≥ 0.6 ∧ support ≥ 2` gate arrives only with the deferred typed engine. *A silent cat beats a confidently-wrong one.*
+**On the real architecture:** `recallContext` composes a **labeled two-part string** — `getProfile()` facts (a distinct, labeled segment) + episodic `recall()` matches — into the *existing* `DecideInput.memory` field. **No change to the Decision contract or the frozen union.** `buildDecisionPrompt` is updated to consume the labeled fact segment (so facts aren't lost in truncated episodic noise — the lossiness the ground brief flagged). Every surfaced fact is forgettable via a "What Roro knows…" panel (console-hosted first, deferred to post-wedge). **Credibility guard:** in the thin version, a fact surfaces if it exists (the extractor's `null`-when-unsure is the gate); the typed `confidence ≥ 0.6 ∧ support ≥ 2` gate arrives only with the deferred typed engine. *A silent cat beats a confidently-wrong one.*
 
 ---
 
@@ -180,7 +180,7 @@ Adding `status` is **5 sites + 1 fixture**, not a one-liner:
         │ 5. AFTER terminal (off critical path):               │
         │      thinFactExtract(owner_id) — 1 cheap Nebius call │
         │        → ≤1 kind:'fact' row or null                  │
-        │        → rewrite .nero/PROFILE.md                    │
+        │        → rewrite .roro/PROFILE.md                    │
         └──────────────────────────────────────────────────────┘
                                 │
    CH.actionEvent / runEnd / confirmRequest → renderer/events/actionEvents.ts
@@ -204,7 +204,7 @@ Adding `status` is **5 sites + 1 fixture**, not a one-liner:
    - recall() = pgvector cosine, owner_id-scoped, session_id kept as provenance
    - getProfile() = local indexed lookup of kind:'fact' rows → LABELED segment
 
- CROSS-AGENT (wedge): .nero/PROFILE.md mirror ONLY (<150 lines, plaintext)
+ CROSS-AGENT (wedge): .roro/PROFILE.md mirror ONLY (<150 lines, plaintext)
    → Claude Code / Codex read it for free, zero MCP config
 
  DEFERRED (post-PMF, not a phase): typed profile_fact engine (confidence/support/
@@ -273,13 +273,13 @@ Adding `status` is **5 sites + 1 fixture**, not a one-liner:
 ### One full session — numbered walk-through
 
 1. **WAKE (relaunch).** `showInactive()` (never steals focus). `identity.ts` reads the *same* `owner_id` (loud-fail if corrupt, never silent re-mint). No bond/greeting tier (cut). *Body: settles to idle.*
-2. **SUMMON.** `⌘⇧Space` (hidden→show) → cat forward + caret in "Ask Nero…" + `driver.poke()`. *Body: ears perk. [≤150ms]*
+2. **SUMMON.** `⌘⇧Space` (hidden→show) → cat forward + caret in "Ask Roro…" + `driver.poke()`. *Body: ears perk. [≤150ms]*
 3. **TYPE (or TALK, Phase D).** Enter / final transcript → `turnRun`. *Body: empty-check, then local `thinking` pose [≤16ms, before await]; voice: ear-perk [≤80ms].*
 4. **DRIVE — recall.** `recallContext(owner_id)` pulls **labeled** profile facts + episodes into `DecideInput.memory`; `status{kind:'recall', n}` beat. *Body: memory-mote drifts into the head (moat made visible, off the typed field — not a string sniff).*
 5. **DRIVE — decide.** `brain.decide` streams reasoning. *Body: sits, eyes up-left, thought-mote.* `turnRun` has **already resolved with `{runId}`** — the renderer is free to receive a barge-in.
 6. **NARRATE / CONFIRM.** `Decision.narration` (the recalled magic line, or a plain cold-start ack on a first-ever turn) → caption + (Phase D) `voice.speak(REAL text)`. If destructive → **confirm chip** with Yes/No; a stray spoken "yeah" does nothing. *Body: talking hook, or confirm-chip posture.*
 7. **DRIVE — execute.** `command`/`file_change`/`tool` → `working`. *Body: walks, work-aura, above-head label "editing logout.py"; pose stays 'working' even past 120s (busy suppresses sleep-curl).* PREEMPT available.
-8. **REMEMBER (off critical path).** Terminal `run.completed` → native Notification, `thinFactExtract(owner_id)` fires post-turn, writes ≤1 `fact` row + rewrites `.nero/PROFILE.md`. *Body: green check + brief happy hop (transient, no persisted mood).*
+8. **REMEMBER (off critical path).** Terminal `run.completed` → native Notification, `thinFactExtract(owner_id)` fires post-turn, writes ≤1 `fact` row + rewrites `.roro/PROFILE.md`. *Body: green check + brief happy hop (transient, no persisted mood).*
 9. **SETTLE.** Terminal → unified ~3s decay → idle (one timer, one place).
 10. **SLEEP (guilt-free).** 45s → drowsy (12fps); 120s → asleep (curl, 6fps, gaze frozen). No notification, never sad. Voice call (if any) auto-ends at 45s silence. *Costs nothing.*
 
@@ -299,16 +299,16 @@ Phase A is **already shipped** (deleted hold-to-talk, gaze decoupled from poke, 
 | **A.5 — The un-retrofittable spine + DB migration + ship-ability** | Mint `owner_id` (atomic, loud-fail); **SQL migration: `memory.owner_id` + drop/recreate `match_memory` with `p_owner_id`, keep `p_session_id`**; rescope recall session→owner; thin `kind:'fact'` extractor (post-turn Nebius, null-when-unsure); resolve `codex` binary via PATH + `COMPANION_WORKDIR` first-run prompt | `main/identity.ts` (new), SQL DDL+RPC (deploy step), `shared/memory.ts`, `memory/index.ts`, `executor/codex.ts` | **Cross-LAUNCH on the SAME device** (quit fully, relaunch, fresh `session_id`, same `owner_id`, prior fact recalled). NOT cross-machine (per-device id isolates devices — Feasibility fix) | Fixture: a `fact` row written under `owner_id` in simulated launch A, with a *fresh `session_id`*, is recalled in simulated launch B and its **text appears** in the composed context. Clean-machine launch verified by running, not code-read |
 | **B — The un-inverting fix (the magic moment)** | Floating `#floating-ask` (OUTSIDE `#overlay`, own pointer-events box, target-aware gesture handler) + Stop pill (subscribes to stream directly); **`turnRun` resolves at dispatch**; labeled fact segment into `decide()` | `#floating-ask` + CSS (new rule, NOT un-hiding overlay), `orchestrator.runTurn` return contract, `bootstrap` turnInFlight→runState, `recallContext` compose, `buildDecisionPrompt` | **THE magic moment:** type "add logout route" on the floating cat → "like last time I'll add a test" → drives Codex | E2E: typed turn on floating body produces `run.started`; second-launch turn surfaces a prior-session fact in narration; empty Enter never flashes thinking |
 | **C1 — Reliability (the bond)** | `status` kind (the enumerated 5-site ripple + re-freeze); PREEMPT (cancel-then-start via stream + `cancelTurn` for pre-executor); Tier-1 destructive pre-flight + confirm IPC (`CH.confirmRequest`/`CH.confirmResolve`/`pendingConfirms`, 15s default-deny) + clean-tree precond + 1.5s SIGKILL watchdog; unify terminal decay into one place | `shared/events.ts` (the ONE union change), `actionEvents.ts` (delete sniff, add `status` case), `orchestrator` (migrate beats, preempt, gate, confirm Map) | "Stop always stops"; "say *clean up* → cat asks before `reset --hard` (spoken 'yeah' ignored)" | Fixtures: aborted-mid-stream = exactly one terminal event; `rm -rf` task flagged pre-dispatch; confirm timeout default-denies |
-| **C2 — Markdown mirror (cross-agent, zero protocol)** | Distiller rewrites `.nero/PROFILE.md` (<150 lines) post-turn | `.nero/PROFILE.md` writer (off critical path) | Claude Code / Codex read the mirror → reference a Nero-taught fact with zero config | Test: a taught fact appears in `PROFILE.md` within the size cap; a `Forget` removes it from the file |
-| **D — Voice behind the seam (ONE backend)** | `VoiceBackend` interface; **`VapiBackend` only** (server-hosted assistantId); delete inline-LLM + ngrok/proxy path; `micMeter.ts` ear-perk; `setEarPerk`; one-voice narration; 45s timeout | `voice/index.ts`, `wireBackendEvents`, `voice/micMeter.ts` (new), `CharacterDriver.setEarPerk` | Say "Nero, fix the test" → ears snap up <80ms → answers in its own voice having run the agent | Integration: spoken "fix the test" produces `CH.turnRun` **and** executor `run.started` (proves it routes through the one brain, never speech-to-speech) |
-| **(deferred, not a committed phase) — Moat hardening** | Typed `profile_fact` (confidence/support/supersede) + async distiller; 4-tool MCP server; "What Nero knows…" panel; MoodCore/Bond | new files | week-3 warmth; cross-tool MCP | Built only once C1/C2 retention is observed |
+| **C2 — Markdown mirror (cross-agent, zero protocol)** | Distiller rewrites `.roro/PROFILE.md` (<150 lines) post-turn | `.roro/PROFILE.md` writer (off critical path) | Claude Code / Codex read the mirror → reference a Roro-taught fact with zero config | Test: a taught fact appears in `PROFILE.md` within the size cap; a `Forget` removes it from the file |
+| **D — Voice behind the seam (ONE backend)** | `VoiceBackend` interface; **`VapiBackend` only** (server-hosted assistantId); delete inline-LLM + ngrok/proxy path; `micMeter.ts` ear-perk; `setEarPerk`; one-voice narration; 45s timeout | `voice/index.ts`, `wireBackendEvents`, `voice/micMeter.ts` (new), `CharacterDriver.setEarPerk` | Say "Roro, fix the test" → ears snap up <80ms → answers in its own voice having run the agent | Integration: spoken "fix the test" produces `CH.turnRun` **and** executor `run.started` (proves it routes through the one brain, never speech-to-speech) |
+| **(deferred, not a committed phase) — Moat hardening** | Typed `profile_fact` (confidence/support/supersede) + async distiller; 4-tool MCP server; "What Roro knows…" panel; MoodCore/Bond | new files | week-3 warmth; cross-tool MCP | Built only once C1/C2 retention is observed |
 
 ---
 
 ## 6. EXPLICIT CUTS / NON-GOALS (YAGNI for 2 people — now cutting real pillar surface, not just dead code)
 
 - **MoodCore `{valence,energy}` + setMood + per-frame modulation, Bond integer, `bond.json`, wake-stretch greeting tiers** — CUT from the committed plan. Soul-polish with zero leverage on the magic line; Tamagotchi-adjacent risk. Transient terminal cues (green hop / comfort posture) cover the felt soul at zero persistence cost. (Scope/Coherence.)
-- **The 4-tool MCP server + `MemoryDistiller`-as-sole-promoter + `source_agent` append-only protocol + typed `profile_fact` confidence engine** — DEFERRED past the wedge; the `.nero/PROFILE.md` mirror proves "across them" at ~zero integration. The MCP tool names are an irreversible external contract; don't freeze them before the moment retains. (Scope.)
+- **The 4-tool MCP server + `MemoryDistiller`-as-sole-promoter + `source_agent` append-only protocol + typed `profile_fact` confidence engine** — DEFERRED past the wedge; the `.roro/PROFILE.md` mirror proves "across them" at ~zero integration. The MCP tool names are an irreversible external contract; don't freeze them before the moment retains. (Scope.)
 - **Two of the three voice backends** (OpenAI-Realtime, Pipecat-local) — CUT. Ship one (`VapiBackend`, the working server-hosted branch). OpenAI-Realtime is speech-to-speech (the dangerous substrate) and was wrongly recommended as default. The seam is kept; the integrations are not. (Scope/Coherence/Feasibility.)
 - **Native Menu ≡ Tray ≡ ⌘K command surface** — CUT from the committed plan. Right-click=mute suffices; a Menu lands only if users ask where Quit/Sleep are. (Scope/Conflict 4.)
 - **Destructive Tier-2** (Claude `--permission-prompt-tool` mid-run approval) + the `getExecutor` capability-routing table — CUT. Tier-1 pre-flight + clean-tree covers the mishear case. (All three lenses.)
@@ -329,10 +329,10 @@ Phase A is **already shipped** (deleted hold-to-talk, gaze decoupled from poke, 
 
 1. **Voice substrate when D ships.** *Recommendation:* **server-hosted Vapi (`vapiAssistantId`) — the only path that works today and the cheapest route to a singing demo.** Do NOT default to OpenAI-Realtime (speech-to-speech, the substrate Risk 2 warns against) or Pipecat-local (heavyweight, contradicts garnish-not-moat). The seam allows a later swap; ship one. *(Reverses the draft's Pipecat-default recommendation per Scope/Coherence.)*
 2. **Memory hosting.** *Recommendation:* **local-only `owner_id` through the wedge.** Device-local delivers ~90% of the felt moment; hosted sync (same contract, later) is monetization, not wedge. Mint `owner_id` now so hosting is never foreclosed.
-3. **Single Nero vs per-project.** *Recommendation:* the thin `fact` rows are written under `owner_id`; when the typed engine lands, `scope:'global'|'project'` distinguishes language/test-runner prefs from per-repo conventions. The mirror lives at `<repo>/.nero/PROFILE.md`. No rigid decision needed now.
+3. **Single Roro vs per-project.** *Recommendation:* the thin `fact` rows are written under `owner_id`; when the typed engine lands, `scope:'global'|'project'` distinguishes language/test-runner prefs from per-repo conventions. The mirror lives at `<repo>/.roro/PROFILE.md`. No rigid decision needed now.
 4. **Confidence thresholds for surfacing.** *Recommendation:* in the thin wedge, the extractor's **null-when-unsure** IS the gate (no row → nothing to surface). The `conf≥0.6 ∧ support≥2` gate arrives only with the deferred typed engine. Bias strict: a silent cat beats a wrong one.
 5. **Idle-silence voice timeout.** *Recommendation:* **45s** with a soft T-10s "still there?" and an "I'll be here" sign-off.
-6. **Resume.** *Recommendation:* **deferred entirely** (see Cuts). Revisit only when users ask Nero to "keep going" on the previous run and a cold start visibly disappoints.
+6. **Resume.** *Recommendation:* **deferred entirely** (see Cuts). Revisit only when users ask Roro to "keep going" on the previous run and a cold start visibly disappoints.
 
 ---
 
@@ -368,7 +368,7 @@ Phase A is **already shipped** (deleted hold-to-talk, gaze decoupled from poke, 
 - **CUT: 2 of 3 voice backends** → ship one working Vapi; OpenAI-Realtime rejected as the speech-to-speech substrate Risk 2 warns against.
 - **CUT: native Menu/Tray/⌘K** → right-click=mute suffices.
 - **CUT: destructive Tier-2 + capability routing; `setEnergyOverride`/DND; session resume** (all speculative for the wedge).
-- **MCP server / typed profile engine DEFERRED past the wedge**; `.nero/PROFILE.md` mirror proves "across them" at ~zero integration. *(Scope, MAJOR.)*
+- **MCP server / typed profile engine DEFERRED past the wedge**; `.roro/PROFILE.md` mirror proves "across them" at ~zero integration. *(Scope, MAJOR.)*
 
 **Missing-interaction fills:** Ask×thinking (cancelTurn), mid-run submit inverts the `turnInFlight` guard, confirm-chip full matrix row (pet allowed, Esc=deny, occlusion=auto-deny, poke suppressed), Stop pill subscribes to the stream directly, summon-on-visible doesn't poke, empty-Enter checks before the pose, sleep-curl pose suppressed by `busy` during long runs, `owner.json` atomic-write/loud-fail, unified terminal-decay timer, optimistic-local-pose stated for the ≤16ms budget. *(Every-Click + Coherence.)*
 

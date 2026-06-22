@@ -1,8 +1,8 @@
-# Nero Phase A.5 — Memory Spine Implementation Plan
+# Roro Phase A.5 — Memory Spine Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make Nero remember a user across full app restarts by minting a device-stable `owner_id`, owner-scoping the memory store, and writing thin source-linked profile facts — proven by a cross-launch fixture (a fact taught in "launch A" is recalled in "launch B").
+**Goal:** Make Roro remember a user across full app restarts by minting a device-stable `owner_id`, owner-scoping the memory store, and writing thin source-linked profile facts — proven by a cross-launch fixture (a fact taught in "launch A" is recalled in "launch B").
 
 **Architecture:** Identity lives in the MAIN process (`identity.ts`), never the renderer. The Insforge/pgvector store gains an `owner_id` column and a `superseded` flag; all reads/writes go through POST-insert + three RPCs (`match_memory` gains `p_owner_id`; new `get_profile`, `supersede_memory`). A thin 1-fact-per-turn extractor (LLM in the brain, supersede logic in a pure `factStore` module) runs OFF the critical path after each turn. Recall composes a **labeled** facts-segment + episodic matches into the existing `DecideInput.memory` string — no change to the frozen `Decision`/`ActionEvent` contracts.
 
@@ -35,7 +35,7 @@
 Create `db/migrations/2026-06-21-owner-id.sql`:
 
 ```sql
--- Nero A.5: owner-scope the memory store + thin profile facts.
+-- Roro A.5: owner-scope the memory store + thin profile facts.
 -- Apply against the Insforge project's Postgres (SQL editor). Idempotent where possible.
 -- VERIFY FIRST in the SQL editor: the existing match_memory(...) argument signature and the
 -- embedding column name/type. Adjust the DROP signature below to match exactly before running.

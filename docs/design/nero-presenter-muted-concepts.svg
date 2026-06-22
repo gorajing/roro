@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360" role="img" aria-labelledby="title desc">
-  <title id="title">Nero presenter-muted concept sheet</title>
-  <desc id="desc">Six pixel-art design references for showing that the presenter microphone is muted while Nero can still work.</desc>
+  <title id="title">Roro presenter-muted concept sheet</title>
+  <desc id="desc">Six pixel-art design references for showing that the presenter microphone is muted while Roro can still work.</desc>
   <defs>
     <pattern id="checker" width="20" height="20" patternUnits="userSpaceOnUse">
       <rect width="20" height="20" fill="#fbfbfd"/>
@@ -25,8 +25,8 @@
   </defs>
 
   <rect width="960" height="360" fill="url(#checker)"/>
-  <text x="480" y="32" class="label">Presenter-muted Nero concepts</text>
-  <text x="480" y="53" class="note">This means the human input is gated. Nero can still think, work, and finish.</text>
+  <text x="480" y="32" class="label">Presenter-muted Roro concepts</text>
+  <text x="480" y="53" class="note">This means the human input is gated. Roro can still think, work, and finish.</text>
 
   <g id="base-cat" class="px">
     <rect class="black" x="24" y="72" width="8" height="48"/>

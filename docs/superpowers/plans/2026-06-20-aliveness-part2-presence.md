@@ -348,7 +348,7 @@ function installFloatingWindowGesture(
 ```
 Also update the floating-mode tooltip text near the top of the `if (config.floatingWindow)` block:
 ```ts
-    canvas.title = 'Click to pet Nero. Hold to talk. Drag to move. Right-click or M to mute.';
+    canvas.title = 'Click to pet Roro. Hold to talk. Drag to move. Right-click or M to mute.';
 ```
 
 - [ ] **Step 4: Verify type-check, lint, tests**
@@ -583,5 +583,5 @@ git commit -m "feat(aliveness): sleep curl + wake stretch driven by energy"
 
 ## Notes for later increments (not in this plan)
 - **Mood (`MoodCore`)** — a valence axis modulating pose params + the personality system-prompt rewrite (only exercised when the brain runs).
-- **First-run + return rituals** — the "adopt your Nero" naming + a different greeting after time away.
+- **First-run + return rituals** — the "adopt your Roro" naming + a different greeting after time away.
 - **Hold-to-talk polish** — a visible "listening" affordance during the hold; today it reuses the existing call start/stop.

@@ -1,4 +1,4 @@
-# Nero Monetization Spec — v2 (Hardened)
+# Roro Monetization Spec — v2 (Hardened)
 
 *Lead synthesis of four tier evaluations, hardened against three adversarial reviews (margin/pricing, conversion/cannibalization, abuse/privacy/legal). Every critical and major finding integrated. Launch-blocking items flagged in §11.*
 
@@ -21,7 +21,7 @@ Two hard economic truths govern everything below, and the v1 draft violated both
 | Cat companion (presence, reactions) | ✅ never gated | ✅ | Phase 0 |
 | Drives-your-agent (Claude Code/Cursor/etc.) | ✅ full | ✅ | Phase 0 |
 | Local memory — **full** confidence/supersede engine | ✅ full | ✅ | Phase 0 |
-| `.nero/PROFILE.md` (portable, git-committable) | ✅ | ✅ | Phase 0 |
+| `.roro/PROFILE.md` (portable, git-committable) | ✅ | ✅ | Phase 0 |
 | Transparency panel + hard Forget | ✅ **always free** | ✅ | Phase 0 |
 | Local stdio MCP server (cross-agent bridge) | ✅ | ✅ | Phase 0 |
 | Local voice (on-device STT/TTS, default voices) | ✅ when it ships (D.2) | ✅ | Phase 2 |
@@ -49,7 +49,7 @@ Free is a complete, lovable product, MIT-licensed, BYO-keys, running entirely lo
 - **Full local memory engine — typed confidence + supersede/conflict resolution.** $0: local computation. The whole engine ships free; a degraded free memory would teach users the product is mediocre and kill the retention loop. Pro's memory story is *not* "better memory" — it is "your memory, everywhere, backed up, and distilled into a model that is you."
 - **`PROFILE.md`** — human-readable, git-committable, portable forever. $0. The anti-lock-in proof point (§9).
 - **Transparency + Forget** — see everything remembered with confidence + provenance; hard delete. $0. **Guardrail: always free, never an upsell surface.**
-- **Local stdio MCP server** — exposes Nero's memory/profile to any MCP-speaking agent on the same machine. $0. This is FREE — it is how Nero spreads inside a developer's toolchain. (The *remote* MCP variant — serving memory over the network — is sync-adjacent and therefore Pro.)
+- **Local stdio MCP server** — exposes Roro's memory/profile to any MCP-speaking agent on the same machine. $0. This is FREE — it is how Roro spreads inside a developer's toolchain. (The *remote* MCP variant — serving memory over the network — is sync-adjacent and therefore Pro.)
 - **Local voice (Phase 2 / D.2)** — on-device STT/TTS with default system voices. $0 when it ships.
 - **One-time premium-voice preview** — a strictly bounded, **60-second, one-time, per-verified-account** sample so every user *hears* the value before the paywall. This is a sub-cent one-time CAC, not a subsidized usage tier — it does not breach "never subsidize ongoing hosted compute." (Resolves the cold-sell problem in §6; see §11.)
 
@@ -98,12 +98,12 @@ The v1 draft capped only run-while-away and left consolidation + personal-model 
 *Resolved (Tier 1 "20 hrs included" vs Tier 2 "cost+30%, default $0"):* **no bundled execution hours**, cost+30% net-of-Stripe, default-$0 opt-in cap, transactional provider-layer caps. Bundling execution risks a single looping agent going margin-negative.
 
 ### In-product upgrade copy (only at the capability boundary)
-- Backup (universal): *"You've taught Nero 200 things. Right now they live only on this machine. Back them up — Pro."*
-- Sync: *"Nero remembers you here. Want Nero everywhere? Sync across devices — Pro."*
-- Voice: *"That preview was the real voice. Hear Nero — or your own — anytime, with Pro."*
+- Backup (universal): *"You've taught Roro 200 things. Right now they live only on this machine. Back them up — Pro."*
+- Sync: *"Roro remembers you here. Want Roro everywhere? Sync across devices — Pro."*
+- Voice: *"That preview was the real voice. Hear Roro — or your own — anytime, with Pro."*
 - Personal model (cat, in-character, once): *"I've been paying attention. I think I finally get how you work — I could become *your* model now."*
-- Run-while-away: *"Close your laptop. Nero keeps working. Pro."* (included-meter visible)
-- Forget/transparency (free, reassurance): *"This is everything Nero remembers, and where it learned it. Forget anything, anytime. Always free."*
+- Run-while-away: *"Close your laptop. Roro keeps working. Pro."* (included-meter visible)
+- Forget/transparency (free, reassurance): *"This is everything Roro remembers, and where it learned it. Forget anything, anytime. Always free."*
 
 ---
 
@@ -149,7 +149,7 @@ Memory accumulates monotonically by design; sync + vector-index hosting + manage
 - Instrument retrain frequency and consolidation runs p90/p99 from day 1; the margin floor depends entirely on these caps holding **for the exact cohort that pays.**
 
 ### WTP is not yet validated
-$25 is positioning logic, not demonstrated demand. Nero is **incremental** spend on top of a developer's existing $20–40/mo AI bill (they still pay their own model via BYO-keys) — a harder sell than "commodity parity." **The freemium-forever model is the WTP instrument: A/B $15 / $20 / $25 against activated users at day 60 before treating $25 as settled.** If corrected COGS stays high *and* WTP lands at $15–18, the answer is **cut COGS** (smaller voice allotment, capped consolidation, corpus compaction) — not defend $25 by assertion (§11).
+$25 is positioning logic, not demonstrated demand. Roro is **incremental** spend on top of a developer's existing $20–40/mo AI bill (they still pay their own model via BYO-keys) — a harder sell than "commodity parity." **The freemium-forever model is the WTP instrument: A/B $15 / $20 / $25 against activated users at day 60 before treating $25 as settled.** If corrected COGS stays high *and* WTP lands at $15–18, the answer is **cut COGS** (smaller voice allotment, capped consolidation, corpus compaction) — not defend $25 by assertion (§11).
 
 ### Team motion
 **Price for it, defer the build to Phase 3.** Teams convert far higher (15–25% once a second person wants shared memory). Target **~$20/seat (3+ seats)**, shared-org memory. Trigger to build: **3+ inbound team asks in first 90 days.** A team DPA + controller/processor roles must exist before the first team deal (§8).
@@ -184,7 +184,7 @@ v1 computed "520 Pro users is modest" without ever sizing the installs required,
 The real cannibalization risk is **not** "Free is too good" — it is that the v1 triggers don't *reach* most users. Sizing reach as a fraction of activated installs:
 
 1. **Durability / backup (NEW — universal reach, ~100%).** Every user has exactly one irreplaceable corpus on one disk. This is the loss-aversion lever that covers the **single-device majority** the other three miss. Fired at a corpus-maturity milestone, in the cat's voice. *This is the structural fix for the reach gap.*
-2. **Second-device sync (reaches only multi-device users).** v1 assumed this is ~50% of conversions, but it only fires for users who run Nero on a second machine. **We must size the % of installs that ever reach device 2; if under ~40%, this cannot be the primary driver** — backup carries the single-device cohort instead. Empty-state copy on a new machine; shown once.
+2. **Second-device sync (reaches only multi-device users).** v1 assumed this is ~50% of conversions, but it only fires for users who run Roro on a second machine. **We must size the % of installs that ever reach device 2; if under ~40%, this cannot be the primary driver** — backup carries the single-device cohort instead. Empty-state copy on a new machine; shown once.
 3. **Premium / cloned voice (reaches ~100% in-app).** Now warmed by the **60s one-time preview** so the user has *heard* the value before the paywall (v1 sold this cold). Inline at preview.
 4. **Personal model (reaches only deep power users; ≥40 sessions / ≥20 active days).** **Reclassified: this is a retention/expansion feature, NOT a primary conversion driver.** It cannot convert anyone in month 1 and reaches only the most-retained cohort (who likely already converted on backup/sync/voice). **Pricing must clear $25 on backup + sync + voice alone** — verified in §5. The cat surfaces it once, in-character, as "graduating," re-accessible in a "Make me yours" settings entry; never re-nagged.
 
@@ -243,7 +243,7 @@ A delete must hard-delete the **vector + source text + derived embeddings + back
 The hosted brain processes **plaintext memory server-side** to consolidate and run RAG; encryption-at-rest does **not** protect data *in use*. So: **encryption-at-rest + per-account keys + enforced access policy + break-glass with audit logging and customer notification — this is a process control, NOT zero-knowledge.** Marketing must not imply we *technically cannot* see synced content once it is processed. Let users **mark sensitive memory local-only** (sync-ineligible) — this both honors the trust positioning and shrinks the source-derived-data liability below.
 
 ### Source-derived data liability (NEW — decide before first dollar)
-Synced memory derives from developers' codebases: employer IP, NDA'd third-party code, incidental secrets, PII. Nero becomes a processor of other parties' confidential data. Required at Phase 1 sync:
+Synced memory derives from developers' codebases: employer IP, NDA'd third-party code, incidental secrets, PII. Roro becomes a processor of other parties' confidential data. Required at Phase 1 sync:
 - **Secret-scanning + redaction on ingest** (block known key/token patterns from ever syncing).
 - **ToS warranty + indemnity:** the user warrants they have the right to upload synced content.
 - **Data-classification notice in onboarding:** *"Do not sync code you are not authorized to send to a third party."*

@@ -1,9 +1,9 @@
-# Nero — Interaction Design Spec
+# Roro — Interaction Design Spec
 
 **Status:** Proposed (for review) · **Date:** 2026-06-20 · **Owner:** Jin
 **Supersedes:** the ad-hoc gesture handling in `src/renderer/bootstrap.ts::installFloatingWindowGesture`, the piecemeal "tap=pet / hold=talk" iterations, **and the interaction sections of the product-plan docs** — this is now the authoritative interaction document.
 
-> This spec defines the **entire interaction model** for Nero — every way a user touches, summons, tasks, moves, mutes, and dismisses the pet, across every state — as one coherent system, so we stop patching gestures one at a time. It is the contract the implementation plans build against.
+> This spec defines the **entire interaction model** for Roro — every way a user touches, summons, tasks, moves, mutes, and dismisses the pet, across every state — as one coherent system, so we stop patching gestures one at a time. It is the contract the implementation plans build against.
 
 ---
 
@@ -36,7 +36,7 @@ This law is **decidable for any future intent**: *Continuous-physical + reversib
 2. **Never-punish** — no input scolds, guilt-trips, or locks the user out. Errors get *comfort*: **petting an errored cat un-flattens its ears**.
 3. **Always-reversible** — nothing consequential fires on a timer or on a release-you-didn't-mean. Start-work, start-voice, mute, hide are all explicit; **Stop is always reachable mid-work**.
 4. **Always-pettable** — **a tap = pet, in every state** (asleep, idle, listening, thinking, working, done, error, in-call). The cat is always safe to touch; a tap never starts work, starts a call, hangs up a call, or cancels a run.
-5. **One deliberate action to start work** — giving Nero a task is exactly one intentional act (submit the Ask input, or pick *Ask…* from the menu), routed to the reliable typed `turnRun`. Never a gesture, never voice-by-accident.
+5. **One deliberate action to start work** — giving Roro a task is exactly one intentional act (submit the Ask input, or pick *Ask…* from the menu), routed to the reliable typed `turnRun`. Never a gesture, never voice-by-accident.
 
 ## 4. The three surfaces
 
@@ -56,18 +56,18 @@ This law is **decidable for any future intent**: *Continuous-physical + reversib
 
 The same command set is reachable three ways (right-click Menu, Tray, and later a ⌘K palette) so **no capability is ever reachable only through a hidden gesture**. Items are **filtered and labelled by the cat's current state** (full table in §8):
 
-- **Ask Nero a task…** — focuses the Ask input (the killer trick; §5).
+- **Ask Roro a task…** — focuses the Ask input (the killer trick; §5).
 - **Talk** — toggle a voice conversation (§6). Off by default.
 - **Stop the run** — abort the in-flight executor run (`cancelTask`); shown **only while working**, with a confirm; **greyed in `thinking`** (matches the real "Stop is a lie before the executor registers" truth in `bootstrap.ts`).
 - **End call** — shown only while in-call; the labelled exit from a voice call.
 - **Mute / Unmute** — with current state shown (checkmark); keeps the ⌘⇧M global.
 - **Sleep / Do Not Disturb** — manual override of the automatic idle→asleep energy model.
-- **Let Nero see my screen…** — screen-vision consent toggle (deferred to Pillar 4; listed for completeness).
-- **What Nero knows…** — open the memory panel (deferred to Pillar 2).
-- **Customize Nero…** — name/appearance (deferred).
+- **Let Roro see my screen…** — screen-vision consent toggle (deferred to Pillar 4; listed for completeness).
+- **What Roro knows…** — open the memory panel (deferred to Pillar 2).
+- **Customize Roro…** — name/appearance (deferred).
 - **Open console** — the windowed surface (timeline, full prompt).
 - **Hide** — dismiss the window (≡ ⌘⇧Space).
-- **Quit Nero** — **Tray only** (never on the cat), plus ⌘Q.
+- **Quit Roro** — **Tray only** (never on the cat), plus ⌘Q.
 
 Each item shows its keyboard accelerator inline, so the Menu doubles as the self-documenting index of the shortcut layer.
 
@@ -77,7 +77,7 @@ Each item shows its keyboard accelerator inline, so the Menu doubles as the self
 |---|---|---|
 | **⌘⇧Space** | Summon / hide the window **+ focus the Ask input** | Exists (summon); extend to also focus Ask |
 | **⌘⇧M** | Mute / unmute | Exists |
-| **Esc** | Stop the run / dismiss the Ask input (only when Nero is focused) | New |
+| **Esc** | Stop the run / dismiss the Ask input (only when Roro is focused) | New |
 | **⌘K** | Command palette (the developer-native "do anything") | Later (Phase E) |
 | **⌘Q** | Quit | Standard |
 
@@ -87,12 +87,12 @@ Every shortcut has a visible twin in the Menu/Tray showing its accelerator — t
 
 **The single biggest fix.** The floating cat gets its **own task entry** so it no longer has to context-switch to the console window for its killer trick:
 
-- A **slim text affordance fades in just below the cat** on hover or summon (a one-line "Ask Nero…" input). It is a **separate element from the cat body** — so *tapping the cat = pet*, *clicking/typing the input = task*. No conflict.
+- A **slim text affordance fades in just below the cat** on hover or summon (a one-line "Ask Roro…" input). It is a **separate element from the cat body** — so *tapping the cat = pet*, *clicking/typing the input = task*. No conflict.
 - **Enter** dispatches the typed instruction to the reliable **`turnRun`** path (recall → decide → executor); the cat animates `thinking → working → done` and narrates, exactly as the console path does today.
 - It is **focused by ⌘⇧Space** (summon-and-task in one chord) and by the Menu's **Ask…** item.
 - **Mid-run**, submitting a new task surfaces **"Stop current & start this?"** — never silently queues or kills (honors the existing one-turn-at-a-time guard + Law 3).
 
-This corrects the reliability inversion: the **reliable typed path becomes the prominent, local, default** way to task Nero; voice becomes an opt-in.
+This corrects the reliability inversion: the **reliable typed path becomes the prominent, local, default** way to task Roro; voice becomes an opt-in.
 
 ## 6. Voice (Talk) — a deliberate toggle, off the body
 
@@ -141,7 +141,7 @@ Voice (Vapi) is deprioritized and historically flaky, so:
 
 Ship the planned Tray as the **always-available** home for ambient state and the actions that must never be a gesture. It mirrors the Menu command set and adds the things that need to work **when the cat is hidden or asleep**:
 
-- Show / Hide Nero · Sleep / Wake (DND) · Mute (with checkmark) · Let Nero see my screen… · What Nero knows… · Open console · Settings · **Quit Nero** (lives **only** here).
+- Show / Hide Roro · Sleep / Wake (DND) · Mute (with checkmark) · Let Roro see my screen… · What Roro knows… · Open console · Settings · **Quit Roro** (lives **only** here).
 - Left-click the Tray icon opens this menu (macOS convention); show/hide stays on ⌘⇧Space.
 - The Tray makes a hidden floating window discoverable again and is the anti-Clippy escape hatch (there is *always* a one-action way out).
 

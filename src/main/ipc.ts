@@ -41,7 +41,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(CH.micStatus, (): MicStatus => getMicStatus());
   ipcMain.handle(CH.micRequest, (): Promise<MicStatus> => ensureMicAccess());
 
-  // ---- Window chrome (floating Nero) ----
+  // ---- Window chrome (floating Roro) ----
   ipcMain.handle(
     CH.windowMoveBy,
     (event, delta: { dx?: unknown; dy?: unknown }): void => {

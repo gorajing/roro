@@ -33,7 +33,7 @@ export function createWindow(): BrowserWindow {
   };
 
   const mainWindow = new BrowserWindow({
-    title: 'Nero',
+    title: 'Roro',
     width: FLOATING_WINDOW_FLAG ? FLOATING_WINDOW_SIZE.width : 1024,
     height: FLOATING_WINDOW_FLAG ? FLOATING_WINDOW_SIZE.height : 768,
     frame: !FLOATING_WINDOW_FLAG,

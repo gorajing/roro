@@ -1,8 +1,8 @@
-# Nero
+# Roro
 
 **A black pixel-cat coding agent with a face, a voice, and a memory.**
 
-Nero is an Electron app where an animated black pixel cat listens to a task,
+Roro is an Electron app where an animated black pixel cat listens to a task,
 thinks through it with Nebius, drives a real coding agent, narrates the work as
 it happens, and stores what happened in Insforge memory.
 
@@ -12,14 +12,14 @@ Built for the June 19 Midsummer Multimodal AI Hackathon.
 ask -> recall memory -> think on Nebius -> run Codex or Claude -> remember the result
 ```
 
-Post-demo, the product direction is pet-first: Nero should become the best
+Post-demo, the product direction is pet-first: Roro should become the best
 desktop AI pet, with coding as one useful trick. See
 [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md).
 
 ## Why This Exists
 
 Most coding agents still feel like command-line tools with better autocomplete.
-Nero makes the agent loop visible and social:
+Roro makes the agent loop visible and social:
 
 - the cat changes posture when the system is listening, thinking, working, done,
   or stuck
@@ -106,10 +106,10 @@ right-click to mute.** The cat's body carries only affection + move — talk and
 tasking live off the body (see the interaction design spec at
 [`docs/superpowers/specs/2026-06-20-nero-interaction-design.md`](docs/superpowers/specs/2026-06-20-nero-interaction-design.md)).
 The floating window stays above normal windows and across macOS Spaces,
-including full-screen apps. Use the normal app window when you need to give Nero a
+including full-screen apps. Use the normal app window when you need to give Roro a
 task (typed prompt), call controls, captions, and the action timeline.
 
-Nero currently keeps the `COMPANION_*` environment-variable prefix because those
+Roro currently keeps the `COMPANION_*` environment-variable prefix because those
 names are part of the existing IPC/config surface.
 
 ## Configuration

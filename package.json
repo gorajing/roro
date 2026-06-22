@@ -1,6 +1,6 @@
 {
-  "name": "nero",
-  "productName": "Nero",
+  "name": "roro",
+  "productName": "Roro",
   "version": "1.0.0",
   "description": "A pixel-cat coding agent with a face, a voice, and a memory.",
   "main": ".vite/build/main.js",

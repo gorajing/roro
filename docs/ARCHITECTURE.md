@@ -1,4 +1,4 @@
-# Nero — Recommended Architecture (fresh, 2026)
+# Roro — Recommended Architecture (fresh, 2026)
 
 > ⚠️ **SUPERSEDED (2026-06-21).** This document is **background research**, not the governing plan. The current, governing design is **[`docs/superpowers/specs/2026-06-21-nero-ultimate-ux-design-PROPOSAL.md`](superpowers/specs/2026-06-21-nero-ultimate-ux-design-PROPOSAL.md)** — the adopted v2 spine. Follow that spec for all near-term decisions. The deferred-but-still-valid directions from *this* doc (provider seams at each layer, the free-local ↔ paid-hosted adapter model, the Postgres/pgvector storage swap, E2B hosted execution, cross-agent MCP) are tracked in the v2 spine under *Explicit Cuts/Non-Goals* and *Open Forks* — revisit them only after the memory-first wedge (A.5→B) is proven. Several specifics below — voice-first emphasis, MoodCore, PixiJS v8 frame timing, menu/tray — were explicitly **cut** by the v2 spine and are **not** decisions.
 
@@ -27,7 +27,7 @@ AuthProvider       session / owner_id
 
 | Layer | Pick | Why (one line) | Confidence |
 |---|---|---|---|
-| **Desktop shell** | **Stay on Electron 42** (forge + Vite) | Tauri's macOS WKWebView *still* breaks the exact 3 things Nero needs — mic, screen-capture, transparent click-through — in 2026. | **High** |
+| **Desktop shell** | **Stay on Electron 42** (forge + Vite) | Tauri's macOS WKWebView *still* breaks the exact 3 things Roro needs — mic, screen-capture, transparent click-through — in 2026. | **High** |
 | **Avatar render** | **Procedural cat on PixiJS v8** + an event-driven **frame governor** | v8 static frame ≈ 0.12ms (vs 21ms v7); kill the rAF when occluded → near-zero idle battery. | **High** |
 | **Agent exec (local)** | **Claude Agent SDK + Codex SDK** | Kills the hardcoded-path / `--verbose`-coupling / PATH-strip footguns; emits the same event shapes the mappers already parse. | **High** |
 | **Agent exec (hosted)** | **E2B Firecracker sandboxes** running identical `claude --output-format stream-json` | microVM isolation for a stranger's repo; snapshot/resume in 5–30ms = "feels instant." | **High** |
@@ -82,8 +82,8 @@ AuthProvider       session / owner_id
 **Free / open-source client (local-first, BYO everything):**
 - The whole Electron client + the procedural cat + personality/mood + presence.
 - Local coding agent via the SDKs (your own Codex/Claude auth). Code never leaves the machine.
-- Memory + the typed profile in a local **embedded-Postgres (PGlite) file** you own/export/delete; embeddings on-device (Transformers.js). At Nero's scale, recall is **brute-force cosine — no ANN index needed**.
-- Brain = your own key or local **Ollama**. The network tab shows only your chosen LLM, nothing to Nero's servers.
+- Memory + the typed profile in a local **embedded-Postgres (PGlite) file** you own/export/delete; embeddings on-device (Transformers.js). At Roro's scale, recall is **brute-force cosine — no ANN index needed**.
+- Brain = your own key or local **Ollama**. The network tab shows only your chosen LLM, nothing to Roro's servers.
 - No account, works offline-ish. *This is the funnel and the community — and it quietly builds local profiles that create the upgrade pull.*
 
 **Paid hosted tier (the un-copyable layer):**
@@ -134,15 +134,15 @@ Most picks are high-confidence "keep/boring/proven." The genuine unknowns:
 - **Electron, not Tauri** — verified the team's original reason still holds: Tauri 2.x WKWebView mic (`tauri#11951/#10898`), screen-capture (`wry#1101`), and transparency/click-through (`#13415/#11461`) are *still* broken/workaround-only on macOS in 2026. Native Swift is the best *resident* (~15MB idle) but forks the cat and kills cross-platform — a v2 rewrite, not now.
 - **PixiJS v8 + frame governor** — the battery problem is the 60fps treadmill, not the renderer; v8 gives first-class `app.stop()/maxFPS` to escape it, and a static frame is ~free. Mood = a continuous vector modulating pose params, never per-mood animation assets.
 - **Agent SDKs (local) + E2B (hosted)** — the SDKs delete your worst footguns and emit the shapes you already map; E2B runs the *identical* `claude` stream so one mapper feeds both tiers; Firecracker snapshot-resume is the "instant" path a pet needs.
-- **Postgres/pgvector everywhere, moat owned** — one open-standard engine runs embedded (PGlite) *and* hosted, so the moat exits any vendor with `pg_dump`; Redis is demoted to swappable plumbing (Streams + LangCache). The typed profile + `MemoryDistiller` are your code/JSON; the DB is a ~200-line adapter. At Nero's scale, **brute-force cosine needs no ANN index**, which de-risks the embedded vector choice entirely. (libSQL/SQLite-local + Postgres-hosted is the equally-portable fallback if PGlite's Electron durability disappoints.)
-- **better-auth + SSE/Redis-Streams** — same OSS auth lib in both modes (Clerk/WorkOS are hosted-only, can't serve the local tier); SSE gives free reconnect+replay; CRDT sync solves a conflict problem Nero doesn't have.
+- **Postgres/pgvector everywhere, moat owned** — one open-standard engine runs embedded (PGlite) *and* hosted, so the moat exits any vendor with `pg_dump`; Redis is demoted to swappable plumbing (Streams + LangCache). The typed profile + `MemoryDistiller` are your code/JSON; the DB is a ~200-line adapter. At Roro's scale, **brute-force cosine needs no ANN index**, which de-risks the embedded vector choice entirely. (libSQL/SQLite-local + Postgres-hosted is the equally-portable fallback if PGlite's Electron durability disappoints.)
+- **better-auth + SSE/Redis-Streams** — same OSS auth lib in both modes (Clerk/WorkOS are hosted-only, can't serve the local tier); SSE gives free reconnect+replay; CRDT sync solves a conflict problem Roro doesn't have.
 - **Haiku 4.5 brain** — the brain is a tiny latency-critical structured call (the *intelligence* lives in the executor), so fast+cheap+native-JSON beats a flagship; BYO/Ollama keeps the local tier honest; LangCache cuts the repetitive-chatter bill.
 
 ---
 
 ## Cross-agent memory exposure (MCP + markdown mirror) — a power-feature, not the headline
 
-The owned memory (`StorageProvider` + typed profile + `MemoryDistiller`) is exposed so **every** coding agent can use it, not just Nero — turning the moat into a churn-proof, cross-agent asset (agents come and go; your profile persists across all of them). This is **additive (~1 week as a thin facade over the existing memory layer)**, not a rebuild.
+The owned memory (`StorageProvider` + typed profile + `MemoryDistiller`) is exposed so **every** coding agent can use it, not just Roro — turning the moat into a churn-proof, cross-agent asset (agents come and go; your profile persists across all of them). This is **additive (~1 week as a thin facade over the existing memory layer)**, not a rebuild.
 
 - **One local stdio MCP server**, deliberately tiny — 4 tools: `search_memory` · `get_profile(scope)` · `add_episode` · `record_decision` — so it survives the MCP context-bloat tax (5–10 servers ≈ 50–67k tokens; design for Tool-Search deferral, GA Feb 2026; never auto-dump the profile). External agents are **append-only**: they emit episodes tagged by `source_agent`; the **`MemoryDistiller` stays the *sole* promotion authority.** "Many writers, one promoter" — so multi-agent writes need **no** distributed-write engine.
 - **A markdown / `AGENTS.md` mirror** (size-capped <150 lines; Codex truncates >32KiB) — a zero-integration path any file-reading agent gets for free, and the plaintext privacy proof for devs who read the network tab.
@@ -150,6 +150,6 @@ The owned memory (`StorageProvider` + typed profile + `MemoryDistiller`) is expo
 - **Targets:** Claude Code + Codex (the validated devs; both now expose a `UserPromptSubmit` hook for silent profile injection — one shim, used twice). OpenClaw / Hermes are MCP-reachable "also-works" bullets, **not** build targets — they're messaging/personal agents (Steinberger / Nous Research), not the coding-IDE audience that pulled the repo.
 - **Hosted mode** = the same tool contract over Streamable HTTP + OAuth (owner-scoped) for cross-device sync. Identical contract; only transport + `StorageProvider` swap.
 
-**Positioning discipline (load-bearing):** the headline stays *"the coding pet that remembers you"*; cross-agent is *sentence two* ("…and your profile travels, so every agent gets smarter — not just Nero"). **"Memory API" is banned positioning** — that lane is a 2026 red ocean (Mem0 $24M, Supermemory, Zep, Cloudflare Agent Memory, and **ClawMem**, which already ships Nero's *bare* typed-memory-cross-agent moat **minus the pet**). So **embodiment is Nero's only uncontested surface** — tie memory to the pet (mood driven by the profile) and out-craft on personality/animation, which infra teams are structurally slow to fake.
+**Positioning discipline (load-bearing):** the headline stays *"the coding pet that remembers you"*; cross-agent is *sentence two* ("…and your profile travels, so every agent gets smarter — not just Roro"). **"Memory API" is banned positioning** — that lane is a 2026 red ocean (Mem0 $24M, Supermemory, Zep, Cloudflare Agent Memory, and **ClawMem**, which already ships Roro's *bare* typed-memory-cross-agent moat **minus the pet**). So **embodiment is Roro's only uncontested surface** — tie memory to the pet (mood driven by the profile) and out-craft on personality/animation, which infra teams are structurally slow to fake.
 
 **Sequencing:** Milestone 1 = pet + ONE agent + persistent local memory (the validated demo). Cross-agent exposure = Milestone 2 fast-follow, demoed *live* ("watch your profile follow you from Claude Code into Codex"), never merely claimed. Monetize on **sync + team-shared profile/convention inheritance** (the flagged high-willingness-to-pay feature), keeping solo local memory free to protect the OSS/local-first wedge.

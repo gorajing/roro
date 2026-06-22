@@ -84,7 +84,7 @@ export async function bootstrap(): Promise<void> {
     driver.setMuted(next);
     if (voice.isActive) voice.setMuted(next);
     if (muteBtn) muteBtn.textContent = next ? 'Unmute' : 'Mute';
-    setStatus(status ?? (next ? 'Nero mic muted. Judge-talk is ignored.' : 'Nero mic live.'));
+    setStatus(status ?? (next ? 'Roro mic muted. Judge-talk is ignored.' : 'Roro mic live.'));
   };
 
   const voice = createVoice({
@@ -99,9 +99,9 @@ export async function bootstrap(): Promise<void> {
         active,
         active
           ? micMuted
-            ? 'Call active. Nero mic muted.'
-            : 'Call active. Speak to Nero.'
-          : 'Call ended. Click Nero to talk.',
+            ? 'Call active. Roro mic muted.'
+            : 'Call active. Speak to Roro.'
+          : 'Call ended. Click Roro to talk.',
       );
       if (active) voice.setMuted(micMuted);
     },
@@ -120,7 +120,7 @@ export async function bootstrap(): Promise<void> {
       setStatus('Starting call…');
       await voice.startCompanionCall();
       voice.setMuted(micMuted);
-      setCallActive(true, micMuted ? 'Call active. Nero mic muted.' : 'Call active. Speak to Nero.');
+      setCallActive(true, micMuted ? 'Call active. Roro mic muted.' : 'Call active. Speak to Roro.');
     } catch (e) {
       setStatus(`Could not start call: ${describeError(e)}`);
     } finally {
@@ -135,8 +135,8 @@ export async function bootstrap(): Promise<void> {
 
   if (config.floatingWindow) {
     canvas.setAttribute('role', 'button');
-    canvas.setAttribute('aria-label', 'Start talking to Nero');
-    canvas.title = 'Click or hold to pet Nero. Drag to move. Right-click or M to mute.';
+    canvas.setAttribute('aria-label', 'Start talking to Roro');
+    canvas.title = 'Click or hold to pet Roro. Drag to move. Right-click or M to mute.';
     canvas.style.cursor = 'grab';
     // The cat's body carries ONLY affection + move (interaction spec §4.1). Talk
     // is no longer a body gesture — it moves to the menu/console (Phase B/C).
@@ -208,7 +208,7 @@ export async function bootstrap(): Promise<void> {
 
     const companion = getCompanion();
     if (!companion?.turnRun) {
-      setStatus('Nero bridge unavailable (window.companion.turnRun missing).');
+      setStatus('Roro bridge unavailable (window.companion.turnRun missing).');
       return;
     }
 

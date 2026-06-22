@@ -67,7 +67,7 @@ function notifyJobDone(ok: boolean, detail?: string): void {
       (detail ?? '').replace(/\s+/g, ' ').trim().slice(0, 180) ||
       (ok ? 'The coding agent finished.' : 'The coding agent stopped with an error.');
     new Notification({
-      title: ok ? '✓ Nero — job complete' : '✗ Nero — job failed',
+      title: ok ? '✓ Roro — job complete' : '✗ Roro — job failed',
       body,
     }).show();
   } catch (err) {

@@ -1,4 +1,4 @@
-# Nero Voice: Lead Architect's Synthesis & Recommendation (Hardened v2)
+# Roro Voice: Lead Architect's Synthesis & Recommendation (Hardened v2)
 
 *One coherent ruling, reconciling four evaluations and three adversarial reviews. Where the draft asserted finished work that the repo does not contain, the claim is corrected to "unbuilt prerequisite" and re-costed. Every concrete vendor number is normalized to a single metric or marked unbenchmarked. Code-grounded claims cite the file.*
 
@@ -8,9 +8,9 @@ The four evaluations converge on three load-bearing invariants: **mouth-not-brai
 
 ## 1. THE VOICE THESIS
 
-Voice is the **embodiment of "beyond chat" — the way you *direct* Nero — but it is not the moat; the moat is memory.** Voice's job is to make that memory feel like a colleague who knows you, not a chatbox with a face. Concretely, "beyond chat" means Nero is a **voice-forward, type-default ambient collaborator**: you steer a long-running agent by *talking* to a creature that watches your work and remembers you across launches, and you fall back to silent typing when the room demands it — and the *same* memory-grounded brain answers either way.
+Voice is the **embodiment of "beyond chat" — the way you *direct* Roro — but it is not the moat; the moat is memory.** Voice's job is to make that memory feel like a colleague who knows you, not a chatbox with a face. Concretely, "beyond chat" means Roro is a **voice-forward, type-default ambient collaborator**: you steer a long-running agent by *talking* to a creature that watches your work and remembers you across launches, and you fall back to silent typing when the room demands it — and the *same* memory-grounded brain answers either way.
 
-**The magic moment (one line):** *You say "Nero, fix the failing test like last time" — its ears snap up before any network, and it answers in its own voice with a plan that recalls what you did last week, then does it.*
+**The magic moment (one line):** *You say "Roro, fix the failing test like last time" — its ears snap up before any network, and it answers in its own voice with a plan that recalls what you did last week, then does it.*
 
 This thesis is unchanged from the draft. What changed is the honesty about how far the code is from delivering it (Section 8).
 

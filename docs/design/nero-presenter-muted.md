@@ -1,11 +1,11 @@
-# Nero Presenter-Muted Design Reference
+# Roro Presenter-Muted Design Reference
 
-This is a saved design reference only. It is not the live Nero sprite sheet.
+This is a saved design reference only. It is not the live Roro sprite sheet.
 
-Use this for the demo mute state where the presenter/user input is muted, but Nero
+Use this for the demo mute state where the presenter/user input is muted, but Roro
 itself can still think, work, and finish agent tasks.
 
-![Presenter-muted Nero concepts](./nero-presenter-muted-concepts.svg)
+![Presenter-muted Roro concepts](./nero-presenter-muted-concepts.svg)
 
 ## Floating Badge Experiments
 
@@ -14,13 +14,13 @@ These are saved as comparison concepts, not live UI.
 ![Floating mute badge concepts](./nero-floating-mute-badges.svg)
 
 - `input-muted badge`: best for the demo mute state. It means the presenter mic
-  is gated while Nero can keep thinking, coding, and finishing.
-- `speaker-muted badge`: useful only if we want to show Nero/audio output is
-  quiet. It is readable, but it can imply Nero cannot speak.
+  is gated while Roro can keep thinking, coding, and finishing.
+- `speaker-muted badge`: useful only if we want to show Roro/audio output is
+  quiet. It is readable, but it can imply Roro cannot speak.
 
 The strongest implementation path is probably the input-muted badge as the
 default, with the speaker-muted badge saved as a separate concept for "quiet
-Nero" or output mute later.
+Roro" or output mute later.
 
 ## Exact Speaker Reference
 
@@ -73,7 +73,7 @@ Prefer language like:
 Avoid language like:
 
 - agent muted
-- Nero stopped
+- Roro stopped
 - error
 - disabled
 

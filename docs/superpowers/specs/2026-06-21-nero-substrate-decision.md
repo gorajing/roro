@@ -1,4 +1,4 @@
-# Nero Substrate Decision — Lead Architect Final Recommendation (Hardened)
+# Roro Substrate Decision — Lead Architect Final Recommendation (Hardened)
 
 > Output of a 9-agent substrate evaluation (brain / embeddings / memory-host / voice) hardened against 3 adversarial critics. Companion to the v2 spine (`2026-06-21-nero-ultimate-ux-design-PROPOSAL.md`) and the A.5 plan (`../plans/2026-06-21-nero-a5-memory-spine.md`).
 
@@ -45,7 +45,7 @@ Hosted brain = **Claude Haiku 4.5** is the right eventual default (fast TTFT, GA
 
 ## 5. THE HOST — Keep Insforge for M1
 
-All access is behind `insforgeFetch()` + three PostgREST RPCs over open-source Postgres+pgvector; `pg_dump` exits and the RPC SQL replays on Neon/Supabase/self-host (~200-line adapter + dump/restore, **not** a re-embed). At Nero's scale recall is brute-force cosine — no ANN forcing-function. Insforge is a vendor-maturity liability *in the abstract* (public launch Nov 2025, ~5k stars) but **contained by the thin adapter**; **Neon is the pre-built later target**. Two corrections to defer-PGlite framing: PGlite has a named durability spike (single-writer WASM, WAL-corruption-on-force-quit, a macOS 26 init crash) that must run before committing; and "free→Pro is a `pg_dump` import" is wrong — because local≠hosted geometry, **free→Pro is a re-embed** (the stamp makes it correct). Keep a scheduled `pg_dump` + the RPC SQL in `db/migrations/` as cheap insurance.
+All access is behind `insforgeFetch()` + three PostgREST RPCs over open-source Postgres+pgvector; `pg_dump` exits and the RPC SQL replays on Neon/Supabase/self-host (~200-line adapter + dump/restore, **not** a re-embed). At Roro's scale recall is brute-force cosine — no ANN forcing-function. Insforge is a vendor-maturity liability *in the abstract* (public launch Nov 2025, ~5k stars) but **contained by the thin adapter**; **Neon is the pre-built later target**. Two corrections to defer-PGlite framing: PGlite has a named durability spike (single-writer WASM, WAL-corruption-on-force-quit, a macOS 26 init crash) that must run before committing; and "free→Pro is a `pg_dump` import" is wrong — because local≠hosted geometry, **free→Pro is a re-embed** (the stamp makes it correct). Keep a scheduled `pg_dump` + the RPC SQL in `db/migrations/` as cheap insurance.
 
 ## 6. VOICE — Deferred to the dedicated voice pass
 
