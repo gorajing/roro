@@ -164,11 +164,11 @@ async function recallContext(
       k: RECALL_K,
       minSimilarity: RECALL_MIN_SIMILARITY,
     });
-    // Visible memory beat: recall emits no ActionEvent of its own, so surface it as a message so
-    // the memory round-trip is legible on the timeline/captions (rides the existing message
-    // wiring; no frozen-union change). Stays kind:'message' in A.5; migrates to kind:'status' in C1.
+    // Visible memory beat: recall emits no ActionEvent of its own, so surface it as a `status` event
+    // (C1's one union addition) — a legible non-action beat, never assistant text — so the memory
+    // round-trip shows on the timeline/captions and drives the memory avatar cue.
     pushEvent({
-      kind: 'message',
+      kind: 'status',
       runId,
       text: `Memory: ${factCount} known ${factCount === 1 ? 'fact' : 'facts'}, ${episodeCount} related ${episodeCount === 1 ? 'item' : 'items'}`,
       ts: Date.now(),
