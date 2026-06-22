@@ -15,6 +15,7 @@ import { createCharacter } from './character/driver';
 import { CaptionPanel, ActionTimeline } from './character/captions';
 import { subscribeActionEvents } from './events/actionEvents';
 import { mountFloatingAsk } from './ask/floatingAsk';
+import { mountConfirmChip } from './confirm/confirmChip';
 import { getCompanion } from './events/bridge';
 import { createVoice } from './voice';
 import type { VapiToolCall } from './voice/messages';
@@ -51,6 +52,9 @@ export async function bootstrap(): Promise<void> {
   // Phase B: the floating Ask input + Stop pill (the typed magic-moment surface on the cat body).
   // Lives outside #overlay; only visible in floating mode. Its lifecycle rides the push stream.
   mountFloatingAsk({ driver, sessionId });
+
+  // Phase C1: the destructive-confirm chip (a spoken/typed word can't approve `rm -rf`).
+  mountConfirmChip();
 
   // Aliveness: the cat watches the cursor (gaze eased toward the pointer). Gaze
   // ONLY — cursor movement must NOT keep the cat awake; poke is reserved for real

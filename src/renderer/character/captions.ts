@@ -56,6 +56,8 @@ function summarizeEvent(e: ActionEvent): { label: string; detail: string; status
       return { label: 'message.delta', detail: e.text };
     case 'message':
       return { label: 'message', detail: e.text };
+    case 'status':
+      return { label: 'status', detail: e.text };
     case 'run.completed':
       return { label: 'run.completed', detail: e.finalText ?? '', status: 'completed' };
     case 'run.failed':

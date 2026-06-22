@@ -25,14 +25,31 @@ import { loadBrain, loadMemory, loadVision } from './siblings';
 import { getOwnerId } from './identity';
 import { buildRecallContext } from './memoryContext';
 import { extractAndStoreFact } from './factStore';
+import { classifyDestructive } from './destructive';
+import { requestConfirm, resolveConfirm } from './confirmGate';
+import { isCleanTree } from './gitTree';
 import type { FactExtractInput } from '../brain/extractFact';
 
 const RECALL_K = 5;
 const RECALL_MIN_SIMILARITY = 0.3;
 const DEFAULT_AGENT: AgentKind = 'codex';
+/** How long after an abort we force a terminal event so Stop is provably terminal. */
+const STOP_WATCHDOG_MS = 1500;
 
 /** Holds the active AbortController per runId so cancelTask can target a specific run. */
 const activeRuns = new Map<string, AbortController>();
+/** Turns the user preempted (Stop) before the executor registered — honored at the decide/confirm
+ *  boundary and again right before dispatch, so a barge-in during decide/confirm never runs. */
+const preemptedTurns = new Set<string>();
+/** Every turn from mint to runEnd (covers decide/confirm/exec). Stop is only honored for an id in
+ *  this set, which bounds preemptedTurns against stale/garbage ids from the public cancelTask IPC. */
+const inFlightTurns = new Set<string>();
+/** The most recently minted turn/task runId — the no-id Stop fallback, which must also reach a turn
+ *  still in decide/confirm (when activeRuns is still empty). */
+let lastTurnId: string | null = null;
+/** Held synchronously across the clean-tree-check → dispatch critical section so that section can't
+ *  interleave: it guarantees a destructive run's clean-tree result is fresh at dispatch (no TOCTOU). */
+let dispatchLock = false;
 
 /** Resolve the scratch git repo the coding agents run in. */
 function workdir(): string {
@@ -48,7 +65,67 @@ function pushEvent(e: ActionEvent): void {
 }
 
 function pushRunEnd(runId: string): void {
+  preemptedTurns.delete(runId);
+  inFlightTurns.delete(runId);
   getWindow()?.webContents.send(CH.runEnd, { runId });
+}
+
+/** Push the destructive-confirm request to the renderer (it shows a confirm chip). */
+function pushConfirmRequest(req: { runId: string; summary: string }): void {
+  getWindow()?.webContents.send(CH.confirmRequest, req);
+}
+
+/** Emit a synthetic terminal failure (preempt / stop) + runEnd for a turn. */
+function pushStopped(runId: string, error = 'stopped'): void {
+  pushEvent({ kind: 'run.failed', runId, ok: false, error, ts: Date.now() });
+  pushRunEnd(runId);
+}
+
+/**
+ * Step 1 of the destructive gate (used by BOTH run_agent and the brain-bypassing runTask): classify
+ * the task, and if dangerous require explicit approval via the dedicated CH.confirmResolve channel
+ * (15s default-DENY). NO lock is held here (the confirm can take up to 15s). The clean-tree check is
+ * NOT here — it's done inside guardedDispatch so it's fresh at dispatch (see that fn).
+ */
+async function confirmIfDestructive(
+  runId: string,
+  task: string,
+): Promise<{ ok: boolean; destructive: boolean; reason?: string }> {
+  const verdict = classifyDestructive(task);
+  if (!verdict.destructive) return { ok: true, destructive: false };
+  const approved = await requestConfirm(runId, verdict.reason ?? 'destructive command', pushConfirmRequest);
+  if (!approved) return { ok: false, destructive: true, reason: `it looked destructive (${verdict.reason}) and wasn't approved` };
+  return { ok: true, destructive: true };
+}
+
+/**
+ * Step 2: the lock-protected single-executor dispatch. Holds dispatchLock across the (destructive)
+ * clean-tree check AND the synchronous dispatch(), so no other turn can start an executor in between
+ * — the clean-tree result is therefore fresh at dispatch (closes the TOCTOU), and only one coding
+ * agent ever runs on the repo at a time. Returns false (and emits a terminal) if it can't dispatch.
+ */
+async function guardedDispatch(runId: string, destructive: boolean, dispatch: () => void): Promise<boolean> {
+  if (dispatchLock || activeRuns.size > 0) {
+    emitNarration(runId, "I'm already working on something — Stop that first, or wait for it to finish.");
+    pushRunEnd(runId);
+    return false;
+  }
+  dispatchLock = true;
+  try {
+    if (destructive && !(await isCleanTree(workdir()))) {
+      emitNarration(runId, "Skipping that — the git tree isn't clean, so a destructive step couldn't be safely undone — commit or stash first.");
+      pushRunEnd(runId);
+      return false;
+    }
+    if (preemptedTurns.has(runId)) {
+      pushStopped(runId);
+      return false;
+    }
+    dispatch(); // registers activeRuns synchronously before releasing the lock
+    return true;
+  } finally {
+    dispatchLock = false;
+  }
 }
 
 function pushReasoning(delta: string): void {
@@ -117,6 +194,8 @@ function summarizeEvent(e: ActionEvent): string {
       return `message: ${e.text.slice(0, 200)}`;
     case 'message.delta':
       return e.text;
+    case 'status':
+      return `status: ${e.text.slice(0, 200)}`;
     case 'run.completed':
       return `run completed${e.finalText ? `: ${e.finalText.slice(0, 200)}` : ''}`;
     case 'run.failed':
@@ -164,11 +243,11 @@ async function recallContext(
       k: RECALL_K,
       minSimilarity: RECALL_MIN_SIMILARITY,
     });
-    // Visible memory beat: recall emits no ActionEvent of its own, so surface it as a message so
-    // the memory round-trip is legible on the timeline/captions (rides the existing message
-    // wiring; no frozen-union change). Stays kind:'message' in A.5; migrates to kind:'status' in C1.
+    // Visible memory beat: recall emits no ActionEvent of its own, so surface it as a `status` event
+    // (C1's one union addition) — a legible non-action beat, never assistant text — so the memory
+    // round-trip shows on the timeline/captions and drives the memory avatar cue.
     pushEvent({
-      kind: 'message',
+      kind: 'status',
       runId,
       text: `Memory: ${factCount} known ${factCount === 1 ? 'fact' : 'facts'}, ${episodeCount} related ${episodeCount === 1 ? 'item' : 'items'}`,
       ts: Date.now(),
@@ -207,7 +286,46 @@ async function dispatchExecutor(
 ): Promise<void> {
   const controller = new AbortController();
   let terminalSeen = false;
+  let uiEnded = false;
+  let slotReleased = false;
+  let watchdog: ReturnType<typeof setTimeout> | null = null;
   activeRuns.set(runId, controller);
+
+  // UI-terminal: push the terminal failure (if forced) + runEnd exactly once. Does NOT free the
+  // executor slot — a watchdog-forced Stop is terminal to the USER while the possibly-still-alive
+  // child keeps the single-executor slot, so guardedDispatch won't start a concurrent run.
+  const endUi = (forcedError?: string): void => {
+    if (uiEnded) return;
+    uiEnded = true;
+    if (forcedError && !terminalSeen) {
+      pushEvent({ kind: 'run.failed', runId, ok: false, error: forcedError, ts: Date.now() });
+      notifyJobDone(false, forcedError);
+    }
+    pushRunEnd(runId);
+  };
+  // Free the executor slot ONLY when the stream has truly ended (the child is confirmed gone), so a
+  // new run never starts against a repo an orphaned child may still be mutating.
+  const releaseSlot = (): void => {
+    if (slotReleased) return;
+    slotReleased = true;
+    if (watchdog) {
+      clearTimeout(watchdog);
+      watchdog = null;
+    }
+    activeRuns.delete(runId);
+  };
+
+  // Stop watchdog: if the child doesn't honor abort within STOP_WATCHDOG_MS, make the run terminal to
+  // the UI (so Stop is provably terminal). It does NOT free the slot — the slot frees when the stream
+  // truly ends. (The executor adapter SIGKILLs its child on abort, so the stream normally ends fast.)
+  controller.signal.addEventListener(
+    'abort',
+    () => {
+      watchdog = setTimeout(() => endUi('stopped'), STOP_WATCHDOG_MS);
+    },
+    { once: true },
+  );
+
   try {
     const executor = getExecutor(agent);
     for await (const ev of executor.run({
@@ -216,12 +334,21 @@ async function dispatchExecutor(
       agent,
       signal: controller.signal,
     })) {
-      pushEvent(ev);
+      // Already terminal (watchdog fired): DROP late events but keep DRAINING the stream until it
+      // truly ends, so releaseSlot (in finally) only frees the single-executor slot once the child
+      // has actually exited (the abort signal kills it). Breaking here would free the slot while an
+      // aborted-but-slow child is still alive, admitting a concurrent run against the same repo.
+      if (uiEnded) continue;
+      // Re-stamp to the orchestrator's runId — the executors mint their OWN run ids, but activeRuns
+      // (and so Stop/cancelTask) is keyed by THIS runId. Without this, a targeted Stop from the
+      // renderer (which sees the event's runId) never finds the controller. One id per turn.
+      const stamped = { ...ev, runId } as ActionEvent;
+      pushEvent(stamped);
       // Native "job done" notification on terminal events — visible even when the
       // window is hidden or in floating mode.
-      if (ev.kind === 'run.completed' || ev.kind === 'run.failed') {
+      if (stamped.kind === 'run.completed' || stamped.kind === 'run.failed') {
         terminalSeen = true;
-        notifyJobDone(ev.kind === 'run.completed', terminalEventText(ev));
+        notifyJobDone(stamped.kind === 'run.completed', terminalEventText(stamped));
         // Off-critical-path: extract AT MOST one durable fact from this turn (supersede-not-
         // overwrite). Fire-and-forget; this survives the Phase-B dispatch-return change.
         if (factCtx) {
@@ -229,14 +356,14 @@ async function dispatchExecutor(
             transcript: factCtx.transcript,
             narration: factCtx.narration,
             task: factCtx.task,
-            outcome: ev.kind === 'run.completed' ? 'completed' : 'failed',
+            outcome: stamped.kind === 'run.completed' ? 'completed' : 'failed',
           });
         }
       }
       // Fire-and-forget memory persistence so it never stalls the event stream.
-      void rememberEvent(sessionId, ev);
+      void rememberEvent(sessionId, stamped);
     }
-    if (!terminalSeen && !controller.signal.aborted) {
+    if (!terminalSeen && !uiEnded && !controller.signal.aborted) {
       const completed: ActionEvent = {
         kind: 'run.completed',
         runId,
@@ -251,17 +378,19 @@ async function dispatchExecutor(
   } catch (err) {
     // The executors normally translate failures into a run.failed event, but guard the
     // for-await itself so a thrown error still produces a terminal event + runEnd.
-    pushEvent({
-      kind: 'run.failed',
-      runId,
-      ok: false,
-      error: (err as Error).message,
-      ts: Date.now(),
-    });
-    notifyJobDone(false, (err as Error).message);
+    if (!terminalSeen && !uiEnded) {
+      pushEvent({
+        kind: 'run.failed',
+        runId,
+        ok: false,
+        error: (err as Error).message,
+        ts: Date.now(),
+      });
+      notifyJobDone(false, (err as Error).message);
+    }
   } finally {
-    activeRuns.delete(runId);
-    pushRunEnd(runId);
+    releaseSlot();
+    endUi();
   }
 }
 
@@ -272,6 +401,8 @@ async function dispatchExecutor(
 export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
   const { transcript, sessionId } = input;
   const runId = newRunId();
+  lastTurnId = runId;
+  inFlightTurns.add(runId);
 
   // Recall BEFORE storing this turn's transcript so the query isn't matched
   // against itself.
@@ -303,6 +434,12 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
       ts: Date.now(),
     });
     pushRunEnd(runId);
+    return { runId };
+  }
+
+  // Pre-executor preempt: a Stop/barge-in that arrived during decide is honored before we act.
+  if (preemptedTurns.has(runId)) {
+    pushStopped(runId);
     return { runId };
   }
 
@@ -379,6 +516,11 @@ async function actOnDecision(
         pushRunEnd(runId);
         return;
       }
+      // Honor a Stop that arrived during the vision capture / second decide before recursing.
+      if (preemptedTurns.has(runId)) {
+        pushStopped(runId);
+        return;
+      }
       await actOnDecision(runId, input, next, /* screenAlreadyCaptured */ true, recalledMemory);
       return;
     }
@@ -392,14 +534,28 @@ async function actOnDecision(
           : transcript;
       const agent: AgentKind =
         decision.args.agent === 'claude' ? 'claude' : DEFAULT_AGENT;
-      // Resolve at DISPATCH: hand the executor off but DON'T await its stream. The action stream
-      // arrives over push channels and the AbortController is registered synchronously at the top
-      // of dispatchExecutor, so Stop / preempt / barge-in stay wireable. turnRun returns {runId}
-      // now instead of blocking until the run finishes.
-      void dispatchExecutor(runId, sessionId, task, agent, {
-        transcript,
-        narration: decision.narration,
-        task,
+
+      // C1 destructive-confirm gate (BEFORE dispatch). A spoken/typed word can NEVER approve —
+      // approval is only the dedicated CH.confirmResolve channel; 15s default-deny.
+      const confirm = await confirmIfDestructive(runId, task);
+      if (!confirm.ok) {
+        emitNarration(runId, `Skipping that — ${confirm.reason ?? "it was blocked"}.`);
+        pushRunEnd(runId);
+        return;
+      }
+      // Honor a Stop that arrived during decide/confirm (pre-executor preempt).
+      if (preemptedTurns.has(runId)) {
+        pushStopped(runId);
+        return;
+      }
+      // Lock-protected single-executor dispatch (fresh clean-tree check inside; resolves at DISPATCH —
+      // the action stream arrives over push channels; the AbortController registers synchronously).
+      await guardedDispatch(runId, confirm.destructive, () => {
+        void dispatchExecutor(runId, sessionId, task, agent, {
+          transcript,
+          narration: decision.narration,
+          task,
+        });
       });
       return;
     }
@@ -462,22 +618,56 @@ async function runFactExtraction(sessionId: string, input: FactExtractInput): Pr
  */
 export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId: string }> {
   const runId = newRunId();
-  // Fire the dispatch but DON'T await it — the renderer gets {runId} now and the stream later.
-  void dispatchExecutor(runId, `task_${runId}`, prompt, agent);
+  lastTurnId = runId;
+  inFlightTurns.add(runId);
+  // runTask bypasses the brain, so the destructive gate MUST run here too (or a renderer caller
+  // could `rm -rf` unconfirmed). Gate then dispatch off the critical path; return {runId} now.
+  void (async () => {
+    const confirm = await confirmIfDestructive(runId, prompt);
+    if (!confirm.ok) {
+      emitNarration(runId, `Skipping that — ${confirm.reason ?? "it was blocked"}.`);
+      pushRunEnd(runId);
+      return;
+    }
+    if (preemptedTurns.has(runId)) {
+      pushStopped(runId);
+      return;
+    }
+    await guardedDispatch(runId, confirm.destructive, () => {
+      void dispatchExecutor(runId, `task_${runId}`, prompt, agent);
+    });
+  })();
   return { runId };
 }
 
-/** Abort a specific run (CH.cancelTask). If runId is omitted, abort the most recent run. */
+/**
+ * Stop / preempt a turn (CH.cancelTask). Marks the turn preempted (honored at the decide/confirm
+ * boundary if no executor is registered yet) AND aborts the executor if it's running (which arms the
+ * Stop watchdog). If runId is omitted, targets the most recent run.
+ */
 export function cancelTask(runId?: string): void {
+  // Stop one turn: mark it preempted (honored at the decide/confirm boundary), DENY any pending
+  // destructive-confirm immediately (so the turn ends promptly instead of hanging until the 15s
+  // timeout), and abort its executor if running (arming the watchdog).
+  const stop = (id: string): void => {
+    if (!inFlightTurns.has(id)) return; // ignore stale/unknown ids -> bounds preemptedTurns
+    preemptedTurns.add(id);
+    resolveConfirm(id, false);
+    activeRuns.get(id)?.abort();
+  };
   if (runId) {
-    activeRuns.get(runId)?.abort();
+    stop(runId);
     return;
   }
-  // No id: abort the latest started run (Map preserves insertion order).
-  const ids = [...activeRuns.keys()];
-  const last = ids[ids.length - 1];
-  if (last) activeRuns.get(last)?.abort();
+  // No id: stop the most recent turn (it may still be in decide/confirm) AND abort the latest
+  // running executor if that's a different turn — a no-id Stop shouldn't leave either running.
+  if (lastTurnId) stop(lastTurnId);
+  const latest = [...activeRuns.keys()].pop();
+  if (latest && latest !== lastTurnId) activeRuns.get(latest)?.abort();
 }
+
+/** Resolve a destructive-confirm from the renderer's dedicated CH.confirmResolve. */
+export { resolveConfirm as resolveDestructiveConfirm } from './confirmGate';
 
 /** Abort every active run (called on app quit). */
 export function cancelAllRuns(): void {

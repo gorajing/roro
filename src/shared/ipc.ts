@@ -11,6 +11,7 @@ export const CH = {
   micToggleMute: 'mic:toggleMute',
   turnRun: 'turn:run', runTask: 'orch:runTask', cancelTask: 'orch:cancelTask',
   actionEvent: 'orch:actionEvent', runEnd: 'orch:runEnd',
+  confirmRequest: 'orch:confirmRequest', confirmResolve: 'orch:confirmResolve',
   brainDecide: 'brain:decide', brainReasoning: 'brain:reasoning', brainContent: 'brain:content',
   brainDescribeScreen: 'brain:describeScreen', brainEmbed: 'brain:embed',
   visionAsk: 'vision:ask', memoryRemember: 'memory:remember', memoryRecall: 'memory:recall',

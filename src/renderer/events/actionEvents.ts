@@ -64,8 +64,9 @@ export function activityForEvent(e: ActionEvent): ActivityCue | null {
       }
       return { kind: 'command', text: e.summary ? compact(e.summary) : compact(e.tool) };
     }
-    case 'message': {
+    case 'status': {
       // The orchestrator's owner-scoped recall beat: "Memory: N known facts, M related items".
+      // (C1 moved this off kind:'message' — it's a status line, not assistant text.)
       const beat = e.text.match(/^Memory: (\d+) known .*?(\d+) related/);
       if (beat) {
         const recalled = Number(beat[1]) > 0 || Number(beat[2]) > 0;
@@ -73,6 +74,8 @@ export function activityForEvent(e: ActionEvent): ActivityCue | null {
       }
       return null;
     }
+    case 'message':
+      return null;
     case 'run.completed':
       return { kind: 'success', text: 'done' };
     case 'run.failed':
