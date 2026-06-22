@@ -93,8 +93,10 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
   function dispatch(event: AskEvent): void {
     const result = askReduce(ask, event);
     ask = result.state;
-    for (const eff of result.effects) applyEffect(eff);
+    // Reflect the new state in the DOM BEFORE running effects: focusInput must hit a VISIBLE input
+    // (a collapsed input is display:none, and focus() on a hidden element is a no-op).
     render();
+    for (const eff of result.effects) applyEffect(eff);
   }
 
   // ---- DOM bindings ----
