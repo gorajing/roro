@@ -1,0 +1,268 @@
+:root {
+  --bg: #0e1018;
+  --panel: rgba(20, 24, 36, 0.92);
+  --panel-border: rgba(120, 130, 160, 0.18);
+  --text: #e6e9f2;
+  --muted: #9aa0b4;
+  --accent: #7c8cff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+}
+
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+html.floating-window,
+body.floating-window {
+  background: transparent;
+}
+
+/* The window moves only via the JS pointer drag (moveWindowBy) — no CSS
+   app-region drag, so there is a single drag path (interaction spec §12). */
+body.floating-window #live2d-canvas {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+  cursor: grab !important;
+  touch-action: none;
+  user-select: none;
+}
+
+body.floating-window #live2d-canvas.dragging {
+  cursor: grabbing !important;
+}
+
+html.floating-window #app,
+html.floating-window #live2d-canvas {
+  background: transparent;
+}
+
+/* The Live2D / placeholder canvas fills the window and sits behind the UI. */
+#live2d-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 0;
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none; /* let clicks fall through except on interactive bits */
+}
+
+body.floating-window #overlay {
+  display: none;
+}
+
+#overlay button,
+#overlay section,
+#overlay #prompt-form,
+#overlay #status {
+  pointer-events: auto;
+}
+
+#topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+}
+
+#brand {
+  flex: 0 0 auto;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+/* Sponsor strip — names the prize tech permanently on screen (Nebius + Insforge). */
+#powered {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  color: var(--muted);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+#powered b {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+#controls {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  background: var(--accent);
+  color: #0b0d14;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Stop/cancel: distinct from the accent buttons so it reads as an abort. */
+#cancel-btn {
+  background: #ef5350;
+  color: #1a0b0b;
+}
+
+#status {
+  align-self: center;
+  margin-top: 4px;
+  padding: 6px 12px;
+  font-size: 15px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  max-width: 80vw;
+  text-align: center;
+}
+
+#captions {
+  margin: auto auto 8px;
+  width: min(720px, 90vw);
+  text-align: center;
+}
+
+.caption {
+  font-size: 18px;
+  line-height: 1.4;
+  min-height: 1.4em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+}
+
+.caption.partial {
+  color: var(--muted);
+  font-style: italic;
+}
+
+#prompt-form {
+  width: min(720px, 90vw);
+  margin: 0 auto 12px;
+  display: flex;
+  gap: 8px;
+}
+
+#prompt-input {
+  min-width: 0;
+  flex: 1;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-size: 15px;
+  color: var(--text);
+  outline: none;
+}
+
+#prompt-input::placeholder {
+  color: var(--muted);
+}
+
+#prompt-input:focus {
+  border-color: var(--accent);
+}
+
+#timeline-panel {
+  width: min(720px, 92vw);
+  margin: 0 auto 14px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  max-height: 32vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#timeline-panel h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+
+#timeline {
+  overflow-y: auto;
+  font-size: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tl-time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.tl-kind {
+  font-weight: 600;
+}
+
+.tl-detail {
+  color: var(--text);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.status-completed .tl-kind {
+  color: #66bb6a;
+}
+.status-failed .tl-kind,
+.status-failed {
+  color: #ef5350;
+}
+.status-started .tl-kind {
+  color: #29b6f6;
+}
+.status-marker {
+  color: var(--muted);
+  font-style: italic;
+  background: transparent;
+}
