@@ -57,6 +57,9 @@ const companion = {
     subscribe<{ runId: string }>(CH.runEnd, cb),
   onMicToggleMute: (cb: () => void): (() => void) =>
     subscribe<void>(CH.micToggleMute, () => cb()),
+  // MAIN asks the renderer to open + focus the floating Ask input (⌘⇧Space summon).
+  onFocusAsk: (cb: () => void): (() => void) =>
+    subscribe<void>(CH.focusAsk, () => cb()),
   onCursor: (cb: (t: { x: number; y: number }) => void): (() => void) =>
     subscribe<{ x: number; y: number }>(CH.cursorMove, cb),
 };

@@ -49,6 +49,14 @@ export function wireVapiEvents(vapi: Vapi, opts: WireOptions): void {
   } = opts;
   let turnInFlight = false;
 
+  // turnRun resolves at DISPATCH (not completion), so the gate must be released by the run actually
+  // ending — the universal runEnd push — not by the turnRun promise. Otherwise a second final
+  // transcript could start a concurrent turn mid-run (preempt is C1). (A different surface's runEnd
+  // releasing this gate is a benign edge until a shared run-id-aware turn manager lands.)
+  getCompanion()?.onRunEnd?.(() => {
+    turnInFlight = false;
+  });
+
   vapi.on('call-start', () => {
     onCallActiveChange?.(true);
     character.setState('listening');
@@ -83,12 +91,12 @@ export function wireVapiEvents(vapi: Vapi, opts: WireOptions): void {
         const companion = getCompanion();
         if (!companion?.turnRun || turnInFlight) return;
         turnInFlight = true;
-        companion
-          .turnRun({ transcript: m.transcript, sessionId })
-          .catch((err) => console.error('[voice] turnRun failed', err))
-          .finally(() => {
-            turnInFlight = false;
-          });
+        // DON'T release on the promise (it resolves at dispatch) — released on runEnd above. The
+        // catch covers an IPC reject, where no runEnd will arrive.
+        companion.turnRun({ transcript: m.transcript, sessionId }).catch((err) => {
+          console.error('[voice] turnRun failed', err);
+          turnInFlight = false;
+        });
       }
       return;
     }

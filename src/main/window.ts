@@ -8,6 +8,7 @@ import { BrowserWindow, globalShortcut, screen } from 'electron';
 import path from 'node:path';
 import { CH } from '../shared/ipc';
 import { cursorToGazeTarget } from '../shared/gaze';
+import { decideSummonAction } from './summon';
 
 const SUMMON_ACCELERATOR = 'CommandOrControl+Shift+Space';
 const MUTE_ACCELERATOR = 'CommandOrControl+Shift+M';
@@ -98,15 +99,23 @@ export function registerSummonShortcut(): void {
   const summonOk = globalShortcut.register(SUMMON_ACCELERATOR, () => {
     const win = BrowserWindow.getAllWindows()[0];
     if (!win) return;
-    if (win.isVisible() && win.isFocused()) {
+    const action = decideSummonAction({
+      visible: win.isVisible(),
+      focused: win.isFocused(),
+      floating: FLOATING_WINDOW_FLAG,
+    });
+    if (action === 'hide') {
       win.hide();
+    } else if (action === 'show-and-focus-ask') {
+      // ⌘⇧Space is a deliberate "I want to type a task" — the window must become KEY or the
+      // renderer's input.focus() won't receive keystrokes (a showInactive window isn't key, so
+      // typing would land in the previously focused app). Take focus, then open + focus the Ask.
+      win.show();
+      win.focus();
+      win.webContents.send(CH.focusAsk);
     } else {
-      if (FLOATING_WINDOW_FLAG) {
-        win.showInactive();
-      } else {
-        win.show();
-        win.focus();
-      }
+      win.show();
+      win.focus();
     }
   });
   if (!summonOk) {

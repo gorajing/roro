@@ -266,3 +266,96 @@ button:disabled {
   font-style: italic;
   background: transparent;
 }
+
+/* ---- Phase B: floating Ask input + Stop pill (NEW elements, OUTSIDE #overlay) ----
+   Only shown in floating mode; dev mode keeps using #overlay #prompt-form. Each interactive
+   bit is its own pointer-events island so the transparent window stays click-through elsewhere. */
+#floating-ask,
+#floating-stop {
+  display: none;
+}
+
+body.floating-window #floating-ask {
+  display: flex;
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 2;
+  pointer-events: none; /* the wrapper is transparent; only the pill/input catch clicks */
+  align-items: center;
+  justify-content: center;
+  max-width: 92%;
+}
+
+#floating-ask #ask-pill,
+#floating-ask #ask-input {
+  pointer-events: auto;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(20, 20, 28, 0.72);
+  color: #f4f4f8;
+  padding: 7px 14px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+#floating-ask #ask-pill {
+  cursor: pointer;
+  opacity: 0.72;
+  transition: opacity 120ms ease;
+}
+#floating-ask #ask-pill:hover {
+  opacity: 1;
+}
+
+#floating-ask #ask-input {
+  width: 260px;
+  max-width: 60vw;
+  outline: none;
+}
+#floating-ask #ask-input::placeholder {
+  color: rgba(244, 244, 248, 0.5);
+}
+
+/* state visibility: collapsed/tasked show the pill, expanded shows the input */
+#floating-ask.collapsed #ask-input,
+#floating-ask.tasked #ask-input {
+  display: none;
+}
+#floating-ask.expanded #ask-pill {
+  display: none;
+}
+#floating-ask.tasked #ask-pill {
+  opacity: 0.6;
+  cursor: default;
+  font-style: italic;
+}
+
+/* Stop pill: above the Ask, hidden until a run is live (.armed) */
+body.floating-window #floating-stop {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: 52px;
+  transform: translateX(-50%);
+  z-index: 3;
+  pointer-events: auto;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 90, 90, 0.5);
+  background: rgba(150, 30, 30, 0.85);
+  color: #fff;
+  padding: 5px 16px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+body.floating-window #floating-stop.armed {
+  display: block;
+}
