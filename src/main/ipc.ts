@@ -22,10 +22,12 @@ import { CH } from '../shared/ipc';
 import type { MicStatus, TurnInput } from '../shared/ipc';
 import type { Decision, DecideInput } from '../shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch } from '../shared/memory';
+import { assertRendererMemoryKind } from '../shared/memory';
 import type { AgentKind } from '../shared/events';
 import { getMicStatus, ensureMicAccess } from './mic';
 import { runTurn, runTask, cancelTask } from './orchestrator';
 import { loadBrain, loadMemory, loadVision } from './siblings';
+import { getOwnerId } from './identity';
 
 /** Coerce a renderer-supplied agent arg to a valid AgentKind (default codex). */
 function asAgentKind(v: unknown): AgentKind {
@@ -92,12 +94,13 @@ export function registerIpcHandlers(): void {
     },
   );
 
-  // ---- Memory (sibling: src/memory) ----
+  // ---- Memory (sibling: src/memory) — owner_id is injected MAIN-side, never trusted from renderer ----
   ipcMain.handle(
     CH.memoryRemember,
-    async (_e, input: RememberInput): Promise<MemoryRow> => {
+    async (_e, input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow> => {
+      assertRendererMemoryKind(input.kind); // facts are derived internally; the renderer can't write them
       const memory = await loadMemory();
-      return memory.remember(input);
+      return memory.remember({ ...input, owner_id: getOwnerId() });
     },
   );
   ipcMain.handle(
@@ -107,7 +110,7 @@ export function registerIpcHandlers(): void {
       input: { query: string; k?: number; sessionId?: string },
     ): Promise<MemoryMatch[]> => {
       const memory = await loadMemory();
-      return memory.recall(input);
+      return memory.recall({ ...input, ownerId: getOwnerId() });
     },
   );
 

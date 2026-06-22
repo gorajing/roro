@@ -49,7 +49,8 @@ export interface BrainBridge {
 }
 
 export interface MemoryBridge {
-  remember(input: RememberInput): Promise<MemoryRow>;
+  // owner_id is injected MAIN-side from the device identity; the renderer never supplies it.
+  remember(input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow>;
   recall(input: { query: string; k?: number; sessionId?: string }): Promise<MemoryMatch[]>;
 }
 

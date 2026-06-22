@@ -27,6 +27,7 @@
 // sibling doesn't accept them. The orchestrator wires those callbacks to webContents.send.
 
 import type { Decision, DecideInput } from '../shared/brain';
+import type { FactExtractInput, FactCandidate } from '../brain/extractFact';
 import type { RememberInput, MemoryRow, MemoryMatch } from '../shared/memory';
 
 // ---- Thin local interfaces (structural; the real modules satisfy a superset) ----
@@ -41,11 +42,14 @@ export interface BrainModule {
   decide(input: DecideInput, hooks?: BrainStreamHooks): Promise<Decision>;
   describeScreen(input: { b64: string; mime: string }): Promise<string>;
   embed(input: string | string[]): Promise<number[] | number[][]>;
+  extractFact(input: FactExtractInput): Promise<FactCandidate | null>;
 }
 
 export interface MemoryModule {
   remember(input: RememberInput): Promise<MemoryRow>;
-  recall(input: { query: string; k?: number; sessionId?: string }): Promise<MemoryMatch[]>;
+  recall(input: { query: string; k?: number; ownerId: string; sessionId?: string }): Promise<MemoryMatch[]>;
+  getProfile(ownerId: string): Promise<MemoryRow[]>;
+  supersede(id: string): Promise<void>;
 }
 
 export interface CaptureResult {
