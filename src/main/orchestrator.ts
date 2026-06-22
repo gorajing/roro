@@ -559,6 +559,16 @@ async function actOnDecision(
       });
       return;
     }
+
+    default: {
+      // Exhaustiveness guard: adding a Command must be handled above. The never-assignment fails the
+      // build until it is; if that is ever bypassed at runtime, END the run (a missing case used to
+      // fall through to a silent return — a hung run that never pushes run-end).
+      const _exhaustive: never = command;
+      pushEvent({ kind: 'run.failed', runId, ok: false, error: `unhandled command: ${String(_exhaustive)}`, ts: Date.now() });
+      pushRunEnd(runId);
+      return;
+    }
   }
 }
 

@@ -1,12 +1,12 @@
 // src/main/factStore.ts — write a thin profile fact with supersede-not-overwrite.
 // Pure of the LLM (the caller passes a FactCandidate); trivially testable with fakes.
-import type { MemoryRow, RememberInput, FactPayload } from '../shared/memory';
+import type { MemoryRow, ReplaceFactInput, FactPayload } from '../shared/memory';
 import type { FactCandidate } from '../brain/extractFact';
 
 export interface FactStoreDeps {
   getProfile(ownerId: string): Promise<MemoryRow[]>;
-  remember(input: RememberInput): Promise<MemoryRow>;
-  supersede(id: string): Promise<void>;
+  /** Atomic supersede-all-for-key + insert (one transaction). The store enforces ≤1 active per key. */
+  replaceFact(input: ReplaceFactInput): Promise<MemoryRow>;
 }
 
 function factKeyOf(row: MemoryRow): string | undefined {
@@ -19,18 +19,18 @@ function factValueOf(row: MemoryRow): string | undefined {
   return p && typeof p === 'object' && typeof p.value === 'string' ? p.value : undefined;
 }
 
-// Serialize fact writes. The read/supersede/insert below is a non-atomic sequence; the
-// orchestrator void-dispatches extraction and does NOT serialize turns, so two concurrent
-// extractions for the same key could each read "no existing row" and both insert, leaving two
-// active facts (a stale value resurfacing — the exact thing supersede-not-overwrite prevents).
-// Memory is owned by ONE process for ONE local user, so a single global write-chain is the
-// simplest correct guard. (If multi-owner concurrency ever matters, key the lock by ownerId.)
+// Serialize fact writes. replaceFact() is atomic per call, but the no-op pre-check below reads
+// getProfile first; the orchestrator void-dispatches extraction and does NOT serialize turns, so
+// two concurrent extractions for the same key could interleave (read, read, write, write). The
+// global write-chain makes them strictly sequential so the later writer cleanly supersedes the
+// earlier. Memory is owned by ONE process for ONE local user, so a single chain is the simplest
+// correct guard. (If multi-owner concurrency ever matters, key the lock by ownerId.)
 let writeChain: Promise<void> = Promise.resolve();
 
 /**
  * Store one extracted fact. null -> no write. Same key + same value -> no-op. Same key +
- * changed value -> mark the prior row superseded, then insert the new one (append-only history).
- * Writes are serialized so the supersede-not-overwrite invariant holds under concurrent turns.
+ * changed value -> replaceFact (atomic supersede-all-for-key + insert). Writes are serialized so
+ * the supersede-not-overwrite invariant holds under concurrent turns.
  */
 export function extractAndStoreFact(
   deps: FactStoreDeps,
@@ -58,17 +58,14 @@ async function storeFact(
     value: candidate.value,
     source: { session_id: ctx.sessionId, turn_ts: ctx.turnTs },
   };
-  // Insert the replacement BEFORE superseding the old rows. remember() embeds (a network call that
-  // can fail); doing it first means a failure leaves the prior fact active (stale-but-present) —
-  // never zero active facts (silent loss of a taught preference).
-  await deps.remember({
+  // replaceFact supersedes EVERY prior active row for the key and inserts the replacement in ONE
+  // transaction (embedding done first, outside the txn). All-or-nothing: an embed/DB failure leaves
+  // the prior fact active (never zero active facts, never a transient duplicate).
+  await deps.replaceFact({
     owner_id: ctx.ownerId,
     session_id: ctx.sessionId,
-    kind: 'fact',
     text: candidate.value,
+    key: candidate.key,
     payload,
   });
-  // Supersede EVERY prior active row for the key — this also heals a duplicate that a past
-  // supersede-after-insert failure may have left behind, so it can never permanently resurface.
-  for (const row of activeForKey) await deps.supersede(row.id);
 }

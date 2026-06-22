@@ -30,6 +30,7 @@ interface ProxyResponse {
   flushHeaders?: () => void;
   write(chunk: Uint8Array | string): boolean;
   end(): void;
+  destroy(error?: Error): void;
 }
 
 export interface ProxyServer {
@@ -56,7 +57,7 @@ function buildNebiusBody(body: unknown): JsonRecord {
   return outbound;
 }
 
-async function streamChatCompletions(req: ProxyRequest, res: ProxyResponse): Promise<void> {
+export async function streamChatCompletions(req: ProxyRequest, res: ProxyResponse): Promise<void> {
   const apiKey = process.env.NEBIUS_API_KEY;
   if (!apiKey) {
     res.status(500).json({ error: { message: 'NEBIUS_API_KEY is not configured' } });
@@ -96,11 +97,17 @@ async function streamChatCompletions(req: ProxyRequest, res: ProxyResponse): Pro
       res.write(chunk);
     }
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     if (!res.headersSent) {
-      const message = error instanceof Error ? error.message : String(error);
       res.status(502).json({ error: { message } });
       return;
     }
+    // Headers already flushed (SSE in flight): we can't send a JSON error. A clean res.end() would
+    // look to the client like a COMPLETE stream — silent truncation. Log it and DESTROY the socket
+    // so the client observes an aborted connection (and can surface/retry) instead of trusting it.
+    console.error('[proxy] upstream stream error after headers sent:', message);
+    res.destroy(error instanceof Error ? error : new Error(message));
+    return;
   }
 
   res.end();
@@ -120,7 +127,9 @@ function createApp() {
         res.status(502).json({ error: { message } });
         return;
       }
-      res.end();
+      // Mid-stream failure that escaped streamChatCompletions: don't end cleanly (silent truncation).
+      console.error('[proxy] request handler error after headers sent:', message);
+      res.destroy(error instanceof Error ? error : new Error(message));
     });
   });
 

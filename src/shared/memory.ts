@@ -9,6 +9,22 @@ export interface RememberInput {
   payload?: unknown;
 }
 
+/**
+ * Input to the atomic fact-replace primitive. `replaceFact` supersedes every prior ACTIVE fact for
+ * (owner_id, key) and inserts this one in a SINGLE transaction — so the "≤1 active fact per key"
+ * invariant (enforced by a partial-unique index) never sees a transient duplicate. kind is always
+ * 'fact'; it is not a parameter.
+ */
+export interface ReplaceFactInput {
+  owner_id: string;
+  session_id: string;
+  /** The new fact's text (its value). */
+  text: string;
+  /** The fact key whose prior active rows are superseded before this insert. */
+  key: string;
+  payload?: unknown;
+}
+
 export interface MemoryRow {
   id: string;
   owner_id: string;

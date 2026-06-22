@@ -23,7 +23,15 @@ export function eventToAvatarState(e: ActionEvent): AvatarState | null {
     case 'run.started':
     case 'turn.started':
       return 'working';
-    default:
-      return null; // message / message.delta don't change state
+    case 'message':
+    case 'message.delta':
+    case 'status':
+      return null; // final/streaming assistant text + status beats don't change avatar state
+    default: {
+      // Exhaustiveness: adding an ActionEvent kind must be a DELIBERATE avatar-state decision, not a
+      // silent fall-through. The never-assignment fails the build until the new kind is handled above.
+      const _exhaustive: never = e;
+      return _exhaustive ?? null;
+    }
   }
 }

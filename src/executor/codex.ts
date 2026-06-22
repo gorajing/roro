@@ -18,11 +18,14 @@ import {
   Executor,
   newRunId,
 } from '../shared/events';
+import { resolveBin } from './resolveBin';
+import { armSigkillEscalation } from './abortKill';
 
-// Absolute path to the installed codex binary. Packaged Electron strips PATH
-// (/opt/homebrew/bin is gone), so resolve absolutely. Falls back to bare 'codex'
-// for dev shells where PATH is intact.
-const CODEX_BIN = process.env.COMPANION_CODEX_BIN ?? '/opt/homebrew/bin/codex';
+// Resolve the codex binary portably: COMPANION_CODEX_BIN override -> PATH -> common install dirs ->
+// bare 'codex' (spawn ENOENTs loud). Handles packaged Electron stripping PATH without a hardcoded path.
+const CODEX_BIN = resolveBin('codex', process.env.COMPANION_CODEX_BIN);
+/** Grace after abort's SIGTERM before SIGKILL, so a hung child can't hold the executor slot. */
+const SIGKILL_GRACE_MS = 1000;
 
 /**
  * Pure mapper: one Codex ThreadEvent object -> at most one canonical ActionEvent.
@@ -247,9 +250,11 @@ export async function* runCodex(
     env: { ...process.env },
     signal: opts.signal,
   });
+  // {signal} sends SIGTERM on abort; escalate to SIGKILL if the child ignores it.
+  armSigkillEscalation(child, opts.signal, SIGKILL_GRACE_MS);
 
   // Drain stderr; it is plain logs (skill-load errors, telemetry), NOT JSONL.
-  child.stderr?.on('data', () => {});
+  child.stderr?.on('data', () => { /* drain: stderr is logs, not JSONL */ });
 
   // Surface a clean run.failed if the binary cannot be spawned (ENOENT) or the
   // AbortSignal kills it — instead of letting the process error escape the loop.

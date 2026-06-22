@@ -7,7 +7,7 @@
 import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite-pgvector';
-import type { MemoryMatch, MemoryRow, RememberInput } from '../shared/memory';
+import type { MemoryMatch, MemoryRow, RememberInput, ReplaceFactInput } from '../shared/memory';
 import { SCHEMA_SQL } from './schema';
 
 const NEBIUS_BASE_URL = 'https://api.tokenfactory.nebius.com/v1/';
@@ -28,6 +28,7 @@ export interface RecallInput {
 
 export interface MemoryStore {
   remember(input: RememberInput): Promise<MemoryRow>;
+  replaceFact(input: ReplaceFactInput): Promise<MemoryRow>;
   recall(input: RecallInput): Promise<MemoryMatch[]>;
   getProfile(ownerId: string): Promise<MemoryRow[]>;
   supersede(id: string): Promise<void>;
@@ -38,6 +39,30 @@ export interface MemoryStore {
 
 const SELECT_COLS =
   'id, owner_id, session_id, kind, text, payload, superseded, created_at';
+
+// Shared INSERT for remember()/replaceFact(): same columns, same provenance stamp. Bind the vector
+// as a text literal ($8::vector) — a raw JS array does not bind to the pgvector type.
+const INSERT_SQL = `insert into memory
+     (owner_id, session_id, kind, text, payload, embed_model, embed_dim, embedding)
+   values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::vector)
+   returning ${SELECT_COLS}, embed_model, embed_dim`;
+
+function insertParams(
+  fields: { owner_id: string; session_id: string; kind: string; text: string; payload?: unknown },
+  embedding: number[],
+): unknown[] {
+  return [
+    fields.owner_id,
+    fields.session_id,
+    fields.kind,
+    fields.text,
+    JSON.stringify(fields.payload ?? null),
+    // Provenance stamp: which embedder wrote this vector. Makes a future re-embed auditable.
+    NEBIUS_EMBEDDING_MODEL,
+    EMBEDDING_DIMENSION,
+    toVectorLiteral(embedding),
+  ];
+}
 
 /**
  * Open (or create) an owner-scoped memory store backed by PGlite + pgvector.
@@ -60,24 +85,35 @@ export async function createMemoryStore(opts: {
     requireText(input.text, 'remember text');
     requireText(input.owner_id, 'remember owner_id');
     const embedding = await embedOne(input.text);
-    const res = await db.query<RawRow>(
-      `insert into memory
-         (owner_id, session_id, kind, text, payload, embed_model, embed_dim, embedding)
-       values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::vector)
-       returning ${SELECT_COLS}, embed_model, embed_dim`,
-      [
-        input.owner_id,
-        input.session_id,
-        input.kind,
-        input.text,
-        JSON.stringify(input.payload ?? null),
-        // Provenance stamp: which embedder wrote this vector. Makes a future re-embed auditable.
-        NEBIUS_EMBEDDING_MODEL,
-        EMBEDDING_DIMENSION,
-        toVectorLiteral(embedding),
-      ],
-    );
+    const res = await db.query<RawRow>(INSERT_SQL, insertParams(input, embedding));
     return toRow(res.rows[0]);
+  }
+
+  /**
+   * Atomic supersede-not-overwrite for a profile fact. Embed FIRST (a network call that can fail,
+   * and PGlite is single-connection — never hold a txn open across a network round-trip): on embed
+   * failure nothing is mutated, so the prior fact stays active (never zero active facts). Then, in
+   * ONE transaction, supersede every prior active row for (owner_id, key) and insert the new one —
+   * the partial-unique index therefore never observes two active rows for the key.
+   */
+  async function replaceFact(input: ReplaceFactInput): Promise<MemoryRow> {
+    requireText(input.text, 'replaceFact text');
+    requireText(input.owner_id, 'replaceFact owner_id');
+    requireText(input.key, 'replaceFact key');
+    const embedding = await embedOne(input.text);
+    return db.transaction(async (tx) => {
+      await tx.query(
+        `update memory set superseded = true
+         where owner_id = $1 and kind = 'fact'
+           and payload->>'key' = $2 and superseded = false`,
+        [input.owner_id, input.key],
+      );
+      const res = await tx.query<RawRow>(
+        INSERT_SQL,
+        insertParams({ ...input, kind: 'fact' }, embedding),
+      );
+      return toRow(res.rows[0]);
+    });
   }
 
   /**
@@ -130,7 +166,7 @@ export async function createMemoryStore(opts: {
     await db.close();
   }
 
-  return { remember, recall, getProfile, supersede, close };
+  return { remember, replaceFact, recall, getProfile, supersede, close };
 }
 
 // ---- Module-level default store (the production singleton) ----
@@ -154,6 +190,10 @@ function getDefaultStore(): Promise<MemoryStore> {
 
 export async function remember(input: RememberInput): Promise<MemoryRow> {
   return (await getDefaultStore()).remember(input);
+}
+
+export async function replaceFact(input: ReplaceFactInput): Promise<MemoryRow> {
+  return (await getDefaultStore()).replaceFact(input);
 }
 
 export async function recall(input: RecallInput): Promise<MemoryMatch[]> {
@@ -226,21 +266,17 @@ async function loadBrainEmbed(): Promise<BrainEmbed | null> {
   if (checkedBrainEmbed) {
     return brainEmbed;
   }
+  // brain is a COMMITTED sibling module — a failure to import it is a real bug, not an expected
+  // "not built yet" condition. Let it propagate (fail loud) rather than silently using Nebius and
+  // masking a broken brain. Memoize only on SUCCESS, so a transient import failure isn't cached as a
+  // permanent "no local embedder" verdict. If the module loads but exposes no embed(), fall back to
+  // Nebius HTTP (a deliberate null, not a swallowed error).
+  const brain = (await import('../brain')) as BrainModule;
+  const candidate =
+    typeof brain.embed === 'function' ? brain.embed : brain.default?.embed;
+  brainEmbed = typeof candidate === 'function' ? (candidate as BrainEmbed) : null;
   checkedBrainEmbed = true;
-  try {
-    // Computed import keeps this module compiling while src/brain is not built yet.
-    const brain = (await import('../' + 'brain')) as BrainModule;
-    const candidate =
-      typeof brain.embed === 'function' ? brain.embed : brain.default?.embed;
-    brainEmbed = typeof candidate === 'function' ? (candidate as BrainEmbed) : null;
-    return brainEmbed;
-  } catch (error) {
-    if (isMissingBrainModule(error)) {
-      brainEmbed = null;
-      return null;
-    }
-    throw error;
-  }
+  return brainEmbed;
 }
 
 async function embedWithNebius(text: string): Promise<number[]> {
@@ -275,17 +311,6 @@ function assertEmbedding(value: unknown): number[] {
     throw new Error('Embedding provider returned a non-numeric embedding value');
   }
   return value;
-}
-
-function isMissingBrainModule(error: unknown): boolean {
-  const code =
-    error && typeof error === 'object' && 'code' in error
-      ? (error as { code?: unknown }).code
-      : undefined;
-  if (code === 'MODULE_NOT_FOUND' || code === 'ERR_MODULE_NOT_FOUND') {
-    return true;
-  }
-  return error instanceof Error && error.message.includes('../brain');
 }
 
 function normalizeK(k = 5): number {

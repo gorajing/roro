@@ -28,7 +28,7 @@
 
 import type { Decision, DecideInput } from '../shared/brain';
 import type { FactExtractInput, FactCandidate } from '../brain/extractFact';
-import type { RememberInput, MemoryRow, MemoryMatch } from '../shared/memory';
+import type { RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch } from '../shared/memory';
 
 // ---- Thin local interfaces (structural; the real modules satisfy a superset) ----
 
@@ -47,6 +47,7 @@ export interface BrainModule {
 
 export interface MemoryModule {
   remember(input: RememberInput): Promise<MemoryRow>;
+  replaceFact(input: ReplaceFactInput): Promise<MemoryRow>;
   recall(input: { query: string; k?: number; ownerId: string; sessionId?: string }): Promise<MemoryMatch[]>;
   getProfile(ownerId: string): Promise<MemoryRow[]>;
   supersede(id: string): Promise<void>;

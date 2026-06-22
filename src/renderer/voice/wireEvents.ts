@@ -22,6 +22,7 @@ import type { CharacterDriver, CaptionSink } from '../character/types';
 import { type VapiMessage, isTranscript, isToolCalls, type VapiToolCall } from './messages';
 import { getCompanion } from '../events/bridge';
 import { runState } from '../events/runState';
+import { makeVoiceTurnRouter } from './voiceTurnRouter';
 
 export interface WireOptions {
   character: CharacterDriver;
@@ -47,15 +48,17 @@ export function wireVapiEvents(vapi: Vapi, opts: WireOptions): void {
     onCallActiveChange,
     isInputMuted,
   } = opts;
-  let turnInFlight = false;
-
-  // turnRun resolves at DISPATCH (not completion), so the gate must be released by the run actually
-  // ending — the universal runEnd push — not by the turnRun promise. Otherwise a second final
-  // transcript could start a concurrent turn mid-run (preempt is C1). (A different surface's runEnd
-  // releasing this gate is a benign edge until a shared run-id-aware turn manager lands.)
-  getCompanion()?.onRunEnd?.(() => {
-    turnInFlight = false;
+  // Route the voice path through the CANONICAL voiceTurnRouter (one turn-manager, shared with the
+  // local-voice seam) instead of a private gate. It enforces mouth-not-brain (committed transcript ->
+  // turnRun), and barge-in: a final utterance mid-run cancels the active run (C1 preempt) and fires on
+  // its runEnd. `isRunActive` reads the shared runState (set by subscribeActionEvents).
+  const router = makeVoiceTurnRouter({
+    // Return the dispatch promise (don't `void` it) so the router can unlatch if turnRun rejects.
+    turnRun: (transcript) => getCompanion()?.turnRun?.({ transcript, sessionId }),
+    cancelTask: () => void getCompanion()?.cancelTask?.(),
+    isRunActive: () => runState.active,
   });
+  getCompanion()?.onRunEnd?.((p) => router.onRunEnd(p.runId));
 
   vapi.on('call-start', () => {
     onCallActiveChange?.(true);
@@ -63,7 +66,6 @@ export function wireVapiEvents(vapi: Vapi, opts: WireOptions): void {
   });
   vapi.on('call-end', () => {
     onCallActiveChange?.(false);
-    turnInFlight = false;
     character.setTalking(false);
     character.setState('idle');
   });
@@ -85,18 +87,10 @@ export function wireVapiEvents(vapi: Vapi, opts: WireOptions): void {
       captions.update(m.role, m.transcript, isFinal);
       // Detect the USER talking off transcript partials (not speech-start).
       if (m.role === 'user' && !isFinal) character.setState('listening');
-      // Hand the final user transcript to the orchestrator (the primary handoff).
+      // Hand the final user transcript to the canonical router (mouth-not-brain + barge-in).
       if (m.role === 'user' && isFinal && m.transcript.trim()) {
         if (isInputMuted?.()) return;
-        const companion = getCompanion();
-        if (!companion?.turnRun || turnInFlight) return;
-        turnInFlight = true;
-        // DON'T release on the promise (it resolves at dispatch) — released on runEnd above. The
-        // catch covers an IPC reject, where no runEnd will arrive.
-        companion.turnRun({ transcript: m.transcript, sessionId }).catch((err) => {
-          console.error('[voice] turnRun failed', err);
-          turnInFlight = false;
-        });
+        router.onFinalTranscript(m.transcript);
       }
       return;
     }

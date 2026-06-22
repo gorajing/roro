@@ -80,4 +80,33 @@ describe('PGlite memory store (owner-scoped)', () => {
     const matches = await store.recall({ query: 'add a logout route', ownerId: OWNER });
     expect(matches).toHaveLength(0);
   });
+
+  it('replaceFact atomically supersedes the prior active fact for a key (exactly one active row survives)', async () => {
+    const first = await store.replaceFact({ owner_id: OWNER, session_id: 's1', text: 'uses npm', key: 'pkg', payload: fact('uses npm', 'pkg').payload });
+    expect(first.kind).toBe('fact');
+    expect(first.superseded).toBe(false);
+    await store.replaceFact({ owner_id: OWNER, session_id: 's2', text: 'uses pnpm', key: 'pkg', payload: fact('uses pnpm', 'pkg').payload });
+
+    const profile = await store.getProfile(OWNER);
+    expect(profile.map((r) => r.text)).toEqual(['uses pnpm']); // the prior 'uses npm' is superseded, not duplicated
+    expect((profile[0].payload as FactPayload).source).toEqual({ session_id: 's1', turn_ts: 1 });
+  });
+
+  it('replaceFact is owner-scoped: it does not touch another owner\'s same-key fact', async () => {
+    await store.replaceFact({ owner_id: OWNER, session_id: 's1', text: 'mine', key: 'pkg', payload: fact('mine', 'pkg').payload });
+    await store.replaceFact({ owner_id: OTHER, session_id: 's1', text: 'theirs', key: 'pkg', payload: fact('theirs', 'pkg').payload });
+    await store.replaceFact({ owner_id: OWNER, session_id: 's2', text: 'mine v2', key: 'pkg', payload: fact('mine v2', 'pkg').payload });
+
+    expect((await store.getProfile(OWNER)).map((r) => r.text)).toEqual(['mine v2']);
+    expect((await store.getProfile(OTHER)).map((r) => r.text)).toEqual(['theirs']); // untouched
+  });
+
+  it('the schema forbids two ACTIVE facts for the same owner+key (single-active-fact invariant)', async () => {
+    await store.remember({ owner_id: OWNER, session_id: 's1', kind: 'fact', text: 'uses npm', ...fact('uses npm', 'pkg') });
+    // A second active fact for the SAME (owner, key) must be rejected by the partial-unique index —
+    // the invariant is structural, not merely upheld by application logic.
+    await expect(
+      store.remember({ owner_id: OWNER, session_id: 's1', kind: 'fact', text: 'uses pnpm', ...fact('uses pnpm', 'pkg') }),
+    ).rejects.toThrow();
+  });
 });

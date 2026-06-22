@@ -19,11 +19,14 @@ import {
   Executor,
   newRunId,
 } from '../shared/events';
+import { resolveBin } from './resolveBin';
+import { armSigkillEscalation } from './abortKill';
 
-// Absolute path to the installed claude binary (packaged Electron strips ~/.local/bin
-// from PATH). Falls back to bare 'claude' for dev shells.
-const CLAUDE_BIN =
-  process.env.COMPANION_CLAUDE_BIN ?? '/Users/jinchoi/.local/bin/claude';
+// Resolve the claude binary portably: COMPANION_CLAUDE_BIN override -> PATH -> common install dirs
+// -> bare 'claude' (spawn ENOENTs loud). No machine-specific hardcoded path.
+const CLAUDE_BIN = resolveBin('claude', process.env.COMPANION_CLAUDE_BIN);
+/** Grace after abort's SIGTERM before SIGKILL, so a hung child can't hold the executor slot. */
+const SIGKILL_GRACE_MS = 1000;
 
 // Tools whose input.file_path identifies a file mutation. Read is included so the
 // renderer shows file activity; Write -> 'add', the rest -> 'update'.
@@ -354,9 +357,11 @@ export async function* runClaude(
     env: { ...process.env }, // ANTHROPIC_API_KEY passes through
     signal: opts.signal,
   });
+  // {signal} sends SIGTERM on abort; escalate to SIGKILL if the child ignores it.
+  armSigkillEscalation(child, opts.signal, SIGKILL_GRACE_MS);
 
   // Drain stderr; hook/diagnostic spam, never JSONL.
-  child.stderr?.on('data', () => {});
+  child.stderr?.on('data', () => { /* drain: stderr is logs, not JSONL */ });
 
   let spawnError: Error | null = null;
   child.on('error', (err) => {

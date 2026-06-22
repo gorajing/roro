@@ -50,6 +50,33 @@ describe('classifyDestructive', () => {
     expect(D('commit and push the fix')).toBe(false);
   });
 
+  it('flags remote-ref deletion and force branch deletion', () => {
+    expect(D('git push --delete origin old-branch')).toBe(true);
+    expect(D('git push -d origin old-branch')).toBe(true);
+    expect(D('git branch -D feature/x')).toBe(true);
+    expect(D('git branch -d merged-branch')).toBe(false); // lowercase -d is a safe merged-only delete
+  });
+
+  it('flags bulk deletion, shred, and raw-device writes', () => {
+    expect(D("find . -name '*.log' -delete")).toBe(true);
+    expect(D('find . -type f -exec rm {} \\;')).toBe(true);
+    expect(D('shred -u secrets.env')).toBe(true);
+    expect(D('dd if=/dev/zero > /dev/sda')).toBe(true);
+    expect(D('echo done > /dev/null')).toBe(false); // /dev/null is safe
+  });
+
+  it('flags real raw-device names (with trailing numbers/letters) even without dd/mkfs', () => {
+    // Device nodes always carry a trailing index (sda, sdb1, disk2, nvme0n1) — the rule must match
+    // the prefix, not require a word boundary right after it.
+    expect(D('cat image.iso > /dev/sda')).toBe(true);
+    expect(D('echo data > /dev/sdb1')).toBe(true);
+    expect(D('pv backup.img > /dev/disk2')).toBe(true);
+    expect(D('cp x > /dev/nvme0n1')).toBe(true);
+    // Safe character devices must still NOT trip the gate (no alarm fatigue on /dev/null & friends).
+    expect(D('echo x > /dev/null')).toBe(false);
+    expect(D('tee /dev/stdout < log')).toBe(false);
+  });
+
   it('flags SQL drop / truncate', () => {
     expect(D('DROP TABLE users')).toBe(true);
     expect(D('truncate orders')).toBe(true);
