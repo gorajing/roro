@@ -13,6 +13,8 @@ describe('classifyDestructive', () => {
     expect(D('rm -f -r build')).toBe(true); // force before recursive
     expect(D('rm --force --recursive build')).toBe(true); // long flags, separate tokens
     expect(D('rm --recursive node_modules')).toBe(true);
+    expect(D('rm "-rf" build')).toBe(true); // shell-quoted flag
+    expect(D("rm '-r' build")).toBe(true);
   });
 
   it('does NOT flag a single-file rm or a natural-language "remove"', () => {
@@ -24,8 +26,15 @@ describe('classifyDestructive', () => {
     expect(D('git push --force origin main')).toBe(true);
     expect(D('git push -f')).toBe(true);
     expect(D('git push --mirror backup')).toBe(true);
+    expect(D('git push origin +main')).toBe(true); // +refspec force syntax (no --force)
+    expect(D('git push origin +HEAD:main')).toBe(true);
     expect(D('git filter-branch --tree-filter rm secrets')).toBe(true);
     expect(D('run git filter-repo to purge secrets')).toBe(true);
+  });
+
+  it('does NOT flag an ordinary git push', () => {
+    expect(D('git push origin main')).toBe(false);
+    expect(D('commit and push the fix')).toBe(false);
   });
 
   it('flags git reset --hard', () => {
