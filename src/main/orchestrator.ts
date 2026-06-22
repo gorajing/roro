@@ -286,34 +286,42 @@ async function dispatchExecutor(
 ): Promise<void> {
   const controller = new AbortController();
   let terminalSeen = false;
-  let finished = false;
+  let uiEnded = false;
+  let slotReleased = false;
   let watchdog: ReturnType<typeof setTimeout> | null = null;
   activeRuns.set(runId, controller);
 
-  // Idempotent finalize: whichever fires first — the stream ending (finally) or the Stop watchdog —
-  // pushes the terminal failure (if forced) + runEnd exactly once.
-  const finish = (forcedError?: string): void => {
-    if (finished) return;
-    finished = true;
-    if (watchdog) {
-      clearTimeout(watchdog);
-      watchdog = null;
-    }
+  // UI-terminal: push the terminal failure (if forced) + runEnd exactly once. Does NOT free the
+  // executor slot — a watchdog-forced Stop is terminal to the USER while the possibly-still-alive
+  // child keeps the single-executor slot, so guardedDispatch won't start a concurrent run.
+  const endUi = (forcedError?: string): void => {
+    if (uiEnded) return;
+    uiEnded = true;
     if (forcedError && !terminalSeen) {
       pushEvent({ kind: 'run.failed', runId, ok: false, error: forcedError, ts: Date.now() });
       notifyJobDone(false, forcedError);
     }
-    activeRuns.delete(runId);
     pushRunEnd(runId);
   };
+  // Free the executor slot ONLY when the stream has truly ended (the child is confirmed gone), so a
+  // new run never starts against a repo an orphaned child may still be mutating.
+  const releaseSlot = (): void => {
+    if (slotReleased) return;
+    slotReleased = true;
+    if (watchdog) {
+      clearTimeout(watchdog);
+      watchdog = null;
+    }
+    activeRuns.delete(runId);
+  };
 
-  // Stop watchdog: if the executor child doesn't honor abort within STOP_WATCHDOG_MS, force a
-  // terminal event + runEnd so Stop is PROVABLY terminal to the UI. (The executor adapter is
-  // responsible for actually SIGKILLing its child on abort; this guarantees UI terminality.)
+  // Stop watchdog: if the child doesn't honor abort within STOP_WATCHDOG_MS, make the run terminal to
+  // the UI (so Stop is provably terminal). It does NOT free the slot — the slot frees when the stream
+  // truly ends. (The executor adapter SIGKILLs its child on abort, so the stream normally ends fast.)
   controller.signal.addEventListener(
     'abort',
     () => {
-      watchdog = setTimeout(() => finish('stopped'), STOP_WATCHDOG_MS);
+      watchdog = setTimeout(() => endUi('stopped'), STOP_WATCHDOG_MS);
     },
     { once: true },
   );
@@ -326,7 +334,7 @@ async function dispatchExecutor(
       agent,
       signal: controller.signal,
     })) {
-      if (finished) break; // watchdog already finalized this run; ignore (and unwind) late events
+      if (uiEnded) break; // already terminal (watchdog); stop processing — unwinding triggers child cleanup
       // Re-stamp to the orchestrator's runId — the executors mint their OWN run ids, but activeRuns
       // (and so Stop/cancelTask) is keyed by THIS runId. Without this, a targeted Stop from the
       // renderer (which sees the event's runId) never finds the controller. One id per turn.
@@ -351,7 +359,7 @@ async function dispatchExecutor(
       // Fire-and-forget memory persistence so it never stalls the event stream.
       void rememberEvent(sessionId, stamped);
     }
-    if (!terminalSeen && !finished && !controller.signal.aborted) {
+    if (!terminalSeen && !uiEnded && !controller.signal.aborted) {
       const completed: ActionEvent = {
         kind: 'run.completed',
         runId,
@@ -366,7 +374,7 @@ async function dispatchExecutor(
   } catch (err) {
     // The executors normally translate failures into a run.failed event, but guard the
     // for-await itself so a thrown error still produces a terminal event + runEnd.
-    if (!terminalSeen && !finished) {
+    if (!terminalSeen && !uiEnded) {
       pushEvent({
         kind: 'run.failed',
         runId,
@@ -377,7 +385,8 @@ async function dispatchExecutor(
       notifyJobDone(false, (err as Error).message);
     }
   } finally {
-    finish();
+    releaseSlot();
+    endUi();
   }
 }
 
