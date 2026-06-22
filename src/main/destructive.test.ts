@@ -22,23 +22,25 @@ describe('classifyDestructive', () => {
     expect(D('remove the unused import in app.ts')).toBe(false);
   });
 
-  it('flags force/mirror push and history rewrite', () => {
+  it('flags force/mirror push and history rewrite (incl. global options + +refspec)', () => {
     expect(D('git push --force origin main')).toBe(true);
     expect(D('git push -f')).toBe(true);
     expect(D('git push --mirror backup')).toBe(true);
     expect(D('git push origin +main')).toBe(true); // +refspec force syntax (no --force)
     expect(D('git push origin +HEAD:main')).toBe(true);
+    expect(D('git -C . push --force origin main')).toBe(true); // global -C option before subcommand
     expect(D('git filter-branch --tree-filter rm secrets')).toBe(true);
     expect(D('run git filter-repo to purge secrets')).toBe(true);
+  });
+
+  it('flags git reset --hard (incl. global options)', () => {
+    expect(D('git reset --hard HEAD~3')).toBe(true);
+    expect(D('git -C /repo reset --hard origin/main')).toBe(true);
   });
 
   it('does NOT flag an ordinary git push', () => {
     expect(D('git push origin main')).toBe(false);
     expect(D('commit and push the fix')).toBe(false);
-  });
-
-  it('flags git reset --hard', () => {
-    expect(D('git reset --hard HEAD~3')).toBe(true);
   });
 
   it('flags SQL drop / truncate', () => {

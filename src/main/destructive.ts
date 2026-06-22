@@ -17,9 +17,10 @@ const PATTERNS: Array<{ re: RegExp; reason: string }> = [
   // be contiguous after `rm` so an unrelated later `-r…` in prose doesn't false-flag.
   { re: /\brm(?:\s+['"]?-\S+)*\s+['"]?-\S*r/i, reason: 'recursive file deletion (rm -r)' },
   // Force/mirror push, INCLUDING the `+refspec` force syntax (git push origin +main) which rewrites
-  // remote refs with no --force flag.
-  { re: /\bgit\s+push\b[^\n]*(?:--force\b|--force-with-lease\b|--mirror\b|\s-f(?:\s|$)|\s\+[\w/])/i, reason: 'force/mirror git push (rewrites history)' },
-  { re: /\bgit\s+reset\b[^\n]*--hard/i, reason: 'git reset --hard (discards local changes)' },
+  // remote refs with no --force flag. The git prefix tolerates global options (git -C <path>, -c
+  // <kv>, …) before the subcommand so `git -C . push --force` doesn't slip through.
+  { re: /\bgit(?:\s+-[Cc]\s+\S+|\s+-\S+)*\s+push\b[^\n]*(?:--force\b|--force-with-lease\b|--mirror\b|\s-f(?:\s|$)|\s\+[\w/])/i, reason: 'force/mirror git push (rewrites history)' },
+  { re: /\bgit(?:\s+-[Cc]\s+\S+|\s+-\S+)*\s+reset\b[^\n]*--hard/i, reason: 'git reset --hard (discards local changes)' },
   { re: /\b(?:filter-branch|filter-repo)\b/i, reason: 'git history rewrite' },
   { re: /\bdrop\s+(?:table|database|schema)\b/i, reason: 'SQL DROP (data loss)' },
   { re: /\btruncate\s+(?:table\s+)?\w/i, reason: 'SQL TRUNCATE (data loss)' },
