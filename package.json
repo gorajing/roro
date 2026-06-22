@@ -41,6 +41,8 @@
     "vitest": "^2.1.9"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.3",
+    "@electric-sql/pglite-pgvector": "^0.0.4",
     "@ngrok/ngrok": "^1.7.0",
     "@pixi/unsafe-eval": "^7.4.3",
     "@vapi-ai/web": "^2.5.2",
