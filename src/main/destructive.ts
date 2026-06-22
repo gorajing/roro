@@ -1,0 +1,32 @@
+// src/main/destructive.ts — a small, high-confidence classifier for tasks that need an explicit
+// confirm before the coding agent runs them. PURE + conservative-by-DESIGN toward the SAFE failure:
+// a false positive is one extra confirm click; a false negative could run `rm -rf` unconfirmed. But
+// it deliberately does NOT flag URL routes / in-repo paths — over-flagging breeds alarm fatigue and
+// makes the gate worthless. Finer "outside workdir()" detection is approximated by home/system roots
+// (free-text path parsing can't reliably tell "/health" the route from "/health" the file).
+
+export interface DestructiveVerdict {
+  destructive: boolean;
+  /** Human-readable reason, present when destructive. */
+  reason?: string;
+}
+
+const PATTERNS: Array<{ re: RegExp; reason: string }> = [
+  { re: /\brm\s+(?:-\S*r|--recursive)/i, reason: 'recursive file deletion (rm -r)' },
+  { re: /\bgit\s+push\b[^\n]*(?:--force\b|--force-with-lease\b|--mirror\b|\s-f(?:\s|$))/i, reason: 'force/mirror git push (rewrites history)' },
+  { re: /\bgit\s+reset\b[^\n]*--hard/i, reason: 'git reset --hard (discards local changes)' },
+  { re: /\b(?:filter-branch|filter-repo)\b/i, reason: 'git history rewrite' },
+  { re: /\bdrop\s+(?:table|database|schema)\b/i, reason: 'SQL DROP (data loss)' },
+  { re: /\btruncate\s+(?:table\s+)?\w/i, reason: 'SQL TRUNCATE (data loss)' },
+  { re: /\bdd\s+(?:if|of)=/i, reason: 'raw disk write (dd)' },
+  { re: /\bmkfs(?:\.\w+)?\b/i, reason: 'filesystem format (mkfs)' },
+  { re: /(?:^|\s)~\//, reason: 'touches a home-directory path outside the workspace' },
+  { re: /(?:^|\s)\/(?:etc|usr|bin|sbin|var|dev|System|Library|opt|boot|root|private)\b/i, reason: 'touches a system path outside the workspace' },
+];
+
+export function classifyDestructive(task: string): DestructiveVerdict {
+  for (const { re, reason } of PATTERNS) {
+    if (re.test(task)) return { destructive: true, reason };
+  }
+  return { destructive: false };
+}
