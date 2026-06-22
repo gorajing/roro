@@ -8,9 +8,9 @@
 
 **Roro** is a cute pixel-cat desktop pet that **drives your coding agent** (Codex/Claude Code, on *your* keys), **remembers you across sessions**, and **talks** — built **free + local-first**, monetized by **cosmetics** (alternate pets, items, voice packs), *not* subscriptions.
 
-- **Repo:** `/Users/jinchoi/Code/roro` — private `github.com/gorajing/roro`, branch `main`. Builds clean (`tsc` 0 errors), `npm test` = 17/17 green. Fresh git history.
+- **Repo:** `/Users/jinchoi/Code/roro` — private `github.com/gorajing/roro`, branch `main`. Builds clean (`tsc` 0 errors), `npm test` = 61/61 green. Fresh git history.
 - **It's a fresh start** copied from a hackathon prototype's verified bones (procedural cat, executor adapter, orchestrator, frozen ActionEvent union, Vitest) + all design docs, renamed Nero→Roro. The old hackathon repo (`/Users/jinchoi/Code/companion/app`, remote `gorajing/companion`) is **frozen — do not touch it**.
-- **The ONE next task:** build **Phase A.5 — the memory spine — on local PGlite** (see §8). The A.5 plan (`docs/superpowers/plans/2026-06-21-nero-a5-memory-spine.md`) is logically correct but its *storage adapter* was written for Insforge and must be re-authored for PGlite (§5, §8).
+- **A.5 — the memory spine — is DONE** (branch `feat/a5-memory-spine`): device-stable `owner_id`, local PGlite + pgvector store (re-authored from Insforge), owner-scoped recall + `getProfile`/supersede, the 1-fact extractor, and supersede-not-overwrite — proven by an automated cross-launch persistence test (teach → close → reopen → recall) and hardened through a 7-round Codex cross-model review. **The ONE next task is now Phase B — the magic moment** (see §8).
 - **How to work:** TDD with Vitest (red→green), small diffs, run `npx tsc --noEmit` + `npx vitest run` to verify. Ground in the actual files before editing.
 
 ---
@@ -33,9 +33,9 @@ A developer's ambient coding companion in the shape of a pet you bond with. You 
 ## 3. Repo state (concrete)
 
 - **Location:** `/Users/jinchoi/Code/roro` · **Remote:** private `gorajing/roro` · **Branch:** `main`.
-- **Verified:** `npx tsc --noEmit` → 0 errors; `npx vitest run` → 17/17 (framePolicy, gaze, activity).
+- **Verified:** `npx tsc --noEmit` → 0 errors; `npx vitest run` → 61/61 (framePolicy, gaze, activity + the full A.5 memory spine: identity, PGlite store, recall, extractor, factStore, cross-launch persistence, orchestrator capture-screen).
 - **Stack:** Electron 42 + electron-forge + Vite; PixiJS v7 procedural cat; TypeScript; Vitest.
-- **The bones (kept, working):** `src/executor/{codex,claude}.ts` (CLI adapters, codex live-verified @0.139.0 → ActionEvent union), `src/main/orchestrator.ts` (the turn loop), `src/brain/index.ts` (decide/embed/vision via an OpenAI-compatible client), `src/memory/index.ts` (memory adapter — **Insforge today, must move to PGlite**), `src/renderer/character/*` (the cat: avatar, driver, activity, framePolicy, gaze, stateMachine, lipsync, captions), `src/shared/{events,brain,memory,ipc,avatar,gaze}.ts`, `src/renderer/voice/*` (Vapi facade — **to be replaced with local voice**).
+- **The bones (kept, working):** `src/executor/{codex,claude}.ts` (CLI adapters, codex live-verified @0.139.0 → ActionEvent union), `src/main/orchestrator.ts` (the turn loop), `src/brain/index.ts` (decide/embed/vision via an OpenAI-compatible client; now also the 1-fact extractor), `src/memory/index.ts` (memory adapter — **now local PGlite + pgvector, owner-scoped**, with `src/memory/schema.ts`; plus `src/main/{identity,memoryContext,factStore}.ts`), `src/renderer/character/*` (the cat: avatar, driver, activity, framePolicy, gaze, stateMachine, lipsync, captions), `src/shared/{events,brain,memory,ipc,avatar,gaze}.ts`, `src/renderer/voice/*` (Vapi facade — **to be replaced with local voice**).
 - **Phase A is already shipped** (in the bones): body gesture grammar (tap/hold=pet, drag=move, hover=gaze), cursor gaze, Activity/Energy sleep-wake, the frame governor.
 - **Gotchas:** the internal `COMPANION_` env prefix is unchanged (deliberate later rename); dated `docs/.../2026-06-2x-nero-*.md` filenames keep their `nero-` slugs (content is Roro; renaming files would break cross-links). A `.env` with model keys is needed to run live (going local/BYO reduces this).
 
@@ -89,8 +89,8 @@ A developer's ambient coding companion in the shape of a pet you bond with. You 
 
 Order (each phase independently shippable + verifiable):
 
-1. **A.5 — Memory spine (NEXT).** Device-stable `owner_id`; PGlite + pgvector schema (owner_id + superseded + embed_model/embed_dim); owner-scoped recall + `getProfile`; thin 1-fact-per-turn extractor (null-when-unsure, source-linked, supersede). Proven by a **cross-launch fixture** (fact taught in "launch A" recalled in "launch B," fresh session, same owner). **The plan exists** at `docs/superpowers/plans/2026-06-21-nero-a5-memory-spine.md` — its logic (owner_id, extractor, recall composition, the fixture) is **store-agnostic and valid**, but **Task 1 (SQL migration via Insforge RPCs) and Task 3 (`src/memory/index.ts`, `insforgeFetch`) must be re-authored for local PGlite** (direct SQL against an embedded Postgres, not REST/RPC). Start there.
-2. **B — The magic moment.** Floating Ask input + Stop pill (outside `#overlay`); **`turnRun` resolves at dispatch**; labeled facts segment into `decide()`. Unlocks the typed magic moment on the cat body.
+1. **A.5 — Memory spine (✅ DONE, branch `feat/a5-memory-spine`).** Device-stable `owner_id`; PGlite + pgvector schema (owner_id + superseded + embed_model/embed_dim + a `seq` ordering key); owner-scoped recall + `getProfile`/supersede; thin 1-fact-per-turn extractor (null-when-unsure, source-linked, supersede, snake_case-normalized keys). Re-authored from the Insforge REST plan to **direct SQL on in-process PGlite** (no stored RPCs). Proven by an **automated cross-launch persistence test** (fact taught in "launch A" → real `close()` → reopen the same `dataDir` → recalled in "launch B," fresh session, same owner) — this subsumes the plan's manual Task 8. Hardened via a 7-round Codex cross-model review (race serialization, insert-before-supersede, allSettled fact/episode independence, capture-screen self-match, renderer fact-write guard). The original plan (`docs/superpowers/plans/2026-06-21-nero-a5-memory-spine.md`) is preserved as the spec.
+2. **B — The magic moment (NEXT).** Floating Ask input + Stop pill (outside `#overlay`); **`turnRun` resolves at dispatch** (today it `await`s the whole run — see §4 "key hinge" and `orchestrator.ts`); labeled facts already segment into `decide()` via A.5's `buildRecallContext`. Unlocks the typed magic moment on the cat body. **No plan doc yet** — the backend hinge (dispatch-return) is well-specified and TDD-able; the floating Ask/Stop UX needs a design pass.
 3. **C1 — Reliability.** `status` event kind; preempt/cancel (`cancelTurn` + abortable `decide`); destructive-confirm (a spoken word can't approve `rm -rf`); Stop watchdog. (This is the layer voice depends on.)
 4. **D — Voice (local).** whisper.cpp + Silero + Kokoro behind a `VoiceBackend` facade; ear-perk; mouth-not-brain through `turnRun`. Voice = cosmetic surface.
 5. **Cosmetics/customization system.** Pet variants + wearable/item layer + voice-pack equip + the store; later the creator marketplace.
@@ -102,7 +102,7 @@ Order (each phase independently shippable + verifiable):
 | `MONETIZATION.md` | **SUPERSEDED.** It's the hardened $25-Pro/sync model, which was rejected. Real model = free-core + cosmetics (§7). Kept as the record of *why* sync failed. |
 | `docs/.../2026-06-21-nero-voice-decision.md` | **Partially superseded.** Voice-forward/type-default, mouth-not-brain, summon-not-ambient, reject-LiveKit/Realtime all still hold. But "Vapi-hosted-first" → now **local-first voice** (§5), and voice monetizes as **cosmetics** not minutes (§7). |
 | `docs/.../2026-06-21-nero-substrate-decision.md` | **Mostly holds**, except: memory → **PGlite local-first** now (not "keep Insforge"), and the brain hosted-default discussion is moot in the BYO/free model. The embedding-provenance-stamp + "embedding is the sticky choice" points still hold. |
-| `docs/.../2026-06-21-nero-a5-memory-spine.md` | **Logic valid; storage adapter must be re-authored for PGlite** (§8). |
+| `docs/.../2026-06-21-nero-a5-memory-spine.md` | **IMPLEMENTED on PGlite** (§8 #1). Kept as the spec/rationale; its Insforge Task 1/3/8 were re-authored for in-process PGlite. |
 | `docs/.../2026-06-21-nero-ultimate-ux-design-PROPOSAL.md` (the "v2 spine") | **Canonical for the interaction model** (§6). Ignore its voice-substrate (Vapi) and monetization (sync) sections — §5/§7 here supersede them. |
 | `docs/ARCHITECTURE.md` | Background research, superseded by the above; some directions (provider seams, pgvector, MCP-later) still valid. |
 
@@ -116,9 +116,10 @@ Order (each phase independently shippable + verifiable):
 
 ## 11. Immediate next steps for the next agent
 
-1. **Skim the canonical docs** in priority order: this `HANDOFF.md` → the "v2 spine" UX proposal (interaction model) → the A.5 plan (the build).
-2. **Build A.5 on PGlite** (§8 #1): add `pglite`/pgvector, re-author the memory adapter (`src/memory/index.ts`) and the schema for embedded Postgres, keep the owner_id/fact-extractor/recall-composition/cross-launch-fixture logic from the plan, and get the cross-launch fixture green (`npx vitest run`).
-3. **Verify each step:** `npx tsc --noEmit` + `npx vitest run`; commit in small TDD increments.
-4. (Optional, later) full cosmetic-monetization design pass; rename `COMPANION_`→`RORO_`; rename dated doc files.
+1. **Skim the canonical docs** in priority order: this `HANDOFF.md` → the "v2 spine" UX proposal (interaction model) → the A.5 plan (now the *spec* for the shipped memory spine).
+2. **A.5 is done** (§8 #1, branch `feat/a5-memory-spine`). If not yet merged, fast-forward `main` to it (`git switch main && git merge --ff-only feat/a5-memory-spine`) or open a PR.
+3. **Build Phase B — the magic moment** (§8 #2). Start with the backend hinge — make **`turnRun` resolve at dispatch** (return `{runId}` once the executor is handed off; today it `await`s the full run): this unblocks Stop / preempt / voice barge-in and is pure backend, TDD-able. Then the floating Ask input + Stop pill (needs a UX design pass first — disambiguate by surface+state, exactly one deliberate action to start work). A.5's `buildRecallContext` already feeds labeled facts into `decide()`.
+4. **Verify each step:** `npx tsc --noEmit` + `npx vitest run`; commit in small TDD increments.
+5. (Optional, later) full cosmetic-monetization design pass; rename `COMPANION_`→`RORO_` (incl. the new `COMPANION_DB_DIR`); rename dated doc files.
 
 **Working agreement:** TDD (red→green), small diffs, re-read files before editing, run the verifications, never claim "done" without a green test that would have failed before the change. Commit/push only when asked.

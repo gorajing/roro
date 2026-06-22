@@ -1,10 +1,12 @@
 import OpenAI from 'openai';
 
 import type { Command, Decision, DecideInput } from '../shared/brain';
+import { buildFactPrompt, parseFactResponse, FACT_SYSTEM_PROMPT, type FactExtractInput, type FactCandidate } from './extractFact';
 
 declare const process: { env: Record<string, string | undefined> };
 
 export type { Command, Decision, DecideInput } from '../shared/brain';
+export type { FactExtractInput, FactCandidate } from './extractFact';
 
 export interface DecideOptions {
   onReasoning?: (delta: string) => void;
@@ -137,6 +139,26 @@ export async function decide(input: DecideInput, options: DecideOptions = {}): P
   }
 
   return parseDecision(content);
+}
+
+/**
+ * Thin 1-fact-per-turn extractor. Cheap, non-streaming, OFF the critical path.
+ * Returns at most one durable fact, or null when there is nothing worth remembering.
+ */
+export async function extractFact(input: FactExtractInput): Promise<FactCandidate | null> {
+  const models = getModelIds();
+  const response = await getNebiusClient().chat.completions.create({
+    model: models.reason,
+    temperature: 0,
+    max_tokens: 120,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: FACT_SYSTEM_PROMPT },
+      { role: 'user', content: buildFactPrompt(input) },
+    ],
+  });
+  const content = response.choices[0]?.message?.content;
+  return typeof content === 'string' ? parseFactResponse(content) : null;
 }
 
 export async function describeScreen(input: ScreenInput): Promise<string> {

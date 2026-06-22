@@ -22,6 +22,10 @@ import type { Command, Decision, DecideInput } from '../shared/brain';
 import type { MemoryKind } from '../shared/memory';
 import { getExecutor } from '../executor';
 import { loadBrain, loadMemory, loadVision } from './siblings';
+import { getOwnerId } from './identity';
+import { buildRecallContext } from './memoryContext';
+import { extractAndStoreFact } from './factStore';
+import type { FactExtractInput } from '../brain/extractFact';
 
 const RECALL_K = 5;
 const RECALL_MIN_SIMILARITY = 0.3;
@@ -127,6 +131,7 @@ async function rememberEvent(sessionId: string, e: ActionEvent): Promise<void> {
   try {
     const memory = await loadMemory();
     await memory.remember({
+      owner_id: getOwnerId(),
       session_id: sessionId,
       kind: memoryKind(e),
       text: summarizeEvent(e),
@@ -150,22 +155,25 @@ async function recallContext(
 ): Promise<string | undefined> {
   try {
     const memory = await loadMemory();
-    const matches = await memory.recall({ query, k: RECALL_K, sessionId });
-    const kept = matches.filter((m) => m.similarity > RECALL_MIN_SIMILARITY);
-    // Visible Insforge beat: the pgvector recall emits no ActionEvent of its own,
-    // so surface it here as a message so the memory round-trip is legible on the
-    // timeline/captions (rides the existing message wiring; no frozen-union change).
+    // Owner-scoped recall: durable profile facts (getProfile) + episodic pgvector matches,
+    // composed into a single LABELED memory string. Facts come first so they survive truncation.
+    const { context, factCount, episodeCount } = await buildRecallContext(memory, {
+      ownerId: getOwnerId(),
+      sessionId,
+      query,
+      k: RECALL_K,
+      minSimilarity: RECALL_MIN_SIMILARITY,
+    });
+    // Visible memory beat: recall emits no ActionEvent of its own, so surface it as a message so
+    // the memory round-trip is legible on the timeline/captions (rides the existing message
+    // wiring; no frozen-union change). Stays kind:'message' in A.5; migrates to kind:'status' in C1.
     pushEvent({
       kind: 'message',
       runId,
-      text:
-        kept.length > 0
-          ? `Insforge memory (pgvector): recalled ${kept.length} relevant ${kept.length === 1 ? 'item' : 'items'}`
-          : 'Insforge memory (pgvector): no prior context yet',
+      text: `Memory: ${factCount} known ${factCount === 1 ? 'fact' : 'facts'}, ${episodeCount} related ${episodeCount === 1 ? 'item' : 'items'}`,
       ts: Date.now(),
     });
-    if (kept.length === 0) return undefined;
-    return kept.map((m) => m.text).join('\n');
+    return context;
   } catch (err) {
     console.error('[orchestrator] recall failed:', (err as Error).message);
     return undefined;
@@ -195,6 +203,7 @@ async function dispatchExecutor(
   sessionId: string,
   prompt: string,
   agent: AgentKind,
+  factCtx?: { transcript: string; narration: string; task: string },
 ): Promise<void> {
   const controller = new AbortController();
   let terminalSeen = false;
@@ -213,6 +222,16 @@ async function dispatchExecutor(
       if (ev.kind === 'run.completed' || ev.kind === 'run.failed') {
         terminalSeen = true;
         notifyJobDone(ev.kind === 'run.completed', terminalEventText(ev));
+        // Off-critical-path: extract AT MOST one durable fact from this turn (supersede-not-
+        // overwrite). Fire-and-forget; this survives the Phase-B dispatch-return change.
+        if (factCtx) {
+          void runFactExtraction(sessionId, {
+            transcript: factCtx.transcript,
+            narration: factCtx.narration,
+            task: factCtx.task,
+            outcome: ev.kind === 'run.completed' ? 'completed' : 'failed',
+          });
+        }
       }
       // Fire-and-forget memory persistence so it never stalls the event stream.
       void rememberEvent(sessionId, ev);
@@ -287,16 +306,22 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
     return { runId };
   }
 
-  await actOnDecision(runId, input, decision, /* screenAlreadyCaptured */ false);
+  await actOnDecision(runId, input, decision, /* screenAlreadyCaptured */ false, memory);
   return { runId };
 }
 
-/** Dispatch logic for a Decision; capture_screen may loop back into decide() exactly once. */
+/**
+ * Dispatch logic for a Decision; capture_screen may loop back into decide() exactly once.
+ * `recalledMemory` is the recall computed in runTurn BEFORE this turn's transcript was stored —
+ * the capture_screen re-decide reuses it rather than re-recalling (a second recall would
+ * self-match the just-persisted transcript as top "RELATED PAST CONTEXT").
+ */
 async function actOnDecision(
   runId: string,
   input: TurnInput,
   decision: Decision,
   screenAlreadyCaptured: boolean,
+  recalledMemory: string | undefined,
 ): Promise<void> {
   const { transcript, sessionId } = input;
   const command: Command = decision.command;
@@ -309,6 +334,7 @@ async function actOnDecision(
     case 'clarify': {
       // Push the narration for the renderer to speak; no executor, no run.
       emitNarration(runId, decision.narration);
+      void runFactExtraction(sessionId, { transcript, narration: decision.narration, outcome: 'answered' });
       pushRunEnd(runId);
       return;
     }
@@ -337,11 +363,11 @@ async function actOnDecision(
         pushRunEnd(runId);
         return;
       }
-      // Loop back into decide() ONCE with the screen description, then re-dispatch.
+      // Loop back into decide() ONCE with the screen description, then re-dispatch. Reuse the
+      // pre-store recall (re-recalling here would self-match this turn's just-stored transcript).
       let next: Decision;
       try {
-        const recalled = await recallContext(transcript, sessionId, runId);
-        next = await decideStreaming({ transcript, memory: recalled, screen });
+        next = await decideStreaming({ transcript, memory: recalledMemory, screen });
       } catch (err) {
         pushEvent({
           kind: 'run.failed',
@@ -353,7 +379,7 @@ async function actOnDecision(
         pushRunEnd(runId);
         return;
       }
-      await actOnDecision(runId, input, next, /* screenAlreadyCaptured */ true);
+      await actOnDecision(runId, input, next, /* screenAlreadyCaptured */ true, recalledMemory);
       return;
     }
 
@@ -366,7 +392,11 @@ async function actOnDecision(
           : transcript;
       const agent: AgentKind =
         decision.args.agent === 'claude' ? 'claude' : DEFAULT_AGENT;
-      await dispatchExecutor(runId, sessionId, task, agent);
+      await dispatchExecutor(runId, sessionId, task, agent, {
+        transcript,
+        narration: decision.narration,
+        task,
+      });
       return;
     }
   }
@@ -377,6 +407,7 @@ async function rememberNarration(sessionId: string, text: string): Promise<void>
   try {
     const memory = await loadMemory();
     await memory.remember({
+      owner_id: getOwnerId(),
       session_id: sessionId,
       kind: 'narration',
       text,
@@ -392,12 +423,31 @@ async function rememberUserSaid(sessionId: string, transcript: string): Promise<
   try {
     const memory = await loadMemory();
     await memory.remember({
+      owner_id: getOwnerId(),
       session_id: sessionId,
       kind: 'observation',
       text: transcript,
     });
   } catch (err) {
     console.error('[orchestrator] remember user transcript failed:', (err as Error).message);
+  }
+}
+
+/**
+ * Off-critical-path: after a turn's terminal event, extract AT MOST one durable fact and
+ * store it (supersede-not-overwrite). Fire-and-forget; never blocks or fails a turn.
+ */
+async function runFactExtraction(sessionId: string, input: FactExtractInput): Promise<void> {
+  try {
+    const [brain, memory] = await Promise.all([loadBrain(), loadMemory()]);
+    const candidate = await brain.extractFact(input);
+    await extractAndStoreFact(memory, candidate, {
+      ownerId: getOwnerId(),
+      sessionId,
+      turnTs: Date.now(),
+    });
+  } catch (err) {
+    console.error('[orchestrator] fact extraction failed:', (err as Error).message);
   }
 }
 

@@ -40,7 +40,7 @@ function commandLabel(command: string): string {
   return 'running command';
 }
 
-function activityForEvent(e: ActionEvent): ActivityCue | null {
+export function activityForEvent(e: ActionEvent): ActivityCue | null {
   switch (e.kind) {
     case 'run.started':
     case 'turn.started':
@@ -64,11 +64,15 @@ function activityForEvent(e: ActionEvent): ActivityCue | null {
       }
       return { kind: 'command', text: e.summary ? compact(e.summary) : compact(e.tool) };
     }
-    case 'message':
-      if (e.text.startsWith('Insforge memory')) {
-        return { kind: 'memory', text: e.text.includes('no prior') ? 'checking memory' : 'recalled memory' };
+    case 'message': {
+      // The orchestrator's owner-scoped recall beat: "Memory: N known facts, M related items".
+      const beat = e.text.match(/^Memory: (\d+) known .*?(\d+) related/);
+      if (beat) {
+        const recalled = Number(beat[1]) > 0 || Number(beat[2]) > 0;
+        return { kind: 'memory', text: recalled ? 'recalled memory' : 'checking memory' };
       }
       return null;
+    }
     case 'run.completed':
       return { kind: 'success', text: 'done' };
     case 'run.failed':

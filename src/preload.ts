@@ -77,7 +77,8 @@ const brain = {
 };
 
 const memory = {
-  remember: (input: RememberInput): Promise<MemoryRow> =>
+  // owner_id is injected MAIN-side from the device identity; the renderer never supplies it.
+  remember: (input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow> =>
     ipcRenderer.invoke(CH.memoryRemember, input),
   recall: (input: {
     query: string;
