@@ -47,6 +47,9 @@ const inFlightTurns = new Set<string>();
 /** The most recently minted turn/task runId — the no-id Stop fallback, which must also reach a turn
  *  still in decide/confirm (when activeRuns is still empty). */
 let lastTurnId: string | null = null;
+/** Held synchronously across the clean-tree-check → dispatch critical section so that section can't
+ *  interleave: it guarantees a destructive run's clean-tree result is fresh at dispatch (no TOCTOU). */
+let dispatchLock = false;
 
 /** Resolve the scratch git repo the coding agents run in. */
 function workdir(): string {
@@ -79,22 +82,50 @@ function pushStopped(runId: string, error = 'stopped'): void {
 }
 
 /**
- * Destructive-confirm gate (used by BOTH run_agent and the brain-bypassing runTask). Classify the
- * task; if dangerous, require explicit approval via the dedicated CH.confirmResolve channel (15s
- * default-DENY) AND a clean git tree. Returns ok:false with a reason when the run must be skipped.
+ * Step 1 of the destructive gate (used by BOTH run_agent and the brain-bypassing runTask): classify
+ * the task, and if dangerous require explicit approval via the dedicated CH.confirmResolve channel
+ * (15s default-DENY). NO lock is held here (the confirm can take up to 15s). The clean-tree check is
+ * NOT here — it's done inside guardedDispatch so it's fresh at dispatch (see that fn).
  */
-async function passesDestructiveGate(
+async function confirmIfDestructive(
   runId: string,
   task: string,
-): Promise<{ ok: boolean; reason?: string }> {
+): Promise<{ ok: boolean; destructive: boolean; reason?: string }> {
   const verdict = classifyDestructive(task);
-  if (!verdict.destructive) return { ok: true };
+  if (!verdict.destructive) return { ok: true, destructive: false };
   const approved = await requestConfirm(runId, verdict.reason ?? 'destructive command', pushConfirmRequest);
-  if (!approved) return { ok: false, reason: `it looked destructive (${verdict.reason}) and wasn't approved` };
-  if (!(await isCleanTree(workdir()))) {
-    return { ok: false, reason: "the git tree isn't clean, so a destructive step couldn't be safely undone — commit or stash first" };
+  if (!approved) return { ok: false, destructive: true, reason: `it looked destructive (${verdict.reason}) and wasn't approved` };
+  return { ok: true, destructive: true };
+}
+
+/**
+ * Step 2: the lock-protected single-executor dispatch. Holds dispatchLock across the (destructive)
+ * clean-tree check AND the synchronous dispatch(), so no other turn can start an executor in between
+ * — the clean-tree result is therefore fresh at dispatch (closes the TOCTOU), and only one coding
+ * agent ever runs on the repo at a time. Returns false (and emits a terminal) if it can't dispatch.
+ */
+async function guardedDispatch(runId: string, destructive: boolean, dispatch: () => void): Promise<boolean> {
+  if (dispatchLock || activeRuns.size > 0) {
+    emitNarration(runId, "I'm already working on something — Stop that first, or wait for it to finish.");
+    pushRunEnd(runId);
+    return false;
   }
-  return { ok: true };
+  dispatchLock = true;
+  try {
+    if (destructive && !(await isCleanTree(workdir()))) {
+      emitNarration(runId, "Skipping that — the git tree isn't clean, so a destructive step couldn't be safely undone — commit or stash first.");
+      pushRunEnd(runId);
+      return false;
+    }
+    if (preemptedTurns.has(runId)) {
+      pushStopped(runId);
+      return false;
+    }
+    dispatch(); // registers activeRuns synchronously before releasing the lock
+    return true;
+  } finally {
+    dispatchLock = false;
+  }
 }
 
 function pushReasoning(delta: string): void {
@@ -492,37 +523,26 @@ async function actOnDecision(
         decision.args.agent === 'claude' ? 'claude' : DEFAULT_AGENT;
 
       // C1 destructive-confirm gate (BEFORE dispatch). A spoken/typed word can NEVER approve —
-      // approval is only the dedicated CH.confirmResolve channel; 15s default-deny; clean-tree required.
-      const gate = await passesDestructiveGate(runId, task);
-      if (!gate.ok) {
-        emitNarration(runId, `Skipping that — ${gate.reason ?? "it was blocked"}.`);
+      // approval is only the dedicated CH.confirmResolve channel; 15s default-deny.
+      const confirm = await confirmIfDestructive(runId, task);
+      if (!confirm.ok) {
+        emitNarration(runId, `Skipping that — ${confirm.reason ?? "it was blocked"}.`);
         pushRunEnd(runId);
         return;
       }
-
       // Honor a Stop that arrived during decide/confirm (pre-executor preempt).
       if (preemptedTurns.has(runId)) {
         pushStopped(runId);
         return;
       }
-
-      // ONE executor at a time. A concurrent run could dirty the repo between the clean-tree check
-      // and this destructive run (TOCTOU), and two coding agents on one repo is chaos. The gate ->
-      // dispatch path has no await, and dispatchExecutor registers activeRuns synchronously, so this
-      // check is atomic. Interrupt by Stop (which preempts), not by overlapping.
-      if (activeRuns.size > 0) {
-        emitNarration(runId, "I'm already working on something — Stop that first, or wait for it to finish.");
-        pushRunEnd(runId);
-        return;
-      }
-
-      // Resolve at DISPATCH: hand the executor off but DON'T await its stream. The action stream
-      // arrives over push channels and the AbortController is registered synchronously at the top
-      // of dispatchExecutor, so Stop / preempt / barge-in stay wireable.
-      void dispatchExecutor(runId, sessionId, task, agent, {
-        transcript,
-        narration: decision.narration,
-        task,
+      // Lock-protected single-executor dispatch (fresh clean-tree check inside; resolves at DISPATCH —
+      // the action stream arrives over push channels; the AbortController registers synchronously).
+      await guardedDispatch(runId, confirm.destructive, () => {
+        void dispatchExecutor(runId, sessionId, task, agent, {
+          transcript,
+          narration: decision.narration,
+          task,
+        });
       });
       return;
     }
@@ -590,24 +610,19 @@ export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId
   // runTask bypasses the brain, so the destructive gate MUST run here too (or a renderer caller
   // could `rm -rf` unconfirmed). Gate then dispatch off the critical path; return {runId} now.
   void (async () => {
-    const gate = await passesDestructiveGate(runId, prompt);
-    if (!gate.ok) {
-      emitNarration(runId, `Skipping that — ${gate.reason ?? "it was blocked"}.`);
+    const confirm = await confirmIfDestructive(runId, prompt);
+    if (!confirm.ok) {
+      emitNarration(runId, `Skipping that — ${confirm.reason ?? "it was blocked"}.`);
       pushRunEnd(runId);
       return;
     }
-    // Honor a Stop that arrived while confirm/clean-tree was pending (same as run_agent).
     if (preemptedTurns.has(runId)) {
       pushStopped(runId);
       return;
     }
-    // One executor at a time (closes the clean-tree TOCTOU; see run_agent).
-    if (activeRuns.size > 0) {
-      emitNarration(runId, "I'm already working on something — Stop that first, or wait for it to finish.");
-      pushRunEnd(runId);
-      return;
-    }
-    void dispatchExecutor(runId, `task_${runId}`, prompt, agent);
+    await guardedDispatch(runId, confirm.destructive, () => {
+      void dispatchExecutor(runId, `task_${runId}`, prompt, agent);
+    });
   })();
   return { runId };
 }
