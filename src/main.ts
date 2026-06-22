@@ -6,12 +6,14 @@ import 'dotenv/config'; // MUST be first: populates process.env from ./.env befo
 // BEFORE the window is created, so the renderer's getUserMedia is never raced/denied.
 console.log('[main] env loaded, VAPI_PUBLIC_KEY set:', Boolean(process.env.VAPI_PUBLIC_KEY));
 import { app, BrowserWindow } from 'electron';
+import { join } from 'node:path';
 import started from 'electron-squirrel-startup';
 
 import { ensureMicAccess, installPermissionHandlers } from './main/mic';
 import { registerIpcHandlers } from './main/ipc';
 import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorTracking } from './main/window';
 import { cancelAllRuns } from './main/orchestrator';
+import { initOwnerId } from './main/identity';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -29,6 +31,11 @@ if (process.env.COMPANION_DEBUG_PORT) {
 registerIpcHandlers();
 
 app.whenReady().then(async () => {
+  // 0. Device-stable owner_id — the memory spine. Must exist before any turn runs. The local
+  //    PGlite store lives beside owner.json in userData (single-writer, owned by main only).
+  process.env.COMPANION_DB_DIR ||= join(app.getPath('userData'), 'memory');
+  await initOwnerId();
+
   // 1. Chromium-level media permission grant for the renderer's getUserMedia (request+check).
   installPermissionHandlers();
 
