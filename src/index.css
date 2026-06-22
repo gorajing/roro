@@ -359,3 +359,46 @@ body.floating-window #floating-stop {
 body.floating-window #floating-stop.armed {
   display: block;
 }
+
+/* ---- Phase C1: destructive-confirm chip (shown in BOTH modes — safety is not floating-only) ---- */
+#confirm-chip {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: 90px;
+  transform: translateX(-50%);
+  z-index: 5;
+  pointer-events: auto;
+  max-width: 92%;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 180, 70, 0.55);
+  background: rgba(60, 40, 10, 0.92);
+  color: #fff;
+  padding: 8px 12px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+#confirm-chip.shown {
+  display: flex;
+}
+#confirm-chip button {
+  pointer-events: auto;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+#confirm-chip #confirm-approve {
+  background: rgba(40, 140, 60, 0.9);
+  color: #fff;
+}
+#confirm-chip #confirm-deny {
+  background: rgba(150, 40, 40, 0.9);
+  color: #fff;
+}

@@ -60,6 +60,12 @@ const companion = {
   // MAIN asks the renderer to open + focus the floating Ask input (⌘⇧Space summon).
   onFocusAsk: (cb: () => void): (() => void) =>
     subscribe<void>(CH.focusAsk, () => cb()),
+  // Destructive-confirm: MAIN pushes a request; the renderer's confirm chip resolves it. This
+  // invoke channel is the ONLY approval path — never a spoken/typed word.
+  onConfirmRequest: (cb: (req: { runId: string; summary: string }) => void): (() => void) =>
+    subscribe<{ runId: string; summary: string }>(CH.confirmRequest, cb),
+  confirmResolve: (runId: string, approved: boolean): Promise<void> =>
+    ipcRenderer.invoke(CH.confirmResolve, { runId, approved }),
   onCursor: (cb: (t: { x: number; y: number }) => void): (() => void) =>
     subscribe<{ x: number; y: number }>(CH.cursorMove, cb),
 };

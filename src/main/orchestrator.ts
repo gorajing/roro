@@ -25,14 +25,22 @@ import { loadBrain, loadMemory, loadVision } from './siblings';
 import { getOwnerId } from './identity';
 import { buildRecallContext } from './memoryContext';
 import { extractAndStoreFact } from './factStore';
+import { classifyDestructive } from './destructive';
+import { requestConfirm } from './confirmGate';
+import { isCleanTree } from './gitTree';
 import type { FactExtractInput } from '../brain/extractFact';
 
 const RECALL_K = 5;
 const RECALL_MIN_SIMILARITY = 0.3;
 const DEFAULT_AGENT: AgentKind = 'codex';
+/** How long after an abort we force a terminal event so Stop is provably terminal. */
+const STOP_WATCHDOG_MS = 1500;
 
 /** Holds the active AbortController per runId so cancelTask can target a specific run. */
 const activeRuns = new Map<string, AbortController>();
+/** Turns the user preempted (Stop) before the executor registered — honored at the decide/confirm
+ *  boundary and again right before dispatch, so a barge-in during decide/confirm never runs. */
+const preemptedTurns = new Set<string>();
 
 /** Resolve the scratch git repo the coding agents run in. */
 function workdir(): string {
@@ -48,7 +56,19 @@ function pushEvent(e: ActionEvent): void {
 }
 
 function pushRunEnd(runId: string): void {
+  preemptedTurns.delete(runId);
   getWindow()?.webContents.send(CH.runEnd, { runId });
+}
+
+/** Push the destructive-confirm request to the renderer (it shows a confirm chip). */
+function pushConfirmRequest(req: { runId: string; summary: string }): void {
+  getWindow()?.webContents.send(CH.confirmRequest, req);
+}
+
+/** Emit a synthetic terminal failure (preempt / stop) + runEnd for a turn. */
+function pushStopped(runId: string, error = 'stopped'): void {
+  pushEvent({ kind: 'run.failed', runId, ok: false, error, ts: Date.now() });
+  pushRunEnd(runId);
 }
 
 function pushReasoning(delta: string): void {
@@ -207,7 +227,38 @@ async function dispatchExecutor(
 ): Promise<void> {
   const controller = new AbortController();
   let terminalSeen = false;
+  let finished = false;
+  let watchdog: ReturnType<typeof setTimeout> | null = null;
   activeRuns.set(runId, controller);
+
+  // Idempotent finalize: whichever fires first — the stream ending (finally) or the Stop watchdog —
+  // pushes the terminal failure (if forced) + runEnd exactly once.
+  const finish = (forcedError?: string): void => {
+    if (finished) return;
+    finished = true;
+    if (watchdog) {
+      clearTimeout(watchdog);
+      watchdog = null;
+    }
+    if (forcedError && !terminalSeen) {
+      pushEvent({ kind: 'run.failed', runId, ok: false, error: forcedError, ts: Date.now() });
+      notifyJobDone(false, forcedError);
+    }
+    activeRuns.delete(runId);
+    pushRunEnd(runId);
+  };
+
+  // Stop watchdog: if the executor child doesn't honor abort within STOP_WATCHDOG_MS, force a
+  // terminal event + runEnd so Stop is PROVABLY terminal to the UI. (The executor adapter is
+  // responsible for actually SIGKILLing its child on abort; this guarantees UI terminality.)
+  controller.signal.addEventListener(
+    'abort',
+    () => {
+      watchdog = setTimeout(() => finish('stopped'), STOP_WATCHDOG_MS);
+    },
+    { once: true },
+  );
+
   try {
     const executor = getExecutor(agent);
     for await (const ev of executor.run({
@@ -216,6 +267,7 @@ async function dispatchExecutor(
       agent,
       signal: controller.signal,
     })) {
+      if (finished) break; // watchdog already finalized this run; ignore (and unwind) late events
       pushEvent(ev);
       // Native "job done" notification on terminal events — visible even when the
       // window is hidden or in floating mode.
@@ -236,7 +288,7 @@ async function dispatchExecutor(
       // Fire-and-forget memory persistence so it never stalls the event stream.
       void rememberEvent(sessionId, ev);
     }
-    if (!terminalSeen && !controller.signal.aborted) {
+    if (!terminalSeen && !finished && !controller.signal.aborted) {
       const completed: ActionEvent = {
         kind: 'run.completed',
         runId,
@@ -251,17 +303,18 @@ async function dispatchExecutor(
   } catch (err) {
     // The executors normally translate failures into a run.failed event, but guard the
     // for-await itself so a thrown error still produces a terminal event + runEnd.
-    pushEvent({
-      kind: 'run.failed',
-      runId,
-      ok: false,
-      error: (err as Error).message,
-      ts: Date.now(),
-    });
-    notifyJobDone(false, (err as Error).message);
+    if (!terminalSeen && !finished) {
+      pushEvent({
+        kind: 'run.failed',
+        runId,
+        ok: false,
+        error: (err as Error).message,
+        ts: Date.now(),
+      });
+      notifyJobDone(false, (err as Error).message);
+    }
   } finally {
-    activeRuns.delete(runId);
-    pushRunEnd(runId);
+    finish();
   }
 }
 
@@ -303,6 +356,12 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
       ts: Date.now(),
     });
     pushRunEnd(runId);
+    return { runId };
+  }
+
+  // Pre-executor preempt: a Stop/barge-in that arrived during decide is honored before we act.
+  if (preemptedTurns.has(runId)) {
+    pushStopped(runId);
     return { runId };
   }
 
@@ -392,10 +451,35 @@ async function actOnDecision(
           : transcript;
       const agent: AgentKind =
         decision.args.agent === 'claude' ? 'claude' : DEFAULT_AGENT;
+
+      // C1 destructive-confirm gate (BEFORE dispatch). A spoken/typed word can NEVER approve —
+      // approval comes only from the dedicated CH.confirmResolve channel; a 15s timeout
+      // default-denies; and a confirmed-destructive run additionally requires a clean git tree so
+      // it can always be undone.
+      const verdict = classifyDestructive(task);
+      if (verdict.destructive) {
+        const approved = await requestConfirm(runId, verdict.reason ?? 'destructive command', pushConfirmRequest);
+        if (!approved) {
+          emitNarration(runId, `Skipping that — it looked destructive (${verdict.reason}) and wasn't approved.`);
+          pushRunEnd(runId);
+          return;
+        }
+        if (!(await isCleanTree(workdir()))) {
+          emitNarration(runId, "Skipping that — the git tree isn't clean, so a destructive step couldn't be safely undone. Commit or stash first.");
+          pushRunEnd(runId);
+          return;
+        }
+      }
+
+      // Honor a Stop that arrived during decide/confirm (pre-executor preempt).
+      if (preemptedTurns.has(runId)) {
+        pushStopped(runId);
+        return;
+      }
+
       // Resolve at DISPATCH: hand the executor off but DON'T await its stream. The action stream
       // arrives over push channels and the AbortController is registered synchronously at the top
-      // of dispatchExecutor, so Stop / preempt / barge-in stay wireable. turnRun returns {runId}
-      // now instead of blocking until the run finishes.
+      // of dispatchExecutor, so Stop / preempt / barge-in stay wireable.
       void dispatchExecutor(runId, sessionId, task, agent, {
         transcript,
         narration: decision.narration,
@@ -467,17 +551,20 @@ export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId
   return { runId };
 }
 
-/** Abort a specific run (CH.cancelTask). If runId is omitted, abort the most recent run. */
+/**
+ * Stop / preempt a turn (CH.cancelTask). Marks the turn preempted (honored at the decide/confirm
+ * boundary if no executor is registered yet) AND aborts the executor if it's running (which arms the
+ * Stop watchdog). If runId is omitted, targets the most recent run.
+ */
 export function cancelTask(runId?: string): void {
-  if (runId) {
-    activeRuns.get(runId)?.abort();
-    return;
-  }
-  // No id: abort the latest started run (Map preserves insertion order).
-  const ids = [...activeRuns.keys()];
-  const last = ids[ids.length - 1];
-  if (last) activeRuns.get(last)?.abort();
+  const id = runId ?? [...activeRuns.keys()].pop();
+  if (!id) return;
+  preemptedTurns.add(id);
+  activeRuns.get(id)?.abort();
 }
+
+/** Resolve a destructive-confirm from the renderer's dedicated CH.confirmResolve. */
+export { resolveConfirm as resolveDestructiveConfirm } from './confirmGate';
 
 /** Abort every active run (called on app quit). */
 export function cancelAllRuns(): void {

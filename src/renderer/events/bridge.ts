@@ -22,6 +22,10 @@ interface CompanionBridgeLike {
   onMicToggleMute?(cb: () => void): () => void;
   /** MAIN asks the renderer to open + focus the floating Ask input (⌘⇧Space summon). */
   onFocusAsk?(cb: () => void): () => void;
+  /** Destructive-confirm request from MAIN (the renderer shows a confirm chip). */
+  onConfirmRequest?(cb: (req: { runId: string; summary: string }) => void): () => void;
+  /** Resolve a destructive-confirm — the ONLY approval path. */
+  confirmResolve?(runId: string, approved: boolean): Promise<void>;
   /** Subscribe to normalized cursor-gaze targets pushed from MAIN. */
   onCursor?(cb: (t: { x: number; y: number }) => void): () => void;
 }

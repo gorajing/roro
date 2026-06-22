@@ -25,7 +25,7 @@ import type { RememberInput, MemoryRow, MemoryMatch } from '../shared/memory';
 import { assertRendererMemoryKind } from '../shared/memory';
 import type { AgentKind } from '../shared/events';
 import { getMicStatus, ensureMicAccess } from './mic';
-import { runTurn, runTask, cancelTask } from './orchestrator';
+import { runTurn, runTask, cancelTask, resolveDestructiveConfirm } from './orchestrator';
 import { loadBrain, loadMemory, loadVision } from './siblings';
 import { getOwnerId } from './identity';
 
@@ -70,6 +70,13 @@ export function registerIpcHandlers(): void {
       runTask(arg.prompt, asAgentKind(arg.agent)),
   );
   ipcMain.handle(CH.cancelTask, (_e, runId?: string): void => cancelTask(runId));
+  // Destructive-confirm: the renderer's confirm chip resolves a pending gate. This dedicated
+  // invoke channel is the ONLY way to approve — a spoken/typed transcript can never reach it.
+  ipcMain.handle(
+    CH.confirmResolve,
+    (_e, arg: { runId: string; approved: boolean }): void =>
+      resolveDestructiveConfirm(arg.runId, Boolean(arg.approved)),
+  );
 
   // ---- Brain (sibling: src/brain) ----
   ipcMain.handle(
