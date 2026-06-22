@@ -506,6 +506,16 @@ async function actOnDecision(
         return;
       }
 
+      // ONE executor at a time. A concurrent run could dirty the repo between the clean-tree check
+      // and this destructive run (TOCTOU), and two coding agents on one repo is chaos. The gate ->
+      // dispatch path has no await, and dispatchExecutor registers activeRuns synchronously, so this
+      // check is atomic. Interrupt by Stop (which preempts), not by overlapping.
+      if (activeRuns.size > 0) {
+        emitNarration(runId, "I'm already working on something — Stop that first, or wait for it to finish.");
+        pushRunEnd(runId);
+        return;
+      }
+
       // Resolve at DISPATCH: hand the executor off but DON'T await its stream. The action stream
       // arrives over push channels and the AbortController is registered synchronously at the top
       // of dispatchExecutor, so Stop / preempt / barge-in stay wireable.
@@ -589,6 +599,12 @@ export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId
     // Honor a Stop that arrived while confirm/clean-tree was pending (same as run_agent).
     if (preemptedTurns.has(runId)) {
       pushStopped(runId);
+      return;
+    }
+    // One executor at a time (closes the clean-tree TOCTOU; see run_agent).
+    if (activeRuns.size > 0) {
+      emitNarration(runId, "I'm already working on something — Stop that first, or wait for it to finish.");
+      pushRunEnd(runId);
       return;
     }
     void dispatchExecutor(runId, `task_${runId}`, prompt, agent);
