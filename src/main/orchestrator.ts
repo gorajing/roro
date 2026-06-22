@@ -334,7 +334,11 @@ async function dispatchExecutor(
       agent,
       signal: controller.signal,
     })) {
-      if (uiEnded) break; // already terminal (watchdog); stop processing — unwinding triggers child cleanup
+      // Already terminal (watchdog fired): DROP late events but keep DRAINING the stream until it
+      // truly ends, so releaseSlot (in finally) only frees the single-executor slot once the child
+      // has actually exited (the abort signal kills it). Breaking here would free the slot while an
+      // aborted-but-slow child is still alive, admitting a concurrent run against the same repo.
+      if (uiEnded) continue;
       // Re-stamp to the orchestrator's runId — the executors mint their OWN run ids, but activeRuns
       // (and so Stop/cancelTask) is keyed by THIS runId. Without this, a targeted Stop from the
       // renderer (which sees the event's runId) never finds the controller. One id per turn.
