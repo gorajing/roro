@@ -14,6 +14,7 @@ import { sessionId } from './session';
 import { createCharacter } from './character/driver';
 import { CaptionPanel, ActionTimeline } from './character/captions';
 import { subscribeActionEvents } from './events/actionEvents';
+import { mountFloatingAsk } from './ask/floatingAsk';
 import { getCompanion } from './events/bridge';
 import { createVoice } from './voice';
 import type { VapiToolCall } from './voice/messages';
@@ -46,6 +47,10 @@ export async function bootstrap(): Promise<void> {
   const captions = new CaptionPanel();
   const timeline = new ActionTimeline();
   subscribeActionEvents({ character: driver, timeline, captions });
+
+  // Phase B: the floating Ask input + Stop pill (the typed magic-moment surface on the cat body).
+  // Lives outside #overlay; only visible in floating mode. Its lifecycle rides the push stream.
+  mountFloatingAsk({ driver, sessionId });
 
   // Aliveness: the cat watches the cursor (gaze eased toward the pointer). Gaze
   // ONLY — cursor movement must NOT keep the cat awake; poke is reserved for real
@@ -200,6 +205,22 @@ export async function bootstrap(): Promise<void> {
     }
   });
 
+  // Release the dev-form turn gate. Since turnRun now resolves at DISPATCH (not completion), the
+  // turn ends on the universal runEnd push signal — not when the await returns. (Answer/clarify
+  // turns have no run.completed; runEnd is the only end signal that fires for every turn.)
+  const releaseDevTurn = (): void => {
+    turnInFlight = false;
+    if (sendBtn) sendBtn.disabled = false;
+    if (cancelBtn) cancelBtn.disabled = true;
+    if (promptInput) promptInput.value = '';
+  };
+
+  getCompanion()?.onRunEnd?.(() => {
+    if (!turnInFlight) return; // ignore runEnd for turns this dev form didn't start (e.g. floating Ask)
+    setStatus(cancelRequested ? 'Stopped.' : 'Done — type another task.');
+    releaseDevTurn();
+  });
+
   promptForm?.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     if (turnInFlight) return;
@@ -212,7 +233,7 @@ export async function bootstrap(): Promise<void> {
       return;
     }
 
-    // Keep the typed task on screen for the whole run (cleared in finally).
+    // Keep the typed task on screen for the whole run (cleared on runEnd).
     turnInFlight = true;
     cancelRequested = false;
     if (sendBtn) sendBtn.disabled = true;
@@ -221,18 +242,16 @@ export async function bootstrap(): Promise<void> {
     setStatus('Thinking… (Nebius brain)');
 
     try {
-      // turnRun resolves once the whole turn (incl. the agent run) ends; live
-      // feedback arrives meanwhile over the ActionEvent stream + reasoning caption.
+      // Resolves at DISPATCH; the run continues in the background. Status, Stop, and releasing the
+      // gate are driven by the push stream + runEnd (see releaseDevTurn) — not this await.
       await companion.turnRun({ transcript: text, sessionId });
-      setStatus(cancelRequested ? 'Stopped.' : 'Done — type another task.');
+      setStatus('Working… (agent running)');
     } catch (e) {
+      // turnRun normally returns {runId} even on a decide failure (it pushes run.failed + runEnd);
+      // a throw here is an IPC-level failure, so no runEnd will arrive — release directly.
       driver.setState('error');
       setStatus(`Turn failed: ${describeError(e)}`);
-    } finally {
-      turnInFlight = false;
-      if (sendBtn) sendBtn.disabled = false;
-      if (cancelBtn) cancelBtn.disabled = true;
-      if (promptInput) promptInput.value = '';
+      releaseDevTurn();
     }
   });
 
