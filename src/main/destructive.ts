@@ -21,6 +21,9 @@ const PATTERNS: Array<{ re: RegExp; reason: string }> = [
   // <kv>, …) before the subcommand so `git -C . push --force` doesn't slip through.
   { re: /\bgit(?:\s+-[Cc]\s+\S+|\s+-\S+)*\s+push\b[^\n]*(?:--force\b|--force-with-lease\b|--mirror\b|\s-f(?:\s|$)|\s\+[\w/])/i, reason: 'force/mirror git push (rewrites history)' },
   { re: /\bgit(?:\s+-[Cc]\s+\S+|\s+-\S+)*\s+reset\b[^\n]*--hard/i, reason: 'git reset --hard (discards local changes)' },
+  // git clean with -f (and usually -d/-x) deletes untracked/ignored files — irreversible (they were
+  // never in git). Requires -f (without it, clean is a no-op); a -n dry-run is safe and not flagged.
+  { re: /\bgit(?:\s+-[Cc]\s+\S+|\s+-\S+)*\s+clean\b[^\n]*-\S*f/i, reason: 'git clean -f (deletes untracked files)' },
   { re: /\b(?:filter-branch|filter-repo)\b/i, reason: 'git history rewrite' },
   { re: /\bdrop\s+(?:table|database|schema)\b/i, reason: 'SQL DROP (data loss)' },
   { re: /\btruncate\s+(?:table\s+)?\w/i, reason: 'SQL TRUNCATE (data loss)' },

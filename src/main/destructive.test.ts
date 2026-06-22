@@ -38,6 +38,13 @@ describe('classifyDestructive', () => {
     expect(D('git -C /repo reset --hard origin/main')).toBe(true);
   });
 
+  it('flags git clean -f variants but not the -n dry-run', () => {
+    expect(D('git clean -fd')).toBe(true);
+    expect(D('git clean -ffdx')).toBe(true);
+    expect(D('git clean -n')).toBe(false); // dry-run, safe
+    expect(D('git clean -d')).toBe(false); // no -f -> no-op
+  });
+
   it('does NOT flag an ordinary git push', () => {
     expect(D('git push origin main')).toBe(false);
     expect(D('commit and push the fix')).toBe(false);
