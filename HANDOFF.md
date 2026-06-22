@@ -8,9 +8,9 @@
 
 **Roro** is a cute pixel-cat desktop pet that **drives your coding agent** (Codex/Claude Code, on *your* keys), **remembers you across sessions**, and **talks** — built **free + local-first**, monetized by **cosmetics** (alternate pets, items, voice packs), *not* subscriptions.
 
-- **Repo:** `/Users/jinchoi/Code/roro` — private `github.com/gorajing/roro`, branch `main`. Builds clean (`tsc` 0 errors), `npm test` = 61/61 green. Fresh git history.
+- **Repo:** `/Users/jinchoi/Code/roro` — private `github.com/gorajing/roro`, branch `main`. Builds clean (`tsc` 0 errors), `npm test` = 124/124 green. Fresh git history.
 - **It's a fresh start** copied from a hackathon prototype's verified bones (procedural cat, executor adapter, orchestrator, frozen ActionEvent union, Vitest) + all design docs, renamed Nero→Roro. The old hackathon repo (`/Users/jinchoi/Code/companion/app`, remote `gorajing/companion`) is **frozen — do not touch it**.
-- **A.5 — the memory spine — is DONE** (branch `feat/a5-memory-spine`): device-stable `owner_id`, local PGlite + pgvector store (re-authored from Insforge), owner-scoped recall + `getProfile`/supersede, the 1-fact extractor, and supersede-not-overwrite — proven by an automated cross-launch persistence test (teach → close → reopen → recall) and hardened through a 7-round Codex cross-model review. **The ONE next task is now Phase B — the magic moment** (see §8).
+- **The whole roadmap is built** as a stack of 5 reviewed PRs (each TDD'd + Codex max-effort-reviewed to `none`): **A.5** memory spine (#1) → **B** magic moment (#2) → **C1** reliability (#3) → **D** voice control core (#4) → **Cosmetics** foundation (#5). See §8 for status + what's deliberately deferred (D's local models = hardware-gated; the cosmetics store = validation-gated). **Next: merge the stack to `main` (in order), then the on-device voice adapter / cosmetics avatar palette-swap on a real machine.**
 - **How to work:** TDD with Vitest (red→green), small diffs, run `npx tsc --noEmit` + `npx vitest run` to verify. Ground in the actual files before editing.
 
 ---
@@ -33,7 +33,7 @@ A developer's ambient coding companion in the shape of a pet you bond with. You 
 ## 3. Repo state (concrete)
 
 - **Location:** `/Users/jinchoi/Code/roro` · **Remote:** private `gorajing/roro` · **Branch:** `main`.
-- **Verified:** `npx tsc --noEmit` → 0 errors; `npx vitest run` → 61/61 (framePolicy, gaze, activity + the full A.5 memory spine: identity, PGlite store, recall, extractor, factStore, cross-launch persistence, orchestrator capture-screen).
+- **Verified:** `npx tsc --noEmit` → 0 errors; `npx vitest run` → 124/124 (the pre-existing framePolicy/gaze/activity + A.5 memory spine, B floating-Ask/run-lifecycle/summon, C1 destructive-classifier/confirm-gate/clean-tree, D voice-router, and the cosmetics -ro catalog).
 - **Stack:** Electron 42 + electron-forge + Vite; PixiJS v7 procedural cat; TypeScript; Vitest.
 - **The bones (kept, working):** `src/executor/{codex,claude}.ts` (CLI adapters, codex live-verified @0.139.0 → ActionEvent union), `src/main/orchestrator.ts` (the turn loop), `src/brain/index.ts` (decide/embed/vision via an OpenAI-compatible client; now also the 1-fact extractor), `src/memory/index.ts` (memory adapter — **now local PGlite + pgvector, owner-scoped**, with `src/memory/schema.ts`; plus `src/main/{identity,memoryContext,factStore}.ts`), `src/renderer/character/*` (the cat: avatar, driver, activity, framePolicy, gaze, stateMachine, lipsync, captions), `src/shared/{events,brain,memory,ipc,avatar,gaze}.ts`, `src/renderer/voice/*` (Vapi facade — **to be replaced with local voice**).
 - **Phase A is already shipped** (in the bones): body gesture grammar (tap/hold=pet, drag=move, hover=gaze), cursor gaze, Activity/Energy sleep-wake, the frame governor.
