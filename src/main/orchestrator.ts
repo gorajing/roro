@@ -392,7 +392,11 @@ async function actOnDecision(
           : transcript;
       const agent: AgentKind =
         decision.args.agent === 'claude' ? 'claude' : DEFAULT_AGENT;
-      await dispatchExecutor(runId, sessionId, task, agent, {
+      // Resolve at DISPATCH: hand the executor off but DON'T await its stream. The action stream
+      // arrives over push channels and the AbortController is registered synchronously at the top
+      // of dispatchExecutor, so Stop / preempt / barge-in stay wireable. turnRun returns {runId}
+      // now instead of blocking until the run finishes.
+      void dispatchExecutor(runId, sessionId, task, agent, {
         transcript,
         narration: decision.narration,
         task,
