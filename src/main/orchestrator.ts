@@ -26,7 +26,7 @@ import { getOwnerId } from './identity';
 import { buildRecallContext } from './memoryContext';
 import { extractAndStoreFact } from './factStore';
 import { classifyDestructive } from './destructive';
-import { requestConfirm } from './confirmGate';
+import { requestConfirm, resolveConfirm } from './confirmGate';
 import { isCleanTree } from './gitTree';
 import type { FactExtractInput } from '../brain/extractFact';
 
@@ -591,12 +591,23 @@ export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId
  * Stop watchdog). If runId is omitted, targets the most recent run.
  */
 export function cancelTask(runId?: string): void {
-  // Prefer an explicit id; else the latest running executor; else the latest minted turn (which may
-  // still be in decide/confirm with no executor registered yet — that Stop must still be honored).
-  const id = runId ?? [...activeRuns.keys()].pop() ?? lastTurnId;
-  if (!id) return;
-  preemptedTurns.add(id);
-  activeRuns.get(id)?.abort();
+  // Stop one turn: mark it preempted (honored at the decide/confirm boundary), DENY any pending
+  // destructive-confirm immediately (so the turn ends promptly instead of hanging until the 15s
+  // timeout), and abort its executor if running (arming the watchdog).
+  const stop = (id: string): void => {
+    preemptedTurns.add(id);
+    resolveConfirm(id, false);
+    activeRuns.get(id)?.abort();
+  };
+  if (runId) {
+    stop(runId);
+    return;
+  }
+  // No id: stop the most recent turn (it may still be in decide/confirm) AND abort the latest
+  // running executor if that's a different turn — a no-id Stop shouldn't leave either running.
+  if (lastTurnId) stop(lastTurnId);
+  const latest = [...activeRuns.keys()].pop();
+  if (latest && latest !== lastTurnId) activeRuns.get(latest)?.abort();
 }
 
 /** Resolve a destructive-confirm from the renderer's dedicated CH.confirmResolve. */
