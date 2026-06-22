@@ -242,10 +242,11 @@ export async function bootstrap(): Promise<void> {
     setStatus('Thinking… (Nebius brain)');
 
     try {
-      // Resolves at DISPATCH; the run continues in the background. Status, Stop, and releasing the
-      // gate are driven by the push stream + runEnd (see releaseDevTurn) — not this await.
+      // Resolves at DISPATCH — this await only acks the handoff; it does NOT mean the turn is done
+      // (and for an answer turn it may resolve AFTER runEnd, so setting any status here would race
+      // and clobber the terminal "Done"). Status is fully stream-driven from here: run.started ->
+      // "running", the universal runEnd -> "Done" (see the onRunEnd handler above).
       await companion.turnRun({ transcript: text, sessionId });
-      setStatus('Working… (agent running)');
     } catch (e) {
       // turnRun normally returns {runId} even on a decide failure (it pushes run.failed + runEnd);
       // a throw here is an IPC-level failure, so no runEnd will arrive — release directly.
