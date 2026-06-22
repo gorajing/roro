@@ -107,9 +107,11 @@ export function registerSummonShortcut(): void {
     if (action === 'hide') {
       win.hide();
     } else if (action === 'show-and-focus-ask') {
-      // Floating: reveal without stealing focus, then tell the renderer to open + focus the Ask
-      // input and poke the cat (ears perk). The renderer never gets focus-stolen mid-task.
-      win.showInactive();
+      // ⌘⇧Space is a deliberate "I want to type a task" — the window must become KEY or the
+      // renderer's input.focus() won't receive keystrokes (a showInactive window isn't key, so
+      // typing would land in the previously focused app). Take focus, then open + focus the Ask.
+      win.show();
+      win.focus();
       win.webContents.send(CH.focusAsk);
     } else {
       win.show();

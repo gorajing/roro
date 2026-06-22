@@ -61,9 +61,21 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
         // Local optimistic pose, set synchronously before turnRun is awaited (≤16ms budget).
         driver.setState('thinking');
         break;
-      case 'startTurn':
-        void getCompanion()?.turnRun?.({ transcript: eff.text, sessionId });
+      case 'startTurn': {
+        const companion = getCompanion();
+        if (!companion?.turnRun) {
+          // No bridge -> the turn can't run and no runEnd will arrive; recover so the Ask never
+          // sticks in 'tasked'. Defer so we don't re-enter the in-flight dispatch.
+          queueMicrotask(() => dispatch({ type: 'runEnded' }));
+          break;
+        }
+        void companion.turnRun({ transcript: eff.text, sessionId }).catch(() => {
+          // turnRun returns {runId} even on a decide failure (it pushes run.failed + runEnd); a
+          // reject is an IPC-level failure, so no runEnd will arrive — recover the surface here.
+          dispatch({ type: 'runEnded' });
+        });
         break;
+      }
       case 'showTasked':
         pill.textContent = `tasked: ${eff.text}`;
         break;
