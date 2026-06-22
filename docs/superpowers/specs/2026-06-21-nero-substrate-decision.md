@@ -1,3 +1,5 @@
+> ⚠️ **MOSTLY HOLDS, ONE FLIP (2026-06-21) — see [HANDOFF.md](../../../HANDOFF.md).** Memory is now **local-first PGlite**, not keep-Insforge (a fresh repo has no corpus to migrate). The embedding-provenance-stamp and "embedding is the sticky choice" points still hold; the hosted-brain discussion is moot in the BYO/free model.
+
 # Roro Substrate Decision — Lead Architect Final Recommendation (Hardened)
 
 > Output of a 9-agent substrate evaluation (brain / embeddings / memory-host / voice) hardened against 3 adversarial critics. Companion to the v2 spine (`2026-06-21-nero-ultimate-ux-design-PROPOSAL.md`) and the A.5 plan (`../plans/2026-06-21-nero-a5-memory-spine.md`).

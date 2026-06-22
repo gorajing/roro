@@ -1,3 +1,5 @@
+> ⚠️ **PARTIALLY SUPERSEDED (2026-06-21) — see [HANDOFF.md](../../../HANDOFF.md).** Voice-forward/type-default, mouth-not-brain, summon-not-ambient, and reject-LiveKit/Realtime still hold. But voice is now **local-first** (whisper.cpp + Silero + Kokoro), not Vapi-hosted-first, and it monetizes as **cosmetic voice packs**, not metered minutes.
+
 # Roro Voice: Lead Architect's Synthesis & Recommendation (Hardened v2)
 
 *One coherent ruling, reconciling four evaluations and three adversarial reviews. Where the draft asserted finished work that the repo does not contain, the claim is corrected to "unbuilt prerequisite" and re-costed. Every concrete vendor number is normalized to a single metric or marked unbenchmarked. Code-grounded claims cite the file.*

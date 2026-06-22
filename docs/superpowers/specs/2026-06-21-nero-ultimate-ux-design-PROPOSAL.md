@@ -1,3 +1,5 @@
+> ℹ️ **CANONICAL for the interaction model; voice + monetization sections SUPERSEDED (2026-06-21) — see [HANDOFF.md](../../../HANDOFF.md).** The interaction grammar (surfaces/states/five laws/magic moment) holds. Ignore the Vapi voice-substrate and sync monetization sections; HANDOFF.md sections 5 and 7 supersede them.
+
 # Roro — Unified Design Spine (Final, Hardened)
 
 *The cute companion you talk to, that drives your coding tools, and remembers across them — with every click optimized.*

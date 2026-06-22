@@ -1,3 +1,5 @@
+> ⚠️ **SUPERSEDED (2026-06-21) — see [HANDOFF.md](HANDOFF.md).** This is the hardened $25-Pro/sync model, which was **rejected** for a **free-core + cosmetics** model (alternate pets / items / voice packs). Kept only as the record of why sync was rejected.
+
 # Roro Monetization Spec — v2 (Hardened)
 
 *Lead synthesis of four tier evaluations, hardened against three adversarial reviews (margin/pricing, conversion/cannibalization, abuse/privacy/legal). Every critical and major finding integrated. Launch-blocking items flagged in §11.*

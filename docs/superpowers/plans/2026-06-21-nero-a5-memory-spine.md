@@ -1,3 +1,5 @@
+> 🔧 **STORAGE REPOINT (2026-06-21) — see [HANDOFF.md](../../../HANDOFF.md).** The LOGIC here (owner_id, fact extractor, recall composition, the cross-launch fixture) is store-agnostic and valid, but the storage adapter (Task 1 Insforge SQL/RPCs, Task 3 `src/memory/index.ts` insforgeFetch) must be **re-authored for local PGlite + pgvector**. Build A.5 on PGlite, not Insforge.
+
 # Roro Phase A.5 — Memory Spine Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
