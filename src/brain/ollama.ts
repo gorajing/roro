@@ -74,6 +74,38 @@ export function buildEmbedBody(model: string, input: string | string[]): Record<
   return { model, input };
 }
 
+/**
+ * PURE: resolve the active local-embedder dimension. Defaults to 768 (nomic-embed-text); the
+ * OLLAMA_EMBED_DIM override pairs with an OLLAMA_EMBED_MODEL override so a different-dimension local
+ * embedder (mxbai-embed-large=1024, all-minilm=384, …) is actually usable. This is the SINGLE source
+ * of truth shared by the brain (embed()'s check) and the memory store (vector(N) + the provenance
+ * stamp) so they can never silently desync. A non-positive-integer override fails LOUD rather than
+ * letting a NaN/garbage value reach the vector(N) schema.
+ */
+export function resolveOllamaEmbedDim(raw: string | undefined): number {
+  if (raw === undefined || raw === '') return 768;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`OLLAMA_EMBED_DIM must be a positive integer, got ${JSON.stringify(raw)}`);
+  }
+  return n;
+}
+
+/**
+ * PURE: guard that a probed embedder's real output dimension matches the configured one. preflight()
+ * only verifies the embed model is *pulled* — it cannot tell what dimension it emits — so without
+ * this an OLLAMA_EMBED_MODEL override to a non-768 model would pass preflight and then fail cryptically
+ * mid-turn (or store the wrong-sized vector). Fail LOUD at startup with the exact remedy instead.
+ */
+export function assertEmbedDimMatch(model: string, actual: number, expected: number): void {
+  if (actual !== expected) {
+    throw new Error(
+      `Ollama embed model "${model}" returns ${actual}-dim vectors but the memory store is configured ` +
+        `for ${expected}-dim. Set OLLAMA_EMBED_DIM=${actual} (and recreate the memory store) to use this model.`,
+    );
+  }
+}
+
 export interface OllamaChatOpts {
   model: string;
   system?: string;

@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import { buildFactPrompt, parseFactResponse, FACT_SYSTEM_PROMPT, type FactExtractInput, type FactCandidate } from './extractFact';
-import { ollamaChat, ollamaEmbed, ollamaTags, hasModel } from './ollama';
+import { ollamaChat, ollamaEmbed, ollamaTags, hasModel, resolveOllamaEmbedDim, assertEmbedDimMatch } from './ollama';
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -42,14 +42,15 @@ const NEBIUS_BASE_URL = 'https://api.tokenfactory.nebius.com/v1/';
 
 // Roro is LOCAL-FIRST by default: the brain runs on the local Ollama daemon. BRAIN_PROVIDER=nebius
 // flips every brain call back to the (retained) Nebius cloud path — an explicit escape hatch, not a
-// silent fallback. The embedding dimension is provider-specific (nomic=768, Nebius Qwen=1536); it is
-// stamped on every memory row (embed_model/embed_dim) and the memory schema's vector(N) must match.
+// silent fallback. The embedding dimension is provider-specific (Nebius Qwen=1536, local nomic=768
+// or OLLAMA_EMBED_DIM when overriding OLLAMA_EMBED_MODEL); it is stamped on every memory row
+// (embed_model/embed_dim) and the memory schema's vector(N) must match.
 type BrainProvider = 'ollama' | 'nebius';
 function brainProvider(): BrainProvider {
   return process.env.BRAIN_PROVIDER === 'nebius' ? 'nebius' : 'ollama';
 }
 function embeddingDim(): number {
-  return brainProvider() === 'nebius' ? 1536 : 768;
+  return brainProvider() === 'nebius' ? 1536 : resolveOllamaEmbedDim(process.env.OLLAMA_EMBED_DIM);
 }
 
 const NEBIUS_MODELS: ModelIds = {
@@ -132,6 +133,11 @@ export async function preflight(): Promise<PreflightResult> {
         `Ollama models missing: ${missing.join(', ')}. Pull them with: ${missing.map((m) => `ollama pull ${m}`).join(' && ')}`,
       );
     }
+    // The tag check confirms the embed model is pulled but not what dimension it emits. Probe it once
+    // here and fail LOUD on a mismatch with the configured dim, so a non-768 OLLAMA_EMBED_MODEL override
+    // is caught at startup (with the OLLAMA_EMBED_DIM remedy) rather than mid-turn or as a wrong vector.
+    const [probe] = await ollamaEmbed(models.embed, 'preflight embedding dimension probe');
+    assertEmbedDimMatch(models.embed, probe?.length ?? 0, embeddingDim());
     return { required: models, found, missing };
   }
 

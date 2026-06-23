@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { buildChatBody, parseChatLine, accumulateChatStream, buildEmbedBody, hasModel } from './ollama';
+import {
+  buildChatBody,
+  parseChatLine,
+  accumulateChatStream,
+  buildEmbedBody,
+  hasModel,
+  resolveOllamaEmbedDim,
+  assertEmbedDimMatch,
+} from './ollama';
 
 describe('ollama pure helpers', () => {
   it('buildChatBody sets format:json + options.temperature only when provided', () => {
@@ -43,5 +51,31 @@ describe('ollama pure helpers', () => {
     expect(hasModel(tags, 'nomic-embed-text')).toBe(true); // installed as ...:latest
     expect(hasModel(tags, 'qwen2.5vl:7b')).toBe(true);
     expect(hasModel(tags, 'llama3.2')).toBe(false);
+  });
+});
+
+describe('ollama embedding dimension', () => {
+  it('resolveOllamaEmbedDim defaults to 768 (nomic-embed-text) when unset or empty', () => {
+    expect(resolveOllamaEmbedDim(undefined)).toBe(768);
+    expect(resolveOllamaEmbedDim('')).toBe(768);
+  });
+
+  it('resolveOllamaEmbedDim honors a positive-integer override so non-768 embedders are usable', () => {
+    expect(resolveOllamaEmbedDim('1024')).toBe(1024); // e.g. mxbai-embed-large
+    expect(resolveOllamaEmbedDim('384')).toBe(384); // e.g. all-minilm
+  });
+
+  it('resolveOllamaEmbedDim fails loud on a non-positive-integer override (never poisons vector(N))', () => {
+    for (const bad of ['abc', '0', '-5', '12.5', 'NaN']) {
+      expect(() => resolveOllamaEmbedDim(bad)).toThrow(/positive integer/);
+    }
+  });
+
+  it('assertEmbedDimMatch passes when the probed dimension matches the configured one', () => {
+    expect(() => assertEmbedDimMatch('nomic-embed-text', 768, 768)).not.toThrow();
+  });
+
+  it('assertEmbedDimMatch fails loud with the OLLAMA_EMBED_DIM remedy on a mismatch', () => {
+    expect(() => assertEmbedDimMatch('mxbai-embed-large', 1024, 768)).toThrow(/OLLAMA_EMBED_DIM=1024/);
   });
 });

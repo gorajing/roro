@@ -9,16 +9,18 @@ import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite-pgvector';
 import type { MemoryMatch, MemoryRow, RememberInput, ReplaceFactInput } from '../shared/memory';
 import { buildSchemaSql } from './schema';
+import { resolveOllamaEmbedDim } from '../brain/ollama';
 
 declare const process: { env: Record<string, string | undefined>; cwd(): string };
 
-// The brain's embedder determines the vector space + dimension: local nomic-embed-text → 768-dim;
-// the Nebius escape hatch (BRAIN_PROVIDER=nebius) → Qwen 1536-dim. These MIRROR brain.embeddingDim()
-// (kept local to avoid eagerly importing the brain + openai SDK just for the dimension). embed_model
-// + embed_dim are stamped on every row; the schema's vector(N) and these MUST agree — switching the
-// embed model means a re-embed, never a mixed vector space.
+// The brain's embedder determines the vector space + dimension: local nomic-embed-text → 768-dim
+// (or OLLAMA_EMBED_DIM when overriding the embed model); the Nebius escape hatch (BRAIN_PROVIDER=nebius)
+// → Qwen 1536-dim. The local case shares brain/ollama.resolveOllamaEmbedDim() — the SINGLE source of
+// truth — so this and brain.embeddingDim() can never desync (importing the leaf ollama module pulls in
+// no openai SDK). embed_model + embed_dim are stamped on every row; the schema's vector(N) and these
+// MUST agree — switching the embed model means a re-embed, never a mixed vector space.
 function embeddingDim(): number {
-  return process.env.BRAIN_PROVIDER === 'nebius' ? 1536 : 768;
+  return process.env.BRAIN_PROVIDER === 'nebius' ? 1536 : resolveOllamaEmbedDim(process.env.OLLAMA_EMBED_DIM);
 }
 function embedModel(): string {
   return process.env.BRAIN_PROVIDER === 'nebius'

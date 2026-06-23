@@ -110,3 +110,29 @@ describe('PGlite memory store (owner-scoped)', () => {
     ).rejects.toThrow();
   });
 });
+
+// An OLLAMA_EMBED_MODEL override to a non-768 embedder (e.g. mxbai-embed-large=1024, all-minilm=384)
+// must size the vector(N) column + provenance stamp to match, or the schema, the stored vectors, and
+// embed()'s dimension check silently desync. The OLLAMA_EMBED_DIM knob pairs the dimension with the
+// model override; this proves it flows end-to-end through a REAL pgvector column.
+describe('PGlite memory store (embedding dimension is configurable via OLLAMA_EMBED_DIM)', () => {
+  it('sizes the vector column + provenance stamp to a non-768 local embedder', async () => {
+    process.env.OLLAMA_EMBED_DIM = '1024';
+    const embed1024: Embedder = async () => {
+      const v = new Array(1024).fill(0);
+      v[0] = 1; // non-zero so cosine distance is defined
+      return v;
+    };
+    const store = await createMemoryStore({ embed: embed1024 });
+    try {
+      const row = await store.remember({ owner_id: OWNER, session_id: 's1', kind: 'observation', text: 'hello' });
+      expect(row.embed_dim).toBe(1024);
+      // The row round-trips through the real vector(1024) column without a dimension error.
+      const matches = await store.recall({ query: 'hello', ownerId: OWNER });
+      expect(matches).toHaveLength(1);
+    } finally {
+      await store.close();
+      delete process.env.OLLAMA_EMBED_DIM;
+    }
+  });
+});
