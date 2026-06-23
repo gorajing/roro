@@ -14,6 +14,31 @@ import { registerIpcHandlers } from './main/ipc';
 import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorTracking } from './main/window';
 import { cancelAllRuns } from './main/orchestrator';
 import { initOwnerId } from './main/identity';
+import { loadBrain } from './main/siblings';
+import { CH } from './shared/ipc';
+
+/**
+ * Startup self-check for the (local-first) brain: confirm the provider is reachable and the models are
+ * present BEFORE the first turn, so a down daemon / missing model surfaces at boot, not mid-task.
+ * FAIL LOUD but NON-BLOCKING: we never prevent the window from rendering (that would make the app look
+ * dead and couples startup to Ollama being up). On failure we log loudly AND push a diagnostic caption
+ * to the renderer once it's loaded, so the user sees WHY turns won't work (e.g. run `ollama serve`).
+ */
+async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
+  try {
+    const brain = await loadBrain();
+    const result = await brain.preflight();
+    console.log(`[main] brain preflight OK — ${brain.describeBrain()}; models:`, result.required);
+  } catch (err) {
+    const message = `Local brain unavailable: ${(err as Error).message}`;
+    console.error(`[main] brain preflight FAILED — ${message}`);
+    const send = (): void => {
+      win.webContents.send(CH.actionEvent, { kind: 'message', runId: 'preflight', text: `⚠️ ${message}`, ts: Date.now() });
+    };
+    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
+    else send();
+  }
+}
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -52,6 +77,10 @@ app.whenReady().then(async () => {
   const win = createWindow();
   startCursorTracking(win);
   registerSummonShortcut();
+
+  // 4. Brain self-check (local-first): verify Ollama/models up-front. Non-blocking — never gates the
+  //    window; logs + surfaces a renderer diagnostic on failure (see verifyBrainAtStartup).
+  void verifyBrainAtStartup(win);
 
   app.on('activate', () => {
     // macOS: re-create a window when the dock icon is clicked and none are open.

@@ -120,6 +120,15 @@ export function getModelIds(): ModelIds {
   };
 }
 
+/**
+ * User-visible label for the active brain, shown in the "…is planning the task…" beat. Provider-aware
+ * so the local default never lies (it previously hardcoded "DeepSeek (Nebius)" even under Ollama).
+ */
+export function describeBrain(): string {
+  const { reason } = getModelIds();
+  return brainProvider() === 'nebius' ? `${reason} (Nebius)` : `${reason} (local Ollama)`;
+}
+
 export async function preflight(): Promise<PreflightResult> {
   const models = getModelIds();
   const requiredIds = [models.reason, models.vision, models.embed];

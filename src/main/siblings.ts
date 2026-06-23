@@ -37,12 +37,23 @@ export interface BrainStreamHooks {
   onContent?: (delta: string) => void;
 }
 
+/** Result of the brain's startup self-check (structural mirror of brain.PreflightResult). */
+export interface BrainPreflightResult {
+  required: { reason: string; vision: string; embed: string };
+  found: string[];
+  missing: string[];
+}
+
 export interface BrainModule {
   // Streaming hooks are optional; siblings that ignore the 2nd arg still satisfy this.
   decide(input: DecideInput, hooks?: BrainStreamHooks): Promise<Decision>;
   describeScreen(input: { b64: string; mime: string }): Promise<string>;
   embed(input: string | string[]): Promise<number[] | number[][]>;
   extractFact(input: FactExtractInput): Promise<FactCandidate | null>;
+  /** Verify the configured provider is reachable + models present. Throws (loud) on a problem. */
+  preflight(): Promise<BrainPreflightResult>;
+  /** User-visible label for the active brain (provider-aware). */
+  describeBrain(): string;
 }
 
 export interface MemoryModule {
