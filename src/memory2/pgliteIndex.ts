@@ -192,11 +192,12 @@ export async function createPgliteIndex(opts: { dataDir?: string; dim?: number; 
       );
     },
 
-    async reindexFrom(entries: Iterable<Entry>, embed: (text: string) => Promise<number[]>): Promise<void> {
+    async reindexFrom(entries: Iterable<Entry>, embedFor: (entry: Entry) => Promise<number[] | undefined>): Promise<void> {
       // Embed EVERYTHING first; only then swap. If any embed throws, the existing index is untouched.
+      // embedFor opens/decrypts + skips empties; the entry itself is stored as-is (sealed doc preserved).
       const staged: Array<{ entry: Entry; embedding?: number[] }> = [];
       for (const entry of entries) {
-        staged.push({ entry, embedding: entry.text.trim() ? await embed(entry.text) : undefined });
+        staged.push({ entry, embedding: await embedFor(entry) });
       }
       await db.query('begin');
       try {

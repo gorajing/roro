@@ -63,7 +63,7 @@ describe('pgliteIndex — derived PGlite-HNSW IndexStore', () => {
 
   it('reindexFrom rebuilds the index from entries (the rebuildable-cache property)', async () => {
     const entries = [e({ id: 'a', text: 'apple', seq: 1 }), e({ id: 'b', text: 'banana', seq: 2 })];
-    await ix.reindexFrom(entries, async (t) => (t === 'apple' ? unit(0) : unit(1)));
+    await ix.reindexFrom(entries, async (entry) => (entry.text === 'apple' ? unit(0) : unit(1)));
     expect(await ix.count()).toBe(2);
     expect((await ix.vectorSearch({ ownerId: 'o1', embedding: unit(0), k: 5 }))[0].entry.id).toBe('a');
   });

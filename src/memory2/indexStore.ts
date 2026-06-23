@@ -36,7 +36,11 @@ export interface IndexStore {
   /** Persistent reconciliation cursor: the highest CONTIGUOUS manifest seq fully applied to the index. */
   getAppliedSeq(): Promise<number>;
   setAppliedSeq(seq: number): Promise<void>;
-  /** Rebuild the index from the file-store entries — the "derived cache" property (engine/embed swap = reindex). */
-  reindexFrom(entries: Iterable<Entry>, embed: (text: string) => Promise<number[]>): Promise<void>;
+  /** Rebuild the index from a set of stored (possibly SEALED) entries — the "derived cache" property
+   *  (engine/embed swap = reindex). `embedFor` receives each stored entry and returns its embedding (the
+   *  caller opens/decrypts before embedding, and skips un-embeddable rows by returning undefined), so the
+   *  doc is stored as-is (sealed) while the vector is computed from plaintext. Atomic: embed-all-first,
+   *  then delete+insert in one txn — a failure never empties the index. */
+  reindexFrom(entries: Iterable<Entry>, embedFor: (entry: Entry) => Promise<number[] | undefined>): Promise<void>;
   close(): Promise<void>;
 }

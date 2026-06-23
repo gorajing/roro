@@ -68,6 +68,10 @@ export interface MemoryStore {
   /** Forgetting: tombstone old/excess EPISODES for an owner (or all owners) to bound the recall corpus.
    *  Facts/core are never pruned. Returns the number tombstoned. */
   pruneEpisodes(opts?: { ownerId?: string; maxLive?: number; maxAgeDays?: number; keepNewest?: number; batchSize?: number; now?: number }): Promise<number>;
+  /** Rebuild the derived index from files + manifest (the "rebuildable cache" — engine/embed swap, repair).
+   *  MANIFEST-AWARE: tombstoned (pruned/deleted) rows are excluded, so a rebuild never resurrects them; and
+   *  it embeds from PLAINTEXT while storing the SEALED doc, so encrypt-at-rest survives. Atomic swap. */
+  reindex(): Promise<void>;
   /** Set/replace the durable fact for (ownerId, factKey): supersede the prior active one, insert the new
    *  (exactly one active fact per key). Embed-first so a failed embed leaves the prior fact untouched. */
   replaceFact(input: { ownerId: string; factKey: string; text: string; payload?: unknown; sessionId?: string }): Promise<Entry>;
@@ -113,6 +117,37 @@ async function materializeFile(dir: string, entry: Entry): Promise<void> {
   let onDisk: Entry | undefined;
   try { onDisk = await readEntryFile(entryPath(dir, entry)); } catch { onDisk = undefined; }
   if (!onDisk || (onDisk.seq ?? 0) < (entry.seq ?? 0)) await writeEntryFile(dir, entry);
+}
+
+/** Replay the FULL manifest (from seq 0) into the final live entry set — the source of truth for a
+ *  rebuild. Tombstoned ids (delete ops) are excluded so a reindex can't resurrect a pruned episode whose
+ *  JSONL line still exists; superseded priors are kept but flagged (stored + hidden). Entries are the
+ *  stored (sealed-at-rest) form — the caller embeds from plaintext separately. */
+async function liveEntries(dir: string): Promise<Entry[]> {
+  const logBySeq = new Map<number, Entry>();
+  for (const tier of ['episode', 'trace'] as const) {
+    for (const e of await readEpisodes(dir, tier)) if (e.seq != null) logBySeq.set(e.seq, e);
+  }
+  const ops = (await readManifest(dir)).sort((a, b) => a.seq - b.seq);
+  const live = new Map<string, Entry>();
+  for (const op of ops) {
+    if (op.op === 'delete') {
+      live.delete(op.id);
+    } else if (op.op === 'replace_fact') {
+      for (const pid of op.supersedeIds ?? []) {
+        const prior = live.get(pid);
+        if (prior) live.set(pid, prior.superseded ? prior : { ...prior, superseded: true });
+      }
+      if (op.entry) live.set(op.entry.id, op.entry);
+    } else {
+      let e: Entry | undefined;
+      if (op.entry) e = op.entry; // WAL-first put carries the entry
+      else if (op.tier === 'episode' || op.tier === 'trace') e = logBySeq.get(op.seq);
+      else { try { e = await readEntryFile(entryPath(dir, { tier: op.tier, id: op.id } as Entry)); } catch { e = undefined; } }
+      if (e) live.set(op.id, e);
+    }
+  }
+  return [...live.values()];
 }
 
 async function reconcile(dir: string, index: IndexStore, embed: (t: string) => Promise<number[]>, cipher?: Cipher): Promise<void> {
@@ -369,6 +404,21 @@ export async function createMemoryStore(opts: {
         await index.upsert(sup);
         await index.setAppliedSeq(sup.seq ?? 0);
         safeEmit({ kind: 'supersede', ownerId: sup.ownerId, id });
+      });
+    },
+
+    reindex(): Promise<void> {
+      return serialize(async () => {
+        const live = await liveEntries(dir); // manifest-aware: tombstoned rows excluded
+        await index.reindexFrom(live, async (entry) => {
+          // Embed from PLAINTEXT (open the sealed entry) but reindexFrom stores the sealed doc as-is.
+          const text = open(entry).text;
+          if (!text.trim()) return undefined;
+          try { return await embed(text); } catch { return undefined; } // graceful: index without a vector
+        });
+        // Advance the cursor to the manifest head so a subsequent open's reconcile is a no-op.
+        const maxSeq = (await readManifest(dir)).reduce((m, o) => Math.max(m, o.seq), 0);
+        await index.setAppliedSeq(maxSeq);
       });
     },
 
