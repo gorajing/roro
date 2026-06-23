@@ -105,3 +105,6 @@ out/
 .roo
 .trae
 .windsurf
+
+# WS4 on-screen smoke output (generated screenshot — regenerated each run)
+docs/verification/*.png
