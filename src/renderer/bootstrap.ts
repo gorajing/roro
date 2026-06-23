@@ -17,7 +17,10 @@ import { subscribeActionEvents } from './events/actionEvents';
 import { mountFloatingAsk } from './ask/floatingAsk';
 import { mountConfirmChip } from './confirm/confirmChip';
 import { getCompanion } from './events/bridge';
+import { runState } from './events/runState';
 import { createVoice } from './voice';
+import { mountLocalVoiceMode } from './voice/mountLocalVoiceMode';
+import { createFakeVoiceEngine } from './voice/fakeVoiceEngine';
 import type { VapiToolCall } from './voice/messages';
 
 function el<T extends HTMLElement>(id: string): T | null {
@@ -271,6 +274,38 @@ export async function bootstrap(): Promise<void> {
       setStatus(`Stop failed: ${describeError(e)}`);
     }
   });
+
+  // Phase D / Phase 0 — the ON-DEVICE voice path (mouth-not-brain), behind a dev flag until the real
+  // whisper/Silero/Kokoro engine lands (Phases 1-3). With config.fakeVoice it mounts the LOCAL pipeline
+  // against a FAKE engine so the wiring is runnable end-to-end (no mic/models): a committed utterance
+  // routes through turnRun and the cat speaks the message back. Default off → the Vapi facade is unchanged.
+  if (config.fakeVoice) {
+    const c = getCompanion();
+    const fakeEngine = createFakeVoiceEngine();
+    const localVoice = mountLocalVoiceMode({
+      engine: fakeEngine,
+      detect: () => true,
+      deps: {
+        // Return the bridge promise directly — when the bridge is MISSING this is undefined (non-thenable),
+        // so the router doesn't latch a dispatch that would never see a runEnd (it stays unlatched).
+        turnRun: (transcript) => c?.turnRun?.({ transcript, sessionId }),
+        cancelTask: () => { void c?.cancelTask?.(); },
+        isRunActive: () => runState.active,
+        onRunEnd: (cb) => c?.onRunEnd?.(({ runId }) => cb(runId)) ?? (() => undefined),
+      },
+      onActionEvent: (cb) => c?.onActionEvent?.(cb) ?? (() => undefined),
+      driver: { poke: () => driver.poke?.() },
+      captions,
+      isMuted: () => micMuted,
+    });
+    void localVoice.mode.summon();
+    setStatus('Fake voice mode — in DevTools call __roroVoice.utter("add a logout route")');
+    (window as unknown as { __roroVoice?: unknown }).__roroVoice = {
+      utter: (t: string) => fakeEngine.utter(t),
+      state: () => localVoice.mode.state,
+      spoken: () => fakeEngine.spoken,
+    };
+  }
 
   // Expose a tiny dev handle for manual testing in DevTools (drive the avatar
   // without a model/keys). Non-enumerable-ish; purely a debugging aid.

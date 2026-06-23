@@ -43,6 +43,9 @@ export interface RoroConfig {
   modelUrl: string;
   /** Opt-in transparent frameless window mode for the floating character demo. */
   floatingWindow: boolean;
+  /** Dev: mount the on-device voice path against a FAKE engine (no whisper/Silero/Kokoro, no mic) so the
+   *  local mouth-not-brain wiring is runnable end-to-end. Default false → the Vapi facade is unchanged. */
+  fakeVoice: boolean;
 }
 
 function viteEnv(_key: string): string | undefined {
@@ -82,5 +85,6 @@ export function loadConfig(): RoroConfig {
     voiceId: read('voiceId', 'VITE_VAPI_VOICE_ID', 'burt'),
     modelUrl: read('modelUrl', 'VITE_LIVE2D_MODEL_URL', './live2d/Haru.model3.json'),
     floatingWindow: readBool('floatingWindow', 'VITE_RORO_FLOATING_WINDOW', false),
+    fakeVoice: readBool('fakeVoice', 'VITE_RORO_FAKE_VOICE', false),
   };
 }

@@ -27,7 +27,7 @@ function makeDeps() {
     turnRun: vi.fn((_t: string) => Promise.resolve({ runId: 'r1' })),
     cancelTask: vi.fn(),
     isRunActive: vi.fn(() => false),
-    onRunEnd: vi.fn((cb: (runId?: string) => void) => { runEndCb = cb; }),
+    onRunEnd: vi.fn((cb: (runId?: string) => void) => { runEndCb = cb; return () => { runEndCb = undefined; }; }),
     fireRunEnd: (runId?: string) => runEndCb?.(runId),
   };
 }
