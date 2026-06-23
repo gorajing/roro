@@ -37,6 +37,20 @@ describe('store — serialized, ordered, durable writer (the files-as-truth cont
     expect(ops[0]).toMatchObject({ seq: 1, op: 'put', id: 'f1', tier: 'fact', ownerId: 'o1', contentHash: e.contentHash });
   });
 
+  it('commitOverwrite is WAL-first (the put op CARRIES the entry as a redo payload) and rejects log tiers', async () => {
+    const w = createMemoryWriter({ dir });
+    await w.putEntry(fact({ text: 'uses npm' }));
+    const updated = await w.commitOverwrite(fact({ text: 'uses pnpm' })); // id-stable overwrite of f1
+    expect(updated.text).toBe('uses pnpm');
+    expect((await readEntryFile(entryPath(dir, updated as Entry))).text).toBe('uses pnpm'); // file overwritten
+    const ops = await readManifest(dir);
+    const last = ops[ops.length - 1];
+    expect(last.op).toBe('put');
+    expect(last.entry?.text).toBe('uses pnpm'); // WAL-FIRST: the entry rides in the op (redoable on crash)
+    // logs are append-only — never an id-stable overwrite
+    await expect(w.commitOverwrite(episode())).rejects.toThrow(/per-file/);
+  });
+
   it('routes episodes to the JSONL log (not a per-file entry) and records a manifest op', async () => {
     const w = createMemoryWriter({ dir });
     const e = await w.putEntry(episode());
