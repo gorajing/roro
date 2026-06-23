@@ -84,4 +84,18 @@ describe('memoryStore — encrypt-at-rest (cipher injected)', () => {
     await enc.close();
     await expect(createMemoryStore({ dir, embed, dim: DIM })).rejects.toThrow(/encrypt/i); // no cipher
   });
+
+  it('the encryption guard SURVIVES an index deletion (files-as-truth marker, not idx_meta)', async () => {
+    const enc = await createMemoryStore({ dir, embed, dim: DIM, cipher });
+    await enc.remember({ tier: 'episode', ownerId: 'o1', text: 'sealed at rest' });
+    await enc.close();
+    rmSync(join(dir, 'index'), { recursive: true, force: true }); // wipe the DERIVED index (marker must outlive it)
+    // Reopening WITHOUT a cipher must STILL fail loud — else reconcile would index sealed files as plaintext.
+    await expect(createMemoryStore({ dir, embed, dim: DIM })).rejects.toThrow(/encrypt/i);
+    // Reopening WITH the cipher rebuilds correctly (the sealed files reconcile + decrypt).
+    const rebuilt = await createMemoryStore({ dir, embed, dim: DIM, cipher });
+    try {
+      expect((await rebuilt.recent({ ownerId: 'o1', k: 5 })).map((e) => e.text)).toEqual(['sealed at rest']);
+    } finally { await rebuilt.close(); }
+  });
 });
