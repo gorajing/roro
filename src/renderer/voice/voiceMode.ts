@@ -12,8 +12,9 @@ import type { VoiceBackend, VoiceBackendEvents } from './voiceBackend';
 import type { CharacterDriver, CaptionSink } from '../character/types';
 
 export interface VoiceModeDeps extends VoiceTurnDeps {
-  /** Subscribe to the universal runEnd (window.companion.onRunEnd) so the router + FSM advance. */
-  onRunEnd(cb: (runId?: string) => void): void;
+  /** Subscribe to the universal runEnd (window.companion.onRunEnd) so the router + FSM advance. Returns an
+   *  unsubscribe so dispose() can detach it — else a leaked runEnd could drain the router after teardown. */
+  onRunEnd(cb: (runId?: string) => void): () => void;
 }
 
 export interface CreateVoiceModeOptions {
@@ -32,6 +33,9 @@ export interface VoiceMode {
   summon(): Promise<void>;
   /** Close the mic + reset to off. */
   unsummon(): Promise<void>;
+  /** Tear down for good: detach the runEnd subscription + release the backend. After dispose(), a late
+   *  runEnd can no longer drain the router. */
+  dispose(): void;
   readonly available: boolean;
   readonly state: VoiceModeState;
 }
@@ -52,8 +56,8 @@ export function createVoiceMode(opts: CreateVoiceModeOptions): VoiceMode {
   }
 
   // Route the universal runEnd through the router (so ONLY this router's run advances its queue) and
-  // reflect the end in the visible mode.
-  deps.onRunEnd((runId) => {
+  // reflect the end in the visible mode. Keep the unsubscribe so dispose() can detach it.
+  const offRunEnd = deps.onRunEnd((runId) => {
     router.onRunEnd(runId);
     apply({ type: 'turnEnded' });
   });
@@ -91,6 +95,10 @@ export function createVoiceMode(opts: CreateVoiceModeOptions): VoiceMode {
     async unsummon() {
       await backend.stop();
       apply({ type: 'unsummon' });
+    },
+    dispose() {
+      offRunEnd(); // detach the runEnd handler FIRST so it can't drain the router after teardown
+      void backend.stop().catch(() => undefined); // teardown is best-effort: a native stop failure must not reject
     },
   };
 }
