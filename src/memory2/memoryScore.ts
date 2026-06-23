@@ -25,6 +25,10 @@ export interface Candidate {
 export interface ScoredEntry {
   entry: Entry;
   score: number;
+  /** Raw (unnormalized) pgvector cosine for the vector channel; undefined for recency-only candidates.
+   *  Carried through so callers (e.g. the old-contract adapter's MemoryMatch.similarity) can report true
+   *  cosine, distinct from the blended `score`. */
+  cosine?: number;
   parts: { relevance: number; recency: number; importance: number };
 }
 
@@ -67,7 +71,7 @@ export function blendCandidates(candidates: Candidate[], weights: BlendWeights =
     .map((r, i) => {
       const parts = { relevance: rel[i], recency: rec[i], importance: imp[i] };
       const score = weights.relevance * parts.relevance + weights.recency * parts.recency + weights.importance * parts.importance;
-      return { entry: r.entry, score, parts };
+      return { entry: r.entry, score, cosine: r.cosine, parts };
     })
     .sort((a, b) => b.score - a.score);
 }
