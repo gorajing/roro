@@ -1,0 +1,57 @@
+// @vitest-environment jsdom
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { subscribeActionEvents } from './actionEvents';
+import type { CharacterDriver, CaptionSink } from '../character/types';
+import type { ActionTimeline } from '../character/captions';
+
+// Under the local Ollama default, decide() streams CONTENT only — onReasoning never fires (Ollama
+// has no reasoning_content channel). The decide phase was therefore going dark (no thinking pose,
+// no proof-of-life) because subscribeActionEvents only listened to brain.onReasoning. These tests
+// pin the fix: the content stream must also drive the thinking pose, WITHOUT dumping raw JSON.
+
+type BridgeWin = { companion?: unknown; brain?: unknown };
+const w = (): BridgeWin => window as unknown as BridgeWin;
+
+function fakeCharacter() {
+  const states: string[] = [];
+  const activities: unknown[] = [];
+  const driver = {
+    state: 'idle' as string,
+    setState(s: string) { states.push(s); driver.state = s; },
+    setActivity(a: unknown) { activities.push(a); },
+  };
+  return { character: driver as unknown as CharacterDriver, states, activities };
+}
+
+const noopTimeline = { append() {}, marker() {} } as unknown as ActionTimeline;
+
+describe('subscribeActionEvents — local brain content stream', () => {
+  let contentCb: ((d: string) => void) | undefined;
+  beforeEach(() => {
+    contentCb = undefined;
+    w().companion = { onActionEvent: () => () => {} };
+    // The Ollama default exposes onContent but NOT onReasoning.
+    w().brain = { onContent: (cb: (d: string) => void) => { contentCb = cb; return () => {}; } };
+  });
+  afterEach(() => {
+    delete w().companion;
+    delete w().brain;
+  });
+
+  it('drives the thinking pose from content deltas when there is no reasoning channel', () => {
+    const { character, states } = fakeCharacter();
+    subscribeActionEvents({ character, timeline: noopTimeline });
+    expect(typeof contentCb).toBe('function');
+    contentCb!('{"narration":"on it"');
+    expect(states).toContain('thinking');
+  });
+
+  it('does not leak raw JSON decision tokens into the captions (the planning beat carries the text)', () => {
+    const { character } = fakeCharacter();
+    const lines: Array<{ who: string; text: string }> = [];
+    const captions = { update: (who: string, text: string) => lines.push({ who, text }) } as unknown as CaptionSink;
+    subscribeActionEvents({ character, timeline: noopTimeline, captions });
+    contentCb!('{"narration":"on it","command":"run_agent"}');
+    expect(lines).toHaveLength(0);
+  });
+});

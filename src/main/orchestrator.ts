@@ -259,6 +259,16 @@ async function recallContext(
   }
 }
 
+/** Provider-aware label for the planning beat. Defensive: a brain-load failure here must not crash
+ *  the turn — decideStreaming() will surface the real failure as a run.failed event right after. */
+async function brainPlanningLabel(): Promise<string> {
+  try {
+    return (await loadBrain()).describeBrain();
+  } catch {
+    return 'the brain';
+  }
+}
+
 /** Call the brain, streaming reasoning/content deltas to the renderer as they arrive. */
 async function decideStreaming(input: DecideInput): Promise<Decision> {
   const brain = await loadBrain();
@@ -412,12 +422,12 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
   // preferences stated by the user are recallable verbatim in later turns.
   await rememberUserSaid(sessionId, transcript);
 
-  // Visible (and truthful) Nebius beat: DeepSeek produces the decision +
-  // narration that follow, so name the brain doing the planning here.
+  // Visible (and truthful) brain beat: name the model doing the planning. Provider-aware so the
+  // local Ollama default is labelled honestly (this used to hardcode "DeepSeek (Nebius)").
   pushEvent({
     kind: 'message',
     runId,
-    text: 'DeepSeek (Nebius) is planning the task…',
+    text: `${await brainPlanningLabel()} is planning the task…`,
     ts: Date.now(),
   });
 

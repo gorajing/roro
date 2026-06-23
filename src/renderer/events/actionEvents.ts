@@ -146,17 +146,28 @@ export function subscribeActionEvents(opts: SubscribeOptions): () => void {
   if (brain?.onReasoning) {
     unsubs.push(
       brain.onReasoning((delta: string) => {
-        // DeepSeek reasoning_content streams during decide() -> 'thinking' pose AND
-        // a live caption so the decide phase isn't silent dead air. Show the tail
-        // (most recent reasoning) labelled as Nebius for sponsor visibility.
+        // reasoning_content streams during decide() (Nebius path only) -> 'thinking' pose AND a
+        // live caption so the decide phase isn't silent dead air. Show the tail (most recent
+        // reasoning). Provider-neutral label — the planning beat (from MAIN) names the brain.
         character.setState('thinking');
         character.setActivity({ kind: 'thinking', text: 'thinking' });
         if (captions) {
           reasoningBuf += delta;
           const tail =
             reasoningBuf.length > 240 ? '…' + reasoningBuf.slice(-240) : reasoningBuf;
-          captions.update('assistant', `DeepSeek (Nebius) is reasoning: ${tail}`, false);
+          captions.update('assistant', `reasoning: ${tail}`, false);
         }
+      }),
+    );
+  }
+  if (brain?.onContent) {
+    unsubs.push(
+      brain.onContent(() => {
+        // The local Ollama default streams the JSON decision as CONTENT (no reasoning_content), so
+        // without this the decide phase shows no proof-of-life. Drive the 'thinking' pose off content
+        // deltas too. NO caption: content is raw decision JSON; the planning beat carries the text.
+        character.setState('thinking');
+        character.setActivity({ kind: 'thinking', text: 'thinking' });
       }),
     );
   }

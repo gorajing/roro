@@ -33,6 +33,9 @@ interface CompanionBridgeLike {
 /** The slice of window.brain this component consumes. */
 interface BrainBridgeLike {
   onReasoning?(cb: (delta: string) => void): () => void;
+  /** Decision tokens streamed during decide(). The local Ollama default emits these (not
+   *  reasoning_content), so they're what keeps the decide phase alive under the local brain. */
+  onContent?(cb: (delta: string) => void): () => void;
 }
 
 interface BridgeWindow {

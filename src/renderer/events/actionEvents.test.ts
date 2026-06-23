@@ -17,6 +17,6 @@ describe('activityForEvent — memory beat cue', () => {
   });
   it('ignores a non-memory status and plain assistant messages', () => {
     expect(activityForEvent(status('some other status'))).toBeNull();
-    expect(activityForEvent(msg('DeepSeek (Nebius) is planning the task…'))).toBeNull();
+    expect(activityForEvent(msg('qwen2.5:3b (local Ollama) is planning the task…'))).toBeNull();
   });
 });

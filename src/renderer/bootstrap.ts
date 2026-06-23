@@ -243,7 +243,7 @@ export async function bootstrap(): Promise<void> {
     if (sendBtn) sendBtn.disabled = true;
     captions.update('user', text, true);
     driver.setState('thinking');
-    setStatus('Thinking… (Nebius brain)');
+    setStatus('Thinking…');
 
     try {
       // Resolves at DISPATCH — this await only acks the handoff; it does NOT mean the turn is done
