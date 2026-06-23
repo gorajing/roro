@@ -16,6 +16,7 @@ describe('tracer — one-way observation tap (RORO_TRACE eval substrate)', () =>
     rmSync(dir, { recursive: true, force: true });
     delete process.env.RORO_TRACE;
     delete process.env.RORO_TRACE_FILE;
+    delete process.env.RORO_TRACE_QUERY;
   });
 
   it('appends one JSON line per event, each stamped with a ts', () => {
@@ -51,6 +52,29 @@ describe('tracer — one-way observation tap (RORO_TRACE eval substrate)', () =>
 
   it('NOOP_TRACER does nothing and writes nothing', () => {
     expect(() => NOOP_TRACER.emit(recall)).not.toThrow();
+  });
+
+  it('hashes the recall query by default (privacy); plaintext only when opted in', () => {
+    const hashed = join(dir, 'hashed.jsonl');
+    createJsonlTracer(hashed).emit(recall); // default: hash the query
+    const h = JSON.parse(readFileSync(hashed, 'utf8').trim());
+    expect(h.query).not.toBe('what did we do'); // not the raw transcript
+    expect(h.query).toMatch(/^[0-9a-f]+$/); // a hex fingerprint (joinable, not readable)
+
+    const plain = join(dir, 'plain.jsonl');
+    createJsonlTracer(plain, false).emit(recall); // explicit opt-in to plaintext
+    expect(JSON.parse(readFileSync(plain, 'utf8').trim()).query).toBe('what did we do');
+  });
+
+  it('resolveTracer hashes the query unless RORO_TRACE_QUERY=plaintext', () => {
+    process.env.RORO_TRACE = '1';
+    resolveTracer(dir).emit(recall);
+    expect(JSON.parse(readFileSync(join(dir, 'trace.jsonl'), 'utf8').trim()).query).toMatch(/^[0-9a-f]+$/);
+    process.env.RORO_TRACE_QUERY = 'plaintext';
+    const custom = join(dir, 'plain-opt.jsonl');
+    process.env.RORO_TRACE_FILE = custom;
+    resolveTracer(dir).emit(recall);
+    expect(JSON.parse(readFileSync(custom, 'utf8').trim()).query).toBe('what did we do');
   });
 
   it('resolveTracer is a no-op unless RORO_TRACE=1', () => {
