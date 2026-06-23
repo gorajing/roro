@@ -28,6 +28,14 @@ import type { IndexStore } from './indexStore';
 
 const SCHEMA_VERSION = 1;
 
+// Consolidation (Zuhn-style confidence, facts-only): a single observation carries a moderate base
+// confidence; each corroboration (the same fact re-confirmed) nudges it toward certainty, capped at 1.
+// Accrual is INLINE at the fact write path — the deterministic core of "memory gets smarter"; the
+// brain-driven episode→fact distillation + time-decay are later increments.
+const BASE_CONFIDENCE = 0.5;
+const CONFIDENCE_INCREMENT = 0.1;
+const MAX_CONFIDENCE = 1;
+
 export type RememberInput = Omit<NewEntry, 'id' | 'schemaVersion' | 'createdAt'> & {
   id?: string;
   createdAt?: string;
@@ -47,6 +55,9 @@ export interface MemoryStore {
   /** Set/replace the durable fact for (ownerId, factKey): supersede the prior active one, insert the new
    *  (exactly one active fact per key). Embed-first so a failed embed leaves the prior fact untouched. */
   replaceFact(input: { ownerId: string; factKey: string; text: string; payload?: unknown; sessionId?: string }): Promise<Entry>;
+  /** Corroborate the active fact for (ownerId, factKey): raise its confidence + access stats IN PLACE
+   *  (no supersede/churn). Returns the updated fact, or null if no active fact exists for the key. */
+  reinforceFact(input: { ownerId: string; factKey: string }): Promise<Entry | null>;
   /** Mark an entry superseded (hidden from getProfile/recall) — supersede-not-overwrite. */
   supersede(id: string): Promise<void>;
   close(): Promise<void>;
@@ -204,7 +215,37 @@ export async function createMemoryStore(opts: {
     },
 
     async getProfile(ownerId: string): Promise<Entry[]> {
-      return (await index.facts(ownerId)).map(open);
+      // Surface the most-corroborated facts first (confidence desc, then newest) — the "knows-you" layer
+      // leads with what we're most sure of. index.facts returns active facts (a small set), so the sort
+      // is cheap + needs no confidence column.
+      return (await index.facts(ownerId))
+        .map(open)
+        .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0) || (b.seq ?? 0) - (a.seq ?? 0));
+    },
+
+    reinforceFact({ ownerId, factKey }): Promise<Entry | null> {
+      if (!ownerId?.trim() || !factKey?.trim()) {
+        return Promise.reject(new Error('memory2: reinforceFact requires non-empty ownerId and factKey'));
+      }
+      return serialize(async () => {
+        const active = (await index.facts(ownerId)).find((f) => f.factKey === factKey);
+        if (!active) return null; // nothing to corroborate (caller should replaceFact for a new fact)
+        const opened = open(active);
+        const { seq: _s, contentHash: _c, ...rest } = opened;
+        const now = new Date().toISOString();
+        // Re-put the SAME id in place (no supersede): only the soft signals change. putEntry re-fingerprints
+        // + reseals under the new seq's AAD; confidence/lastAccessedAt/accessCount are not bound in the AAD.
+        const bumped = await writer.putEntry({
+          ...rest,
+          confidence: Math.min(MAX_CONFIDENCE, (opened.confidence ?? BASE_CONFIDENCE) + CONFIDENCE_INCREMENT),
+          lastAccessedAt: now,
+          accessCount: (opened.accessCount ?? 0) + 1,
+          updatedAt: now,
+        });
+        await indexEntry(index, bumped, embed, cipher);
+        await index.setAppliedSeq(bumped.seq ?? 0);
+        return open(bumped);
+      });
     },
 
     replaceFact(input): Promise<Entry> {
@@ -221,7 +262,7 @@ export async function createMemoryStore(opts: {
         const fresh: NewEntry = {
           id: randomUUID(), schemaVersion: SCHEMA_VERSION, tier: 'fact', ownerId: input.ownerId,
           factKey: input.factKey, text: input.text, payload: input.payload, sessionId: input.sessionId,
-          createdAt: new Date().toISOString(), embedModel, embedDim: dim,
+          createdAt: new Date().toISOString(), embedModel, embedDim: dim, confidence: BASE_CONFIDENCE,
         };
         const { fresh: committed, superseded } = await writer.commitReplaceFact(fresh, priors.map((p) => p.id));
         for (const sup of superseded) await index.upsert(sup); // priors first (unique-index safe), SEALED

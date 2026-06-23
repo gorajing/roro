@@ -111,6 +111,9 @@ export async function remember(input: RememberInput): Promise<MemoryRow> {
 export async function replaceFact(input: ReplaceFactInput): Promise<MemoryRow> {
   return (await getAdapter()).replaceFact(input);
 }
+export async function reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null> {
+  return (await getAdapter()).reinforceFact(input);
+}
 export async function recall(input: { query: string; k?: number; ownerId: string; sessionId?: string }): Promise<MemoryMatch[]> {
   return (await getAdapter()).recall(input);
 }

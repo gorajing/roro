@@ -59,6 +59,8 @@ export interface BrainModule {
 export interface MemoryModule {
   remember(input: RememberInput): Promise<MemoryRow>;
   replaceFact(input: ReplaceFactInput): Promise<MemoryRow>;
+  /** Corroborate the active fact for (owner_id, key): strengthen its confidence in place. null if none. */
+  reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null>;
   recall(input: { query: string; k?: number; ownerId: string; sessionId?: string }): Promise<MemoryMatch[]>;
   getProfile(ownerId: string): Promise<MemoryRow[]>;
   supersede(id: string): Promise<void>;
