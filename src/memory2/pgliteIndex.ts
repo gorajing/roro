@@ -12,7 +12,7 @@ import type { IndexStore, VectorMatch } from './indexStore';
 
 const toVec = (e?: number[]): string | null => (e ? `[${e.join(',')}]` : null);
 
-export async function createPgliteIndex(opts: { dataDir?: string; dim?: number; embedModel?: string }): Promise<IndexStore> {
+export async function createPgliteIndex(opts: { dataDir?: string; dim?: number; embedModel?: string; encrypted?: boolean }): Promise<IndexStore> {
   const dim = opts.dim ?? 768;
   const db = await PGlite.create(opts.dataDir ?? 'memory://', { extensions: { vector } });
   await db.exec(`
@@ -75,6 +75,30 @@ export async function createPgliteIndex(opts: { dataDir?: string; dim?: number; 
       await db.query(
         `insert into idx_meta (key, value) values ('embed_model', $1) on conflict (key) do update set value = $1`,
         [opts.embedModel],
+      );
+    }
+  }
+
+  // Guard the ENCRYPTION MODE: encrypt-at-rest must be all-or-nothing for a store. Opening a plaintext
+  // store WITH a cipher (or an encrypted store WITHOUT one) would silently mix sealed + plaintext rows /
+  // read ciphertext as text. Persist the mode in idx_meta on first use; fail loud on a mismatch (the
+  // files are the source of truth — move/rebuild the dir, or open in the original mode).
+  {
+    const mode = opts.encrypted ? 'v1' : 'none';
+    const r = await db.query<{ value: string }>(`select value from idx_meta where key = 'encryption'`);
+    const existing = r.rows[0]?.value;
+    if (existing && existing !== mode) {
+      await db.close();
+      throw new Error(
+        `memory2 index was built ${existing === 'none' ? 'WITHOUT encryption' : `with encryption ${existing}`} but ` +
+          `${opts.encrypted ? 'a cipher is configured' : 'no cipher is configured'} — encryption is all-or-nothing per ` +
+          `store. Open it in its original mode, or move/rebuild the dir to switch.`,
+      );
+    }
+    if (!existing) {
+      await db.query(
+        `insert into idx_meta (key, value) values ('encryption', $1) on conflict (key) do update set value = $1`,
+        [mode],
       );
     }
   }

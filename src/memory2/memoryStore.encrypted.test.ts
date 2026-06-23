@@ -64,4 +64,24 @@ describe('memoryStore — encrypt-at-rest (cipher injected)', () => {
       expect((await s2.getProfile('o1')).map((f) => f.text)).toEqual(['uses pnpm']);
     } finally { await s2.close(); }
   });
+
+  it('fails loud opening a PLAINTEXT store WITH a cipher (mixed-store guard — no silent re-encrypt)', async () => {
+    const plain = await createMemoryStore({ dir, embed, dim: DIM }); // created without encryption
+    await plain.remember({ tier: 'episode', ownerId: 'o1', text: 'plaintext at rest' });
+    await plain.close();
+    // Enabling encryption on an existing plaintext store must fail loud, not silently mix plaintext + sealed.
+    await expect(createMemoryStore({ dir, embed, dim: DIM, cipher })).rejects.toThrow(/encrypt/i);
+    // Reopening in the SAME (plaintext) mode is fine.
+    const reopened = await createMemoryStore({ dir, embed, dim: DIM });
+    try {
+      expect((await reopened.recent({ ownerId: 'o1', k: 5 })).map((e) => e.text)).toEqual(['plaintext at rest']);
+    } finally { await reopened.close(); }
+  });
+
+  it('fails loud opening an ENCRYPTED store WITHOUT the cipher (would otherwise read ciphertext)', async () => {
+    const enc = await createMemoryStore({ dir, embed, dim: DIM, cipher });
+    await enc.remember({ tier: 'episode', ownerId: 'o1', text: 'sealed at rest' });
+    await enc.close();
+    await expect(createMemoryStore({ dir, embed, dim: DIM })).rejects.toThrow(/encrypt/i); // no cipher
+  });
 });
