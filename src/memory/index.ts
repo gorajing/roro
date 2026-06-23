@@ -8,15 +8,27 @@ import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite-pgvector';
 import type { MemoryMatch, MemoryRow, RememberInput, ReplaceFactInput } from '../shared/memory';
-import { SCHEMA_SQL } from './schema';
-
-const NEBIUS_BASE_URL = 'https://api.tokenfactory.nebius.com/v1/';
-const NEBIUS_EMBEDDING_MODEL = process.env.NEBIUS_EMBED_MODEL || 'Qwen/Qwen3-Embedding-8B';
-const EMBEDDING_DIMENSION = 1536;
+import { buildSchemaSql } from './schema';
+import { resolveOllamaEmbedDim } from '../brain/ollama';
 
 declare const process: { env: Record<string, string | undefined>; cwd(): string };
 
-/** Produces a length-1536 embedding for a piece of text. Injected so the store is testable. */
+// The brain's embedder determines the vector space + dimension: local nomic-embed-text → 768-dim
+// (or OLLAMA_EMBED_DIM when overriding the embed model); the Nebius escape hatch (BRAIN_PROVIDER=nebius)
+// → Qwen 1536-dim. The local case shares brain/ollama.resolveOllamaEmbedDim() — the SINGLE source of
+// truth — so this and brain.embeddingDim() can never desync (importing the leaf ollama module pulls in
+// no openai SDK). embed_model + embed_dim are stamped on every row; the schema's vector(N) and these
+// MUST agree — switching the embed model means a re-embed, never a mixed vector space.
+function embeddingDim(): number {
+  return process.env.BRAIN_PROVIDER === 'nebius' ? 1536 : resolveOllamaEmbedDim(process.env.OLLAMA_EMBED_DIM);
+}
+function embedModel(): string {
+  return process.env.BRAIN_PROVIDER === 'nebius'
+    ? process.env.NEBIUS_EMBED_MODEL || 'Qwen/Qwen3-Embedding-8B'
+    : process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text';
+}
+
+/** Produces a length-768 embedding for a piece of text. Injected so the store is testable. */
 export type Embedder = (text: string) => Promise<number[]> | number[];
 
 export interface RecallInput {
@@ -58,8 +70,8 @@ function insertParams(
     fields.text,
     JSON.stringify(fields.payload ?? null),
     // Provenance stamp: which embedder wrote this vector. Makes a future re-embed auditable.
-    NEBIUS_EMBEDDING_MODEL,
-    EMBEDDING_DIMENSION,
+    embedModel(),
+    embeddingDim(),
     toVectorLiteral(embedding),
   ];
 }
@@ -76,7 +88,9 @@ export async function createMemoryStore(opts: {
   const db = await PGlite.create(opts.dataDir ?? 'memory://', {
     extensions: { vector },
   });
-  await db.exec(SCHEMA_SQL);
+  const dim = embeddingDim();
+  await db.exec(buildSchemaSql(dim));
+  await assertSchemaDimension(db, dim);
 
   const embedOne = async (text: string): Promise<number[]> =>
     assertEmbedding(await opts.embed(text));
@@ -247,30 +261,30 @@ function toVectorLiteral(v: number[]): string {
   return `[${v.join(',')}]`;
 }
 
-// ---- The default embedder: the brain's local embed(), else Nebius over HTTP ----
+// ---- The default embedder: the brain's local embed() (Ollama nomic-embed-text by default) ----
 
 type BrainEmbed = (text: string) => Promise<number[]> | number[];
 type BrainModule = { embed?: unknown; default?: { embed?: unknown } };
-type NebiusEmbeddingResponse = { data?: Array<{ embedding?: unknown }> };
 
 let checkedBrainEmbed = false;
 let brainEmbed: BrainEmbed | null = null;
 
-/** Default embedder for the production store. */
+/** Default embedder for the production store — delegates to the brain's provider-aware embed(). */
 async function embedText(text: string): Promise<number[]> {
   const localEmbed = await loadBrainEmbed();
-  return localEmbed ? assertEmbedding(await localEmbed(text)) : embedWithNebius(text);
+  if (!localEmbed) {
+    throw new Error('brain.embed is unavailable — the brain module must export an embed() function');
+  }
+  return assertEmbedding(await localEmbed(text));
 }
 
 async function loadBrainEmbed(): Promise<BrainEmbed | null> {
   if (checkedBrainEmbed) {
     return brainEmbed;
   }
-  // brain is a COMMITTED sibling module — a failure to import it is a real bug, not an expected
-  // "not built yet" condition. Let it propagate (fail loud) rather than silently using Nebius and
-  // masking a broken brain. Memoize only on SUCCESS, so a transient import failure isn't cached as a
-  // permanent "no local embedder" verdict. If the module loads but exposes no embed(), fall back to
-  // Nebius HTTP (a deliberate null, not a swallowed error).
+  // brain is a COMMITTED sibling module — a failure to import it is a real bug. Let it propagate
+  // (fail loud) rather than masking a broken brain. Memoize only on SUCCESS, so a transient import
+  // failure isn't cached as a permanent "no local embedder" verdict.
   const brain = (await import('../brain')) as BrainModule;
   const candidate =
     typeof brain.embed === 'function' ? brain.embed : brain.default?.embed;
@@ -279,33 +293,35 @@ async function loadBrainEmbed(): Promise<BrainEmbed | null> {
   return brainEmbed;
 }
 
-async function embedWithNebius(text: string): Promise<number[]> {
-  const response = await fetch(`${NEBIUS_BASE_URL}embeddings`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${requiredEnv('NEBIUS_API_KEY')}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: NEBIUS_EMBEDDING_MODEL,
-      input: text,
-      encoding_format: 'float',
-      dimensions: EMBEDDING_DIMENSION,
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`Nebius embedding failed ${response.status}: ${await response.text()}`);
+/**
+ * Guard against opening a persisted store whose embedding column was built for a DIFFERENT embedder
+ * (e.g. a Nebius-era vector(1536) dir now opened with the 768-dim local embedder). create-table-if-
+ * not-exists cannot change an existing column's type, so without this the first insert would fail
+ * cryptically. pgvector stores the dimension in atttypmod. Fail LOUD with an actionable message.
+ */
+async function assertSchemaDimension(db: PGlite, expected: number): Promise<void> {
+  const res = await db.query<{ atttypmod: number }>(
+    `select a.atttypmod from pg_attribute a
+     join pg_class c on a.attrelid = c.oid
+     where c.relname = 'memory' and a.attname = 'embedding' and a.attnum > 0`,
+  );
+  const typmod = res.rows[0]?.atttypmod;
+  if (typeof typmod === 'number' && typmod > 0 && typmod !== expected) {
+    throw new Error(
+      `Memory store embedding dimension is vector(${typmod}) but the current embedder needs ` +
+        `vector(${expected}). Vector spaces are not mixable — re-embedding is not automatic. ` +
+        `Move or delete the memory dir to rebuild it fresh.`,
+    );
   }
-  const payload = (await response.json()) as NebiusEmbeddingResponse;
-  return assertEmbedding(payload.data?.[0]?.embedding);
 }
 
 function assertEmbedding(value: unknown): number[] {
+  const dim = embeddingDim();
   if (!Array.isArray(value)) {
     throw new Error('Embedding provider returned a non-array embedding');
   }
-  if (value.length !== EMBEDDING_DIMENSION) {
-    throw new Error(`Embedding dimension ${value.length} does not match vector(${EMBEDDING_DIMENSION})`);
+  if (value.length !== dim) {
+    throw new Error(`Embedding dimension ${value.length} does not match vector(${dim})`);
   }
   if (!value.every((item) => typeof item === 'number' && Number.isFinite(item))) {
     throw new Error('Embedding provider returned a non-numeric embedding value');
@@ -324,12 +340,4 @@ function requireText(value: string, label: string): void {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error(`${label} must be non-empty`);
   }
-}
-
-function requiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`${name} is required`);
-  }
-  return value;
 }

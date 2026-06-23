@@ -5,8 +5,12 @@
 //
 // Provenance: every row stamps embed_model + embed_dim on write so a future re-embed-on-
 // tier-change is auditable (which embedder wrote which vector). The design re-embeds on a
-// tier change and NEVER mixes vector spaces.
-export const SCHEMA_SQL = `
+// tier change and NEVER mixes vector spaces — so the embedding column's dimension is fixed at
+// store creation to the active embedder's dimension (768 local nomic, 1536 Nebius Qwen).
+
+/** Build the schema with the embedding column sized to the active embedder's dimension. */
+export function buildSchemaSql(embedDim: number): string {
+  return `
 create extension if not exists vector;
 
 create table if not exists memory (
@@ -20,7 +24,7 @@ create table if not exists memory (
   superseded  boolean not null default false,
   embed_model text,
   embed_dim   int,
-  embedding   vector(1536),
+  embedding   vector(${embedDim}),
   created_at  timestamptz not null default now()
 );
 
@@ -55,3 +59,7 @@ create unique index if not exists memory_active_fact_key_uidx
   on memory (owner_id, (payload->>'key'))
   where kind = 'fact' and superseded = false;
 `;
+}
+
+/** The default 768-dim schema (local nomic-embed-text). Importers that don't vary the dimension. */
+export const SCHEMA_SQL = buildSchemaSql(768);

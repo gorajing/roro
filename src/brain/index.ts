@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import { buildFactPrompt, parseFactResponse, FACT_SYSTEM_PROMPT, type FactExtractInput, type FactCandidate } from './extractFact';
+import { ollamaChat, ollamaEmbed, ollamaTags, hasModel, resolveOllamaEmbedDim, assertEmbedDimMatch } from './ollama';
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -38,12 +39,29 @@ type ChatDeltaWithReasoning = {
 };
 
 const NEBIUS_BASE_URL = 'https://api.tokenfactory.nebius.com/v1/';
-const EMBEDDING_DIM = 1536;
 
-const DEFAULT_MODELS: ModelIds = {
+// Roro is LOCAL-FIRST by default: the brain runs on the local Ollama daemon. BRAIN_PROVIDER=nebius
+// flips every brain call back to the (retained) Nebius cloud path — an explicit escape hatch, not a
+// silent fallback. The embedding dimension is provider-specific (Nebius Qwen=1536, local nomic=768
+// or OLLAMA_EMBED_DIM when overriding OLLAMA_EMBED_MODEL); it is stamped on every memory row
+// (embed_model/embed_dim) and the memory schema's vector(N) must match.
+type BrainProvider = 'ollama' | 'nebius';
+function brainProvider(): BrainProvider {
+  return process.env.BRAIN_PROVIDER === 'nebius' ? 'nebius' : 'ollama';
+}
+function embeddingDim(): number {
+  return brainProvider() === 'nebius' ? 1536 : resolveOllamaEmbedDim(process.env.OLLAMA_EMBED_DIM);
+}
+
+const NEBIUS_MODELS: ModelIds = {
   reason: 'deepseek-ai/DeepSeek-V3.2',
   vision: 'Qwen/Qwen2.5-VL-72B-Instruct',
   embed: 'Qwen/Qwen3-Embedding-8B',
+};
+const OLLAMA_MODELS: ModelIds = {
+  reason: 'qwen2.5:3b',
+  vision: 'qwen2.5vl:7b',
+  embed: 'nomic-embed-text',
 };
 
 // Exhaustive Command map: the runtime list derives from its keys, so COMMANDS can never drift from
@@ -88,16 +106,41 @@ let cachedClient: OpenAI | null = null;
 let cachedApiKey: string | null = null;
 
 export function getModelIds(): ModelIds {
+  if (brainProvider() === 'nebius') {
+    return {
+      reason: process.env.NEBIUS_MODEL || NEBIUS_MODELS.reason,
+      vision: process.env.NEBIUS_VISION_MODEL || NEBIUS_MODELS.vision,
+      embed: process.env.NEBIUS_EMBED_MODEL || NEBIUS_MODELS.embed,
+    };
+  }
   return {
-    reason: process.env.NEBIUS_MODEL || DEFAULT_MODELS.reason,
-    vision: process.env.NEBIUS_VISION_MODEL || DEFAULT_MODELS.vision,
-    embed: process.env.NEBIUS_EMBED_MODEL || DEFAULT_MODELS.embed,
+    reason: process.env.OLLAMA_MODEL || OLLAMA_MODELS.reason,
+    vision: process.env.OLLAMA_VISION_MODEL || OLLAMA_MODELS.vision,
+    embed: process.env.OLLAMA_EMBED_MODEL || OLLAMA_MODELS.embed,
   };
 }
 
 export async function preflight(): Promise<PreflightResult> {
   const models = getModelIds();
   const requiredIds = [models.reason, models.vision, models.embed];
+
+  if (brainProvider() === 'ollama') {
+    const tags = await ollamaTags();
+    const found = requiredIds.filter((id) => hasModel(tags, id));
+    const missing = requiredIds.filter((id) => !hasModel(tags, id));
+    if (missing.length > 0) {
+      throw new Error(
+        `Ollama models missing: ${missing.join(', ')}. Pull them with: ${missing.map((m) => `ollama pull ${m}`).join(' && ')}`,
+      );
+    }
+    // The tag check confirms the embed model is pulled but not what dimension it emits. Probe it once
+    // here and fail LOUD on a mismatch with the configured dim, so a non-768 OLLAMA_EMBED_MODEL override
+    // is caught at startup (with the OLLAMA_EMBED_DIM remedy) rather than mid-turn or as a wrong vector.
+    const [probe] = await ollamaEmbed(models.embed, 'preflight embedding dimension probe');
+    assertEmbedDimMatch(models.embed, probe?.length ?? 0, embeddingDim());
+    return { required: models, found, missing };
+  }
+
   const list = await getNebiusClient().models.list();
   const availableIds = list.data.map((model) => model.id);
   const found = requiredIds.filter((id) => availableIds.indexOf(id) !== -1);
@@ -115,6 +158,23 @@ export async function preflight(): Promise<PreflightResult> {
 
 export async function decide(input: DecideInput, options: DecideOptions = {}): Promise<Decision> {
   const models = getModelIds();
+  const userPrompt = buildDecisionPrompt(input);
+
+  if (brainProvider() === 'ollama') {
+    // Local path: Ollama /api/chat with format:'json'. qwen streams CONTENT only (no separate
+    // reasoning channel), so onReasoning never fires — the avatar still animates off content deltas.
+    const content = await ollamaChat({
+      model: models.reason,
+      system: SYSTEM_PROMPT,
+      user: userPrompt,
+      json: true,
+      temperature: 0.3,
+      stream: true,
+      onContent: options.onContent,
+    });
+    return parseDecision(content);
+  }
+
   const stream = await getNebiusClient().chat.completions.create({
     model: models.reason,
     stream: true,
@@ -123,7 +183,7 @@ export async function decide(input: DecideInput, options: DecideOptions = {}): P
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: buildDecisionPrompt(input) },
+      { role: 'user', content: userPrompt },
     ],
   });
 
@@ -151,6 +211,20 @@ export async function decide(input: DecideInput, options: DecideOptions = {}): P
  */
 export async function extractFact(input: FactExtractInput): Promise<FactCandidate | null> {
   const models = getModelIds();
+  const userPrompt = buildFactPrompt(input);
+
+  if (brainProvider() === 'ollama') {
+    const content = await ollamaChat({
+      model: models.reason,
+      system: FACT_SYSTEM_PROMPT,
+      user: userPrompt,
+      json: true,
+      temperature: 0,
+      stream: false,
+    });
+    return parseFactResponse(content);
+  }
+
   const response = await getNebiusClient().chat.completions.create({
     model: models.reason,
     temperature: 0,
@@ -158,15 +232,32 @@ export async function extractFact(input: FactExtractInput): Promise<FactCandidat
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: FACT_SYSTEM_PROMPT },
-      { role: 'user', content: buildFactPrompt(input) },
+      { role: 'user', content: userPrompt },
     ],
   });
   const content = response.choices[0]?.message?.content;
   return typeof content === 'string' ? parseFactResponse(content) : null;
 }
 
+const VISION_PROMPT =
+  'Describe this screen for a coding assistant. Focus on visible apps, editor content, errors, terminal output, and UI state. Be concise.';
+
 export async function describeScreen(input: ScreenInput): Promise<string> {
   const models = getModelIds();
+
+  if (brainProvider() === 'ollama') {
+    // Ollama vision takes RAW base64 (no data: prefix) in the message's images[].
+    const content = await ollamaChat({
+      model: models.vision,
+      user: VISION_PROMPT,
+      images: [cleanImageB64(input)],
+      temperature: 0.2,
+      stream: false,
+    });
+    if (content.trim().length === 0) throw new Error('Ollama vision returned empty content');
+    return content.trim();
+  }
+
   const dataUri = toImageDataUri(input);
   const response = await getNebiusClient().chat.completions.create({
     model: models.vision,
@@ -176,10 +267,7 @@ export async function describeScreen(input: ScreenInput): Promise<string> {
       {
         role: 'user',
         content: [
-          {
-            type: 'text',
-            text: 'Describe this screen for a coding assistant. Focus on visible apps, editor content, errors, terminal output, and UI state. Be concise.',
-          },
+          { type: 'text', text: VISION_PROMPT },
           { type: 'image_url', image_url: { url: dataUri } },
         ],
       },
@@ -200,21 +288,27 @@ export async function embed(text: string | string[]): Promise<number[] | number[
   assertEmbeddableInput(text);
 
   const models = getModelIds();
-  const response = await getNebiusClient().embeddings.create({
-    model: models.embed,
-    input: text,
-    encoding_format: 'float',
-    dimensions: EMBEDDING_DIM,
-  });
+  const dim = embeddingDim();
 
-  const vectors = response.data
-    .slice()
-    .sort((a, b) => a.index - b.index)
-    .map((item) => item.embedding);
+  let vectors: number[][];
+  if (brainProvider() === 'ollama') {
+    vectors = await ollamaEmbed(models.embed, text);
+  } else {
+    const response = await getNebiusClient().embeddings.create({
+      model: models.embed,
+      input: text,
+      encoding_format: 'float',
+      dimensions: dim,
+    });
+    vectors = response.data
+      .slice()
+      .sort((a, b) => a.index - b.index)
+      .map((item) => item.embedding);
+  }
 
   for (const vector of vectors) {
-    if (vector.length !== EMBEDDING_DIM) {
-      throw new Error(`Expected ${EMBEDDING_DIM}-dim embedding, got ${vector.length}`);
+    if (vector.length !== dim) {
+      throw new Error(`Expected ${dim}-dim embedding, got ${vector.length}`);
     }
   }
 
@@ -297,20 +391,22 @@ function extractJsonObject(raw: string): string {
   return withoutFence.slice(start, end + 1);
 }
 
-function toImageDataUri(input: ScreenInput): string {
+/** Validate a screen capture and return its whitespace-stripped raw base64 (no data: prefix). */
+function cleanImageB64(input: ScreenInput): string {
   if (!input.b64.trim()) {
     throw new Error('describeScreen requires a non-empty b64 image');
   }
-
   if (!/^image\/[a-z0-9.+-]+$/i.test(input.mime)) {
     throw new Error(`describeScreen mime must be an image/* type, got ${input.mime}`);
   }
-
   if (/^data:/i.test(input.b64.trim())) {
     throw new Error('describeScreen expects raw base64 image data, not a data URI');
   }
+  return input.b64.replace(/\s+/g, '');
+}
 
-  return `data:${input.mime};base64,${input.b64.replace(/\s+/g, '')}`;
+function toImageDataUri(input: ScreenInput): string {
+  return `data:${input.mime};base64,${cleanImageB64(input)}`;
 }
 
 function assertEmbeddableInput(input: string | string[]): void {
