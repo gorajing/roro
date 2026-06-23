@@ -119,6 +119,11 @@ export async function createPgliteIndex(opts: { dataDir?: string; dim?: number }
       return res.rows.map((r) => r.doc);
     },
 
+    async get(id: string): Promise<Entry | undefined> {
+      const res = await db.query<{ doc: Entry }>(`select doc from idx where id = $1`, [id]);
+      return res.rows[0]?.doc;
+    },
+
     async remove(id: string): Promise<void> {
       await db.query(`delete from idx where id = $1`, [id]);
     },

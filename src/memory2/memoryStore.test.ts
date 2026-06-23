@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createMemoryStore } from './memoryStore';
 import { createMemoryWriter } from './store';
+import { appendOp } from './manifest';
+import { readEntryFile, entryPath } from './entryFile';
 
 const DIM = 16;
 // Deterministic fake embedder: first char -> a unit dimension, so identical text recalls itself.
@@ -108,6 +110,76 @@ describe('memoryStore — unified API + cursor-based reconciliation', () => {
       await store.remember({ tier: 'episode', ownerId: 'o1', text: 'newest unrelated thing' });
       const hits = await store.recall({ query: 'topic detail', ownerId: 'o1', k: 3 });
       expect(hits.map((h) => h.entry.text)).toContain('newest unrelated thing'); // recency-guaranteed slot
+    } finally { await store.close(); }
+  });
+
+  it('replaceFact: exactly one active fact per key; a replacement supersedes the prior value', async () => {
+    const store = await createMemoryStore({ dir, embed, dim: DIM });
+    try {
+      await store.replaceFact({ ownerId: 'o1', factKey: 'pkg', text: 'uses npm', payload: { key: 'pkg', value: 'npm' } });
+      await store.replaceFact({ ownerId: 'o1', factKey: 'pkg', text: 'uses pnpm', payload: { key: 'pkg', value: 'pnpm' } });
+      const profile = await store.getProfile('o1');
+      expect(profile.map((f) => f.text)).toEqual(['uses pnpm']); // only the new active value
+    } finally { await store.close(); }
+  });
+
+  it('replaceFact is owner-scoped (does not touch another owner\'s same-key fact)', async () => {
+    const store = await createMemoryStore({ dir, embed, dim: DIM });
+    try {
+      await store.replaceFact({ ownerId: 'o1', factKey: 'pkg', text: 'mine' });
+      await store.replaceFact({ ownerId: 'o2', factKey: 'pkg', text: 'theirs' });
+      await store.replaceFact({ ownerId: 'o1', factKey: 'pkg', text: 'mine v2' });
+      expect((await store.getProfile('o1')).map((f) => f.text)).toEqual(['mine v2']);
+      expect((await store.getProfile('o2')).map((f) => f.text)).toEqual(['theirs']);
+    } finally { await store.close(); }
+  });
+
+  it('replaceFact embed failure leaves the prior fact active (abort-safe — embed before any write)', async () => {
+    const flaky = async (t: string): Promise<number[]> => { if (t === 'FAIL') throw new Error('embed down'); return embed(t); };
+    const store = await createMemoryStore({ dir, embed: flaky, dim: DIM });
+    try {
+      await store.replaceFact({ ownerId: 'o1', factKey: 'pkg', text: 'good value' });
+      await expect(store.replaceFact({ ownerId: 'o1', factKey: 'pkg', text: 'FAIL' })).rejects.toThrow();
+      expect((await store.getProfile('o1')).map((f) => f.text)).toEqual(['good value']); // unchanged
+    } finally { await store.close(); }
+  });
+
+  it('replaceFact is crash-recoverable via the WAL (reconcile completes a partially-applied replace)', async () => {
+    const writer = createMemoryWriter({ dir });
+    const prior = await writer.putEntry({ id: 'p1', schemaVersion: 1, tier: 'fact', ownerId: 'o1', factKey: 'pkg', text: 'uses npm', payload: { key: 'pkg', value: 'npm' }, createdAt: '2026-06-22T00:00:00.000Z' });
+    // Commit a replace via the WAL (appends the compound op + materializes files) but DO NOT touch the
+    // index — simulating a crash after the durable commit, before indexing.
+    await writer.commitReplaceFact(
+      { id: 'p2', schemaVersion: 1, tier: 'fact', ownerId: 'o1', factKey: 'pkg', text: 'uses pnpm', payload: { key: 'pkg', value: 'pnpm' }, createdAt: '2026-06-22T00:01:00.000Z' },
+      [prior.id],
+    );
+    const store = await createMemoryStore({ dir, embed, dim: DIM }); // reconcile replays put + replace_fact
+    try {
+      expect((await store.getProfile('o1')).map((f) => f.text)).toEqual(['uses pnpm']); // exactly one active, the fresh value
+    } finally { await store.close(); }
+  });
+
+  it('replaceFact WAL redo materializes the fresh file when a crash hit before file writes', async () => {
+    const writer = createMemoryWriter({ dir });
+    const prior = await writer.putEntry({ id: 'p1', schemaVersion: 1, tier: 'fact', ownerId: 'o1', factKey: 'pkg', text: 'uses npm', payload: { key: 'pkg', value: 'npm' }, createdAt: '2026-06-22T00:00:00.000Z' });
+    // Simulate a crash AFTER the WAL op was appended but BEFORE files were materialized: append the
+    // compound op directly, with no fresh file and the prior file still active.
+    const fresh = { id: 'p2', schemaVersion: 1, tier: 'fact' as const, ownerId: 'o1', factKey: 'pkg', text: 'uses pnpm', payload: { key: 'pkg', value: 'pnpm' }, createdAt: '2026-06-22T00:01:00.000Z', seq: 2 };
+    await appendOp(dir, { seq: 2, op: 'replace_fact', id: 'p2', tier: 'fact', ownerId: 'o1', ts: fresh.createdAt, entry: fresh, supersedeIds: [prior.id] });
+    const store = await createMemoryStore({ dir, embed, dim: DIM }); // reconcile must redo: write fresh file + supersede prior
+    try {
+      expect((await store.getProfile('o1')).map((f) => f.text)).toEqual(['uses pnpm']);
+    } finally { await store.close(); }
+    // the fresh file was materialized by reconcile (files-as-truth restored)
+    expect((await readEntryFile(entryPath(dir, fresh))).text).toBe('uses pnpm');
+  });
+
+  it('supersede hides a fact from getProfile', async () => {
+    const store = await createMemoryStore({ dir, embed, dim: DIM });
+    try {
+      const f = await store.replaceFact({ ownerId: 'o1', factKey: 'pkg', text: 'uses npm' });
+      await store.supersede(f.id);
+      expect(await store.getProfile('o1')).toEqual([]);
     } finally { await store.close(); }
   });
 

@@ -19,7 +19,7 @@ import { createMemoryWriter, type NewEntry } from './store';
 import { createPgliteIndex } from './pgliteIndex';
 import { readManifest } from './manifest';
 import { readEpisodes } from './episodeLog';
-import { readEntryFile, entryPath } from './entryFile';
+import { readEntryFile, writeEntryFile, entryPath } from './entryFile';
 import { blendCandidates, DEFAULT_WEIGHTS, type BlendWeights, type ScoredEntry } from './memoryScore';
 import type { Entry } from './types';
 import type { IndexStore } from './indexStore';
@@ -42,6 +42,11 @@ export interface MemoryStore {
   recent(opts: { ownerId: string; k?: number }): Promise<Entry[]>;
   /** Active profile facts for an owner ("KNOWN ABOUT THIS USER"), newest-first. */
   getProfile(ownerId: string): Promise<Entry[]>;
+  /** Set/replace the durable fact for (ownerId, factKey): supersede the prior active one, insert the new
+   *  (exactly one active fact per key). Embed-first so a failed embed leaves the prior fact untouched. */
+  replaceFact(input: { ownerId: string; factKey: string; text: string; payload?: unknown; sessionId?: string }): Promise<Entry>;
+  /** Mark an entry superseded (hidden from getProfile/recall) — supersede-not-overwrite. */
+  supersede(id: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -77,6 +82,22 @@ async function reconcile(dir: string, index: IndexStore, embed: (t: string) => P
   for (const op of ops) {
     if (op.op === 'delete') {
       await index.remove(op.id);
+    } else if (op.op === 'replace_fact') {
+      // Redo the compound op idempotently from the WAL payload: supersede priors (files + index) BEFORE
+      // inserting the fresh fact (the unique index forbids two active), then materialize + index fresh.
+      for (const pid of op.supersedeIds ?? []) {
+        let prior: Entry | undefined;
+        try { prior = await readEntryFile(entryPath(dir, { tier: 'fact', id: pid } as Entry)); } catch { prior = undefined; }
+        if (prior) {
+          const sup = prior.superseded ? prior : { ...prior, superseded: true };
+          if (!prior.superseded) await writeEntryFile(dir, sup);
+          await index.upsert(sup);
+        }
+      }
+      if (op.entry) {
+        try { await readEntryFile(entryPath(dir, op.entry)); } catch { await writeEntryFile(dir, op.entry); }
+        await indexEntry(index, op.entry, embed);
+      }
     } else {
       let entry: Entry | undefined;
       if (op.tier === 'episode' || op.tier === 'trace') {
@@ -165,6 +186,42 @@ export async function createMemoryStore(opts: {
 
     async getProfile(ownerId: string): Promise<Entry[]> {
       return index.facts(ownerId);
+    },
+
+    replaceFact(input): Promise<Entry> {
+      if (!input.ownerId?.trim() || !input.factKey?.trim() || !input.text?.trim()) {
+        return Promise.reject(new Error('memory2: replaceFact requires non-empty ownerId, factKey, and text'));
+      }
+      return serialize(async () => {
+        // Embed FIRST: a failed embed must leave the prior active fact untouched (no partial write).
+        const embedding = await embed(input.text);
+        // Supersede ALL prior active facts for this key (defensive vs duplicates), via the atomic WAL op:
+        // commitReplaceFact appends the compound op (fresh content + prior ids) BEFORE materializing, so a
+        // crash is redoable by reconcile — the "never zero active facts" guarantee holds.
+        const priors = (await index.facts(input.ownerId)).filter((f) => f.factKey === input.factKey);
+        const fresh: NewEntry = {
+          id: randomUUID(), schemaVersion: SCHEMA_VERSION, tier: 'fact', ownerId: input.ownerId,
+          factKey: input.factKey, text: input.text, payload: input.payload, sessionId: input.sessionId,
+          createdAt: new Date().toISOString(), embedModel, embedDim: dim,
+        };
+        const { fresh: committed, superseded } = await writer.commitReplaceFact(fresh, priors.map((p) => p.id));
+        for (const sup of superseded) await index.upsert(sup); // priors first (unique-index safe)
+        await index.upsert(committed, embedding);
+        await index.setAppliedSeq(committed.seq ?? 0);
+        return committed;
+      });
+    },
+
+    supersede(id: string): Promise<void> {
+      if (!id?.trim()) return Promise.reject(new Error('memory2: supersede requires a non-empty id'));
+      return serialize(async () => {
+        const entry = await index.get(id);
+        if (!entry) return;
+        const { seq: _s, contentHash: _c, ...rest } = entry;
+        const sup = await writer.putEntry({ ...rest, superseded: true, updatedAt: new Date().toISOString() });
+        await index.upsert(sup);
+        await index.setAppliedSeq(sup.seq ?? 0);
+      });
     },
 
     async close(): Promise<void> {

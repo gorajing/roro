@@ -9,7 +9,7 @@
 // increment; this layer is the durable system of record they rebuild from.)
 
 import { unlink } from 'node:fs/promises';
-import { writeEntryFile, entryPath, computeContentHash } from './entryFile';
+import { writeEntryFile, readEntryFile, entryPath, computeContentHash } from './entryFile';
 import { appendEpisode } from './episodeLog';
 import { appendOp, nextSeq, type ManifestOp } from './manifest';
 import type { Entry, Tier } from './types';
@@ -21,6 +21,13 @@ export interface MemoryWriter {
   putEntry(entry: NewEntry): Promise<Entry>;
   /** Tombstone (hard-delete intent): remove a durable entry's file + record a delete op. */
   deleteEntry(ref: { tier: Tier; id: string; ownerId: string }): Promise<void>;
+  /**
+   * Atomically replace the active fact for a key: a compound WAL op (carrying the fresh content + the
+   * prior ids) is appended + fsync'd FIRST (the commit point), THEN files are materialized (supersede
+   * priors, write fresh). A crash after the WAL is completed by reconcile (redo from op.entry), so the
+   * "never zero active facts" guarantee holds. Returns the fresh entry + the superseded priors (to index).
+   */
+  commitReplaceFact(fresh: NewEntry, supersedeIds: string[]): Promise<{ fresh: Entry; superseded: Entry[] }>;
 }
 
 const isLogTier = (t: Tier): boolean => t === 'episode' || t === 'trace';
@@ -64,6 +71,32 @@ export function createMemoryWriter(opts: { dir: string }): MemoryWriter {
         };
         await appendOp(dir, op);
         return e;
+      });
+    },
+
+    commitReplaceFact(fresh: NewEntry, supersedeIds: string[]): Promise<{ fresh: Entry; superseded: Entry[] }> {
+      return run(async () => {
+        const seq = await allocSeq();
+        const freshEntry: Entry = { ...fresh, seq, contentHash: computeContentHash({ ...fresh, seq } as Entry) };
+        // 1) WAL: append the compound op FIRST (carries fresh content + prior ids) — the commit point.
+        await appendOp(dir, {
+          seq, op: 'replace_fact', id: freshEntry.id, tier: 'fact', ownerId: freshEntry.ownerId,
+          contentHash: freshEntry.contentHash, ts: freshEntry.createdAt, entry: freshEntry, supersedeIds,
+        });
+        // 2) Materialize (idempotent, redoable from the WAL): supersede prior files, then write the fresh one.
+        const superseded: Entry[] = [];
+        for (const pid of supersedeIds) {
+          try {
+            const prior = await readEntryFile(entryPath(dir, { tier: 'fact', id: pid } as Entry));
+            const sup: Entry = { ...prior, superseded: true, updatedAt: freshEntry.createdAt };
+            await writeEntryFile(dir, sup);
+            superseded.push(sup);
+          } catch {
+            /* prior file already gone (idempotent redo) — fine */
+          }
+        }
+        await writeEntryFile(dir, freshEntry);
+        return { fresh: freshEntry, superseded };
       });
     },
 
