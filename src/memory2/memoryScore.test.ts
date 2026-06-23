@@ -19,17 +19,18 @@ describe('blendCandidates — recency + cosine + importance blend (the recall-qu
     expect(byId.get('recent-only')?.cosine).toBeUndefined(); // no vector channel -> no cosine
   });
 
-  it('a RECENT low-cosine item still surfaces (the temporal-recall fix)', () => {
-    // "old" is a perfect cosine match but ancient; "fresh" barely matches but is the newest.
+  it('a RECENT low-cosine item still surfaces (the temporal-recall fix; recency = time-decay)', () => {
+    // "old" is a perfect cosine match but ANCIENT (months old); "fresh" barely matches but is from today.
+    const now = Date.parse('2026-06-23T00:00:00.000Z');
     const ranked = blendCandidates(
       [
-        { entry: e({ id: 'old', seq: 1 }), cosine: 0.9 },
-        { entry: e({ id: 'fresh', seq: 100 }), cosine: 0.1 },
+        { entry: e({ id: 'old', seq: 1, createdAt: '2026-01-01T00:00:00.000Z' }), cosine: 0.9 },
+        { entry: e({ id: 'fresh', seq: 100, createdAt: '2026-06-23T00:00:00.000Z' }), cosine: 0.1 },
       ],
       { relevance: 0.3, recency: 0.7, importance: 0 },
+      now,
     );
-    expect(ranked.map((r) => r.entry.id)).toEqual(['fresh', 'old']); // recency lifts the fresh item to the top
-    expect(ranked.map((r) => r.entry.id)).toContain('fresh'); // and a recent item is never dropped (no floor)
+    expect(ranked.map((r) => r.entry.id)).toEqual(['fresh', 'old']); // time-decay recency lifts the fresh item
   });
 
   it('pure cosine weighting ranks by relevance', () => {

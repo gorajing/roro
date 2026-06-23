@@ -2,10 +2,13 @@
 //
 // The recall-quality fix: pure cosine "forgets recent work because it isn't phrased like the query"
 // (Generative Agents; confirmed by Roro's real-turn bug). The fix is a weighted blend of relevance
-// (cosine) + recency (seq) + importance, each MIN-MAX normalized over the candidate set, deduped by id.
-// Mirrors zuun's proven hybrid search + the Generative Agents formula. (Lexical/FTS via RRF is a later
-// add; this lands the recency blend that directly fixes "what did we just do?".)
+// (cosine, min-max normalized over present cosines) + recency (ABSOLUTE time-decay over last-access age,
+// NOT min-maxed — so genuinely-old episodes score low) + importance (min-max normalized), deduped by id,
+// with seq as the deterministic sort tiebreak. Mirrors zuun's hybrid search + the Generative Agents
+// formula. (The recall() top-2 recency guarantee — not this score — is what protects "what did we just
+// do?"; lexical/FTS via RRF is a later add.)
 
+import { effectiveRecency } from './forgetting';
 import type { Entry } from './types';
 
 export interface BlendWeights {
@@ -52,7 +55,7 @@ function normalizeRelevance(cosines: Array<number | undefined>): number[] {
   );
 }
 
-export function blendCandidates(candidates: Candidate[], weights: BlendWeights = DEFAULT_WEIGHTS): ScoredEntry[] {
+export function blendCandidates(candidates: Candidate[], weights: BlendWeights = DEFAULT_WEIGHTS, now: number = Date.now()): ScoredEntry[] {
   if (candidates.length === 0) return [];
 
   // Dedup by id, keeping the strongest cosine (a row can arrive from both the vector + recency channels).
@@ -64,7 +67,10 @@ export function blendCandidates(candidates: Candidate[], weights: BlendWeights =
   const rows = [...byId.values()];
 
   const rel = normalizeRelevance(rows.map((r) => r.cosine));
-  const rec = normalize(rows.map((r) => r.entry.seq ?? 0));
+  // Recency is now an ABSOLUTE time-decay (exp over last-access age), NOT a min-max over seq: a genuinely
+  // old episode scores low even if it's the newest in the batch (the forgetting signal). seq is the
+  // deterministic tiebreak (below). Importance stays min-maxed over the candidate set.
+  const rec = rows.map((r) => effectiveRecency(r.entry, now));
   const imp = normalize(rows.map((r) => r.entry.importance ?? 0));
 
   return rows
@@ -73,5 +79,5 @@ export function blendCandidates(candidates: Candidate[], weights: BlendWeights =
       const score = weights.relevance * parts.relevance + weights.recency * parts.recency + weights.importance * parts.importance;
       return { entry: r.entry, score, cosine: r.cosine, parts };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => b.score - a.score || (b.entry.seq ?? 0) - (a.entry.seq ?? 0)); // seq breaks score ties (newer first)
 }
