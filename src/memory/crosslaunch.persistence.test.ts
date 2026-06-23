@@ -4,11 +4,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite-pgvector';
-import { createMemoryStore, type Embedder } from './index';
+import { createMemoryStore, type Embedder, type MemoryStore } from './index';
 import { SCHEMA_SQL, buildSchemaSql } from './schema';
-import { extractAndStoreFact } from '../main/factStore';
+import { extractAndStoreFact, type FactStoreDeps } from '../main/factStore';
 import { buildRecallContext } from '../main/memoryContext';
 import type { FactPayload } from '../shared/memory';
+
+// The legacy store predates memory2's consolidation, so it has no reinforceFact. Shim a no-op to satisfy
+// the FactStoreDeps contract — corroboration simply doesn't strengthen confidence on the old engine (the
+// live path runs on memory2, which implements it). The legacy store is slated for retirement.
+const factDeps = (s: MemoryStore): FactStoreDeps => ({
+  getProfile: (o) => s.getProfile(o),
+  replaceFact: (i) => s.replaceFact(i),
+  reinforceFact: async () => null,
+});
 
 // Deterministic 768-dim fake embedder (no network). Identical text -> identical vector.
 const fakeEmbed: Embedder = async (text) => {
@@ -39,7 +48,7 @@ describe('MEMORY SPINE — real PGlite persistence across launches', () => {
     // --- Launch A: teach one durable fact, then fully shut the engine down ---
     const launchA = await createMemoryStore({ dataDir: dbDir, embed: fakeEmbed });
     await extractAndStoreFact(
-      launchA,
+      factDeps(launchA),
       { key: 'tests_with_features', value: 'writes a test alongside each feature' },
       { ownerId: OWNER, sessionId: 'launch-A', turnTs: 1 },
     );
@@ -68,11 +77,11 @@ describe('MEMORY SPINE — real PGlite persistence across launches', () => {
 
   it('a correction in launch B supersedes the launch-A value (no stale value resurfaces)', async () => {
     const launchA = await createMemoryStore({ dataDir: dbDir, embed: fakeEmbed });
-    await extractAndStoreFact(launchA, { key: 'pkg_manager', value: 'uses npm' }, { ownerId: OWNER, sessionId: 'launch-A', turnTs: 1 });
+    await extractAndStoreFact(factDeps(launchA), { key: 'pkg_manager', value: 'uses npm' }, { ownerId: OWNER, sessionId: 'launch-A', turnTs: 1 });
     await launchA.close();
 
     const launchB = await createMemoryStore({ dataDir: dbDir, embed: fakeEmbed });
-    await extractAndStoreFact(launchB, { key: 'pkg_manager', value: 'uses pnpm' }, { ownerId: OWNER, sessionId: 'launch-B', turnTs: 2 });
+    await extractAndStoreFact(factDeps(launchB), { key: 'pkg_manager', value: 'uses pnpm' }, { ownerId: OWNER, sessionId: 'launch-B', turnTs: 2 });
     await launchB.close();
 
     const launchC = await createMemoryStore({ dataDir: dbDir, embed: fakeEmbed });
@@ -124,7 +133,7 @@ describe('MEMORY SPINE — real PGlite persistence across launches', () => {
 
   it('a different owner on the same machine/db sees none of it', async () => {
     const launchA = await createMemoryStore({ dataDir: dbDir, embed: fakeEmbed });
-    await extractAndStoreFact(launchA, { key: 'tests_with_features', value: 'writes a test alongside each feature' }, { ownerId: OWNER, sessionId: 'launch-A', turnTs: 1 });
+    await extractAndStoreFact(factDeps(launchA), { key: 'tests_with_features', value: 'writes a test alongside each feature' }, { ownerId: OWNER, sessionId: 'launch-A', turnTs: 1 });
     await launchA.close();
 
     const launchB = await createMemoryStore({ dataDir: dbDir, embed: fakeEmbed });

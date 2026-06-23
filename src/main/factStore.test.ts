@@ -14,6 +14,7 @@ const factKeyOf = (r: MemoryRow): string | undefined => (r.payload as FactPayloa
 function fakeDeps(seed: MemoryRow[]) {
   const replaced: ReplaceFactInput[] = [];
   const superseded: string[] = [];
+  const reinforced: Array<{ owner_id: string; key: string }> = [];
   const deps: FactStoreDeps = {
     getProfile: async () => seed.filter((r) => !superseded.includes(r.id)),
     replaceFact: async (input) => {
@@ -21,8 +22,12 @@ function fakeDeps(seed: MemoryRow[]) {
       for (const r of seed) if (factKeyOf(r) === input.key && !superseded.includes(r.id)) superseded.push(r.id);
       return { ...factRow('new', input.key, input.text), owner_id: input.owner_id, session_id: input.session_id, payload: input.payload ?? null };
     },
+    reinforceFact: async (input) => {
+      reinforced.push(input);
+      return seed.find((r) => factKeyOf(r) === input.key && !superseded.includes(r.id)) ?? null;
+    },
   };
-  return { deps, replaced, superseded };
+  return { deps, replaced, superseded, reinforced };
 }
 
 // A faithful store fake where replaceFact() mutates a shared row set (atomic supersede-all-for-key +
@@ -41,6 +46,8 @@ function liveDeps() {
       rows.push(row);
       return row;
     },
+    reinforceFact: async (input) =>
+      rows.find((r) => r.owner_id === input.owner_id && r.kind === 'fact' && factKeyOf(r) === input.key && !r.superseded) ?? null,
   };
   return { rows, deps };
 }
@@ -71,11 +78,12 @@ describe('extractAndStoreFact', () => {
     expect(replaced[0].text).toBe('uses pnpm');
   });
 
-  it('is a no-op when the same key already has the same value', async () => {
-    const { deps, replaced, superseded } = fakeDeps([factRow('r-old', 'pkg_manager', 'uses pnpm')]);
+  it('corroborates (reinforces, no churn) when the same key already has the same value', async () => {
+    const { deps, replaced, superseded, reinforced } = fakeDeps([factRow('r-old', 'pkg_manager', 'uses pnpm')]);
     await extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses pnpm' }, CTX);
-    expect(superseded).toHaveLength(0);
-    expect(replaced).toHaveLength(0);
+    expect(superseded).toHaveLength(0); // no supersede
+    expect(replaced).toHaveLength(0); // no durable rewrite
+    expect(reinforced).toEqual([{ owner_id: 'O', key: 'pkg_manager' }]); // confidence strengthened in place
   });
 
   it('repeated corrections for a key keep exactly one active fact (supersede-not-overwrite)', async () => {

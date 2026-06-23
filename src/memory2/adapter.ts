@@ -54,6 +54,7 @@ function entryToRow(e: Entry): MemoryRow {
 export interface Memory2Adapter {
   remember(input: RememberInput): Promise<MemoryRow>;
   replaceFact(input: ReplaceFactInput): Promise<MemoryRow>;
+  reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null>;
   recall(input: { query: string; k?: number; ownerId: string; sessionId?: string }): Promise<MemoryMatch[]>;
   getProfile(ownerId: string): Promise<MemoryRow[]>;
   supersede(id: string): Promise<void>;
@@ -100,6 +101,11 @@ export async function createMemory2Adapter(opts: Memory2AdapterOpts): Promise<Me
         payload: input.payload,
       });
       return entryToRow(e);
+    },
+
+    async reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null> {
+      const e = await store.reinforceFact({ ownerId: input.owner_id, factKey: input.key });
+      return e ? entryToRow(e) : null;
     },
 
     async recall(input): Promise<MemoryMatch[]> {

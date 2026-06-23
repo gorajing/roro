@@ -7,6 +7,8 @@ export interface FactStoreDeps {
   getProfile(ownerId: string): Promise<MemoryRow[]>;
   /** Atomic supersede-all-for-key + insert (one transaction). The store enforces ≤1 active per key. */
   replaceFact(input: ReplaceFactInput): Promise<MemoryRow>;
+  /** Corroborate the active fact for (owner_id, key): strengthen its confidence in place (consolidation). */
+  reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null>;
 }
 
 function factKeyOf(row: MemoryRow): string | undefined {
@@ -50,8 +52,14 @@ async function storeFact(
   ctx: { ownerId: string; sessionId: string; turnTs: number },
 ): Promise<void> {
   const activeForKey = (await deps.getProfile(ctx.ownerId)).filter((r) => factKeyOf(r) === candidate.key);
-  // No-op only when the key already has EXACTLY one active row carrying this value (steady state).
-  if (activeForKey.length === 1 && factValueOf(activeForKey[0]) === candidate.value) return;
+  // Corroboration: the key already has EXACTLY one active row carrying this value (steady state). Don't
+  // churn the fact (no supersede + insert of a new row) — instead REINFORCE it: re-confirmation
+  // strengthens confidence in place (the consolidation "gets-smarter" loop). It still re-puts the same
+  // id durably (a soft-signal update), but never creates a superseded duplicate.
+  if (activeForKey.length === 1 && factValueOf(activeForKey[0]) === candidate.value) {
+    await deps.reinforceFact({ owner_id: ctx.ownerId, key: candidate.key });
+    return;
+  }
 
   const payload: FactPayload = {
     key: candidate.key,
