@@ -8,16 +8,21 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { appendJsonl, parseJsonlLines } from './jsonl';
-import type { Tier } from './types';
+import type { Entry, Tier } from './types';
 
 export interface ManifestOp {
   seq: number;
-  op: 'put' | 'delete';
+  op: 'put' | 'delete' | 'replace_fact';
   id: string;
   tier: Tier;
   ownerId: string;
   contentHash?: string;
   ts: string; // ISO-8601
+  /** replace_fact (a compound WAL op): the fresh fact's full content, so reconcile can REDO the whole
+   *  supersede-priors-then-insert atomically even if the process died mid-materialization. */
+  entry?: Entry;
+  /** replace_fact: the prior active fact ids this op supersedes. */
+  supersedeIds?: string[];
 }
 
 export function manifestPath(dir: string): string {

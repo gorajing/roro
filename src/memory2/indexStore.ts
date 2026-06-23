@@ -21,6 +21,8 @@ export interface IndexStore {
   recent(opts: { ownerId: string; k: number; tier?: Tier }): Promise<Entry[]>;
   /** Active (non-superseded, non-deleted) profile facts for an owner, newest-first. */
   facts(ownerId: string): Promise<Entry[]>;
+  /** Fetch a single row's entry by id (or undefined). */
+  get(id: string): Promise<Entry | undefined>;
   /** Drop a row from the index (the file/manifest tombstone is the source of truth for "forget"). */
   remove(id: string): Promise<void>;
   /** Row count (for reconciliation/health checks). */
