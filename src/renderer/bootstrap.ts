@@ -21,6 +21,7 @@ import { runState } from './events/runState';
 import { createVoice } from './voice';
 import { mountLocalVoiceMode } from './voice/mountLocalVoiceMode';
 import { createFakeVoiceEngine } from './voice/fakeVoiceEngine';
+import { createVadVoiceEngine } from './voice/vadVoiceEngine';
 import type { VapiToolCall } from './voice/messages';
 
 function el<T extends HTMLElement>(id: string): T | null {
@@ -275,15 +276,19 @@ export async function bootstrap(): Promise<void> {
     }
   });
 
-  // Phase D / Phase 0 — the ON-DEVICE voice path (mouth-not-brain), behind a dev flag until the real
-  // whisper/Silero/Kokoro engine lands (Phases 1-3). With config.fakeVoice it mounts the LOCAL pipeline
-  // against a FAKE engine so the wiring is runnable end-to-end (no mic/models): a committed utterance
-  // routes through turnRun and the cat speaks the message back. Default off → the Vapi facade is unchanged.
-  if (config.fakeVoice) {
+  // The ON-DEVICE voice path (mouth-not-brain), behind dev flags until the full whisper/Silero/Kokoro
+  // engine lands. Default (both flags off) leaves the Vapi facade unchanged.
+  if (config.vadVoice || config.fakeVoice) {
     const c = getCompanion();
-    const fakeEngine = createFakeVoiceEngine();
+    // config.vadVoice → the REAL Silero VAD engine (Phase 1: ear-perk + mic lifecycle, no STT/TTS yet);
+    // else config.fakeVoice → a scripted engine (no mic/models). The Silero glue is DYNAMICALLY imported
+    // here only, so its onnxruntime-web/WASM never loads for non-voice users (or in the fake path).
+    const fakeEngine = config.vadVoice ? undefined : createFakeVoiceEngine();
+    const engine = config.vadVoice
+      ? createVadVoiceEngine((await import('./voice/sileroVad')).createSileroVad)
+      : fakeEngine!;
     const localVoice = mountLocalVoiceMode({
-      engine: fakeEngine,
+      engine,
       detect: () => true,
       deps: {
         // Return the bridge promise directly — when the bridge is MISSING this is undefined (non-thenable),
@@ -299,11 +304,14 @@ export async function bootstrap(): Promise<void> {
       isMuted: () => micMuted,
     });
     void localVoice.mode.summon();
-    setStatus('Fake voice mode — in DevTools call __roroVoice.utter("add a logout route")');
+    setStatus(
+      fakeEngine
+        ? 'Fake voice mode — in DevTools call __roroVoice.utter("add a logout route")'
+        : "Local voice (VAD) — speak and the cat's ears perk (≤80ms). No STT/TTS yet.",
+    );
     (window as unknown as { __roroVoice?: unknown }).__roroVoice = {
-      utter: (t: string) => fakeEngine.utter(t),
       state: () => localVoice.mode.state,
-      spoken: () => fakeEngine.spoken,
+      ...(fakeEngine ? { utter: (t: string) => fakeEngine.utter(t), spoken: () => fakeEngine.spoken } : {}),
     };
   }
 

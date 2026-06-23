@@ -13,7 +13,11 @@
     "lint": "eslint --ext .ts,.tsx .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify:floating": "node scripts/smoke-floating-ask.mjs"
+    "verify:floating": "node scripts/smoke-floating-ask.mjs",
+    "stage:voice-assets": "node scripts/stage-voice-assets.mjs",
+    "prestart": "node scripts/stage-voice-assets.mjs",
+    "prepackage": "node scripts/stage-voice-assets.mjs",
+    "premake": "node scripts/stage-voice-assets.mjs"
   },
   "keywords": [],
   "author": {
@@ -47,6 +51,7 @@
     "@electric-sql/pglite-pgvector": "^0.0.4",
     "@ngrok/ngrok": "^1.7.0",
     "@pixi/unsafe-eval": "^7.4.3",
+    "@ricky0123/vad-web": "^0.0.30",
     "@vapi-ai/web": "^2.5.2",
     "dotenv": "^17.4.2",
     "electron-squirrel-startup": "^1.0.1",

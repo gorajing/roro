@@ -46,6 +46,9 @@ export interface RoroConfig {
   /** Dev: mount the on-device voice path against a FAKE engine (no whisper/Silero/Kokoro, no mic) so the
    *  local mouth-not-brain wiring is runnable end-to-end. Default false → the Vapi facade is unchanged. */
   fakeVoice: boolean;
+  /** Dev: mount the REAL VAD engine (Silero, on-device) — Phase 1 = the ear-perk + mic lifecycle (no STT/
+   *  TTS yet). Takes precedence over fakeVoice. Default false. */
+  vadVoice: boolean;
 }
 
 function viteEnv(_key: string): string | undefined {
@@ -86,5 +89,6 @@ export function loadConfig(): RoroConfig {
     modelUrl: read('modelUrl', 'VITE_LIVE2D_MODEL_URL', './live2d/Haru.model3.json'),
     floatingWindow: readBool('floatingWindow', 'VITE_RORO_FLOATING_WINDOW', false),
     fakeVoice: readBool('fakeVoice', 'VITE_RORO_FAKE_VOICE', false),
+    vadVoice: readBool('vadVoice', 'VITE_RORO_VAD_VOICE', false),
   };
 }
