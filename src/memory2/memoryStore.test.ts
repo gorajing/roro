@@ -104,6 +104,49 @@ describe('memoryStore — unified API + cursor-based reconciliation', () => {
     } finally { await store.close(); }
   });
 
+  it('a WAL put op carrying op.entry is crash-recoverable — reconcile materializes the missing file', async () => {
+    // An id-stable overwrite (supersede/reinforce) is WAL-FIRST: the put op carries op.entry as the commit
+    // point + redo payload. Simulate a crash after the WAL append but BEFORE the file write — reconcile
+    // must redo it from op.entry (no file/manifest divergence, no lost update).
+    const entry = {
+      id: 'f1', schemaVersion: 1, tier: 'fact' as const, ownerId: 'o1', factKey: 'editor',
+      text: 'redone from the WAL', payload: { key: 'editor', value: 'redone from the WAL' },
+      createdAt: '2026-06-22T00:00:00.000Z', seq: 1, contentHash: 'h', confidence: 0.5,
+    };
+    await appendOp(dir, { seq: 1, op: 'put', id: 'f1', tier: 'fact', ownerId: 'o1', contentHash: 'h', ts: entry.createdAt, entry });
+    const store = await createMemoryStore({ dir, embed, dim: DIM });
+    try {
+      expect((await store.getProfile('o1')).map((f) => f.text)).toEqual(['redone from the WAL']); // redone
+    } finally { await store.close(); }
+    expect((await readEntryFile(entryPath(dir, entry))).text).toBe('redone from the WAL'); // file materialized
+  });
+
+  it('WAL redo overwrites a STALE existing file (crash after the WAL append, old file still present)', async () => {
+    const writer = createMemoryWriter({ dir });
+    await writer.putEntry({ id: 'f1', schemaVersion: 1, tier: 'fact', ownerId: 'o1', factKey: 'editor', text: 'old value', payload: { key: 'editor', value: 'old value' }, createdAt: '2026-06-22T00:00:00.000Z' }); // seq 1, file written
+    // Simulate an overwrite crash: a NEWER WAL put op (seq 2) is appended, but the file is NOT rewritten
+    // (the stale 'old value' file remains). A missing-only redo would leave files-as-truth diverged.
+    const fresh = { id: 'f1', schemaVersion: 1, tier: 'fact' as const, ownerId: 'o1', factKey: 'editor', text: 'new value', payload: { key: 'editor', value: 'new value' }, createdAt: '2026-06-22T00:01:00.000Z', seq: 2, contentHash: 'h2' };
+    await appendOp(dir, { seq: 2, op: 'put', id: 'f1', tier: 'fact', ownerId: 'o1', contentHash: 'h2', ts: fresh.createdAt, entry: fresh });
+    const store = await createMemoryStore({ dir, embed, dim: DIM });
+    try {
+      expect((await store.getProfile('o1')).map((f) => f.text)).toEqual(['new value']);
+    } finally { await store.close(); }
+    expect((await readEntryFile(entryPath(dir, fresh))).text).toBe('new value'); // the stale file was overwritten (no divergence)
+  });
+
+  it('cross-launch: superseding an EPISODE reconciles correctly (log rows matched by seq, not id)', async () => {
+    const s1 = await createMemoryStore({ dir, embed, dim: DIM });
+    const ep1 = await s1.remember({ tier: 'episode', ownerId: 'o1', text: 'first thing' });
+    await s1.remember({ tier: 'episode', ownerId: 'o1', text: 'second thing' });
+    await s1.supersede(ep1.id); // appends a superseded row for ep1 (a NEW seq, same id)
+    await s1.close();
+    const s2 = await createMemoryStore({ dir, embed, dim: DIM }); // reconcile must match each op to its exact row by seq
+    try {
+      expect((await s2.recent({ ownerId: 'o1', k: 10 })).map((e) => e.text)).toEqual(['second thing']); // ep1 hidden
+    } finally { await s2.close(); }
+  });
+
   it('hybrid recall surfaces recent work even when the query is phrased unlike it (the original bug, fixed)', async () => {
     const store = await createMemoryStore({ dir, embed, dim: DIM });
     try {

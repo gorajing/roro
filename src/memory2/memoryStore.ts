@@ -105,14 +105,26 @@ async function indexEntry(
  * CONTIGUOUS persistent cursor per op. Survives deletes (cursor is not derived from row max) and never
  * skips a durable write whose prior index update failed.
  */
+/** Materialize a per-file entry from a WAL op, but ONLY if the on-disk file is missing or BEHIND (older
+ *  seq) — never regress a file that's already ahead. Closes the "stale existing file" divergence: an
+ *  overwrite crash leaves the OLD file present, so a missing-only check would index the WAL but leave
+ *  files-as-truth stale. seq is a plaintext structural field, so this works on sealed entries. */
+async function materializeFile(dir: string, entry: Entry): Promise<void> {
+  let onDisk: Entry | undefined;
+  try { onDisk = await readEntryFile(entryPath(dir, entry)); } catch { onDisk = undefined; }
+  if (!onDisk || (onDisk.seq ?? 0) < (entry.seq ?? 0)) await writeEntryFile(dir, entry);
+}
+
 async function reconcile(dir: string, index: IndexStore, embed: (t: string) => Promise<number[]>, cipher?: Cipher): Promise<void> {
   const applied = await index.getAppliedSeq();
   const ops = (await readManifest(dir)).filter((o) => o.seq > applied).sort((a, b) => a.seq - b.seq);
   if (ops.length === 0) return;
 
-  const logById = new Map<string, Entry>();
+  // Index log rows by SEQ (unique per row), not id: an id can repeat in the JSONL (an original + its
+  // superseded re-append), so an id keyed map could let an OLD op pick up the NEWER uncommitted row.
+  const logBySeq = new Map<number, Entry>();
   for (const tier of ['episode', 'trace'] as const) {
-    for (const e of await readEpisodes(dir, tier)) logById.set(e.id, e);
+    for (const e of await readEpisodes(dir, tier)) if (e.seq != null) logBySeq.set(e.seq, e);
   }
 
   for (const op of ops) {
@@ -131,13 +143,19 @@ async function reconcile(dir: string, index: IndexStore, embed: (t: string) => P
         }
       }
       if (op.entry) {
-        try { await readEntryFile(entryPath(dir, op.entry)); } catch { await writeEntryFile(dir, op.entry); }
+        await materializeFile(dir, op.entry); // missing-or-behind, never regress
         await indexEntry(index, op.entry, embed, cipher); // op.entry is sealed at rest; indexEntry opens to embed
       }
+    } else if (op.entry) {
+      // WAL-FIRST put (an id-stable per-file overwrite: supersede/reinforce/core). The op carries the
+      // entry as the redo payload, so a crash after the WAL append self-heals: materialize the file if
+      // it's missing OR behind (never regress an ahead file), then index from the op's entry.
+      await materializeFile(dir, op.entry);
+      await indexEntry(index, op.entry, embed, cipher);
     } else {
       let entry: Entry | undefined;
       if (op.tier === 'episode' || op.tier === 'trace') {
-        entry = logById.get(op.id);
+        entry = logBySeq.get(op.seq); // match the exact committed row by seq, not id
       } else {
         try { entry = await readEntryFile(entryPath(dir, { tier: op.tier, id: op.id } as Entry)); } catch { entry = undefined; }
       }
@@ -196,7 +214,11 @@ export async function createMemoryStore(opts: {
           embedModel: input.embedModel ?? embedModel,
           embedDim: input.embedDim ?? dim,
         };
-        const entry = await writer.putEntry(base); // durable (file + manifest), SEALED, assigns seq + contentHash
+        // Log tiers append (file-first is safe — append-only can't diverge); per-file tiers (core) go
+        // WAL-first (the put op carries the entry) so a crash can't leave the file ahead of the manifest.
+        const entry = base.tier === 'episode' || base.tier === 'trace'
+          ? await writer.putEntry(base)
+          : await writer.commitOverwrite(base);
         await indexEntry(index, entry, embed, cipher);
         await index.setAppliedSeq(entry.seq ?? 0);
         safeEmit({ kind: 'remember', ownerId: entry.ownerId, id: entry.id, tier: entry.tier });
@@ -290,9 +312,10 @@ export async function createMemoryStore(opts: {
         const opened = open(active);
         const { seq: _s, contentHash: _c, ...rest } = opened;
         const now = new Date().toISOString();
-        // Re-put the SAME id in place (no supersede): only the soft signals change. putEntry re-fingerprints
-        // + reseals under the new seq's AAD; confidence/lastAccessedAt/accessCount are not bound in the AAD.
-        const bumped = await writer.putEntry({
+        // Re-put the SAME id in place (no supersede): only the soft signals change. commitOverwrite is
+        // WAL-FIRST (crash-safe id-stable overwrite) + re-fingerprints/reseals under the new seq's AAD;
+        // confidence/lastAccessedAt/accessCount are not bound in the AAD.
+        const bumped = await writer.commitOverwrite({
           ...rest,
           confidence: Math.min(MAX_CONFIDENCE, (opened.confidence ?? BASE_CONFIDENCE) + CONFIDENCE_INCREMENT),
           lastAccessedAt: now,
@@ -336,9 +359,13 @@ export async function createMemoryStore(opts: {
       return serialize(async () => {
         const stored = await index.get(id);
         if (!stored) return;
-        // Open before re-put: putEntry re-fingerprints over plaintext + re-seals with the new seq's AAD.
+        // Open before re-put: re-fingerprint over plaintext + re-seal with the new seq's AAD. A per-file
+        // entry (fact/core) is an id-stable OVERWRITE → WAL-first (crash-safe); log tiers are append-only.
         const { seq: _s, contentHash: _c, ...rest } = open(stored);
-        const sup = await writer.putEntry({ ...rest, superseded: true, updatedAt: new Date().toISOString() });
+        const next: NewEntry = { ...rest, superseded: true, updatedAt: new Date().toISOString() };
+        const sup = next.tier === 'episode' || next.tier === 'trace'
+          ? await writer.putEntry(next)
+          : await writer.commitOverwrite(next);
         await index.upsert(sup);
         await index.setAppliedSeq(sup.seq ?? 0);
         safeEmit({ kind: 'supersede', ownerId: sup.ownerId, id });

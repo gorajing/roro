@@ -30,6 +30,13 @@ export interface MemoryWriter {
    * "never zero active facts" guarantee holds. Returns the fresh entry + the superseded priors (to index).
    */
   commitReplaceFact(fresh: NewEntry, supersedeIds: string[]): Promise<{ fresh: Entry; superseded: Entry[] }>;
+  /**
+   * WAL-FIRST id-stable overwrite for a per-file entry (supersede/reinforce): the put op carries the
+   * entry as the redo payload and is appended FIRST (the commit point), THEN the file is overwritten.
+   * A crash after the WAL self-heals via reconcile (redo from op.entry) — so an in-place fact update can
+   * never leave the file ahead of the manifest (no divergence, no seq reuse). Per-file tiers only.
+   */
+  commitOverwrite(entry: NewEntry): Promise<Entry>;
 }
 
 const isLogTier = (t: Tier): boolean => t === 'episode' || t === 'trace';
@@ -110,6 +117,24 @@ export function createMemoryWriter(opts: { dir: string; cipher?: Cipher }): Memo
         }
         await writeEntryFile(dir, freshEntry);
         return { fresh: freshEntry, superseded };
+      });
+    },
+
+    commitOverwrite(entry: NewEntry): Promise<Entry> {
+      if (isLogTier(entry.tier)) {
+        return Promise.reject(new Error('memory2: commitOverwrite is for per-file tiers only (logs are append-only)'));
+      }
+      if (entry.tier === 'fact' && !entry.factKey) {
+        return Promise.reject(new Error('memory2: a fact entry requires a factKey (the single-active-fact invariant)'));
+      }
+      return run(async () => {
+        const seq = await allocSeq();
+        const e: Entry = seal({ ...entry, seq, contentHash: fingerprint({ ...entry, seq } as Entry) });
+        // 1) WAL-first: the put op carries op.entry (the redo payload) and is the commit point.
+        await appendOp(dir, { seq, op: 'put', id: e.id, tier: e.tier, ownerId: e.ownerId, contentHash: e.contentHash, ts: e.createdAt, entry: e });
+        // 2) Then overwrite the file (idempotent, redoable from the WAL — no file/manifest divergence).
+        await writeEntryFile(dir, e);
+        return e;
       });
     },
 
