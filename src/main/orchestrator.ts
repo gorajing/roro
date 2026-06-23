@@ -31,7 +31,10 @@ import { isCleanTree } from './gitTree';
 import type { FactExtractInput } from '../brain/extractFact';
 
 const RECALL_K = 5;
-const RECALL_MIN_SIMILARITY = 0.3;
+// memory2 is the recall authority: it blend-ranks (relevance + recency + importance) and guarantees
+// recent rows (which carry cosine 0). A positive caller-side cosine floor would drop exactly those,
+// nullifying the temporal-recall fix — so trust memory2's ranked top-k (0 = keep all it returns).
+const RECALL_MIN_SIMILARITY = 0;
 const DEFAULT_AGENT: AgentKind = 'codex';
 /** How long after an abort we force a terminal event so Stop is provably terminal. */
 const STOP_WATCHDOG_MS = 1500;

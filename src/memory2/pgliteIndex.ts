@@ -12,7 +12,7 @@ import type { IndexStore, VectorMatch } from './indexStore';
 
 const toVec = (e?: number[]): string | null => (e ? `[${e.join(',')}]` : null);
 
-export async function createPgliteIndex(opts: { dataDir?: string; dim?: number }): Promise<IndexStore> {
+export async function createPgliteIndex(opts: { dataDir?: string; dim?: number; embedModel?: string }): Promise<IndexStore> {
   const dim = opts.dim ?? 768;
   const db = await PGlite.create(opts.dataDir ?? 'memory://', { extensions: { vector } });
   await db.exec(`
@@ -56,6 +56,27 @@ export async function createPgliteIndex(opts: { dataDir?: string; dim?: number }
       `memory2 index embedding dimension is vector(${existingDim}) but ${dim} was requested — ` +
         `vector spaces are not mixable; rebuild the index from files (reindex) after moving the index dir.`,
     );
+  }
+  // Guard on embed-MODEL identity too: the dim check above catches 768->1536, but two different models
+  // of the SAME dimension (e.g. nomic-embed-text -> mxbai-embed-large, both 768) yield incompatible
+  // vector spaces under an identical column type — silently corrupting recall. Persist the model in
+  // idx_meta on first use; fail loud (the files are the source of truth — reindex after moving the dir).
+  if (opts.embedModel) {
+    const r = await db.query<{ value: string }>(`select value from idx_meta where key = 'embed_model'`);
+    const existing = r.rows[0]?.value;
+    if (existing && existing !== opts.embedModel) {
+      await db.close();
+      throw new Error(
+        `memory2 index was built with embed model '${existing}' but '${opts.embedModel}' is configured — ` +
+          `same-dimension vector spaces are not mixable; rebuild the index from files (reindex) after moving the index dir.`,
+      );
+    }
+    if (!existing) {
+      await db.query(
+        `insert into idx_meta (key, value) values ('embed_model', $1) on conflict (key) do update set value = $1`,
+        [opts.embedModel],
+      );
+    }
   }
   // Larger candidate window so owner/tier/live FILTERS around the approximate HNSW scan don't under-return.
   await db.exec(`set hnsw.ef_search = 100;`).catch(() => {});

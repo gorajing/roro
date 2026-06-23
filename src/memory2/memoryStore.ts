@@ -14,6 +14,7 @@
 // before the index's unique constraint would reject it.)
 
 import { randomUUID } from 'node:crypto';
+import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createMemoryWriter, type NewEntry } from './store';
 import { createPgliteIndex } from './pgliteIndex';
@@ -119,8 +120,11 @@ export async function createMemoryStore(opts: {
   embedModel?: string;
 }): Promise<MemoryStore> {
   const { dir, embed, dim, embedModel } = opts;
+  // Ensure the data root exists before PGlite opens its (non-recursive) index subdir — the file-write
+  // helpers create their own tier dirs, but the index dir's parent must exist first.
+  await mkdir(dir, { recursive: true });
   const writer = createMemoryWriter({ dir });
-  const index = await createPgliteIndex({ dataDir: join(dir, 'index'), dim });
+  const index = await createPgliteIndex({ dataDir: join(dir, 'index'), dim, embedModel });
   await reconcile(dir, index, embed);
 
   // Serialize the whole write path so the index is updated + the cursor advanced in seq order.

@@ -20,6 +20,17 @@ describe('memoryStore — unified API + cursor-based reconciliation', () => {
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'mem2store-')); });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
+  it('creates its data dir (and the index dir) when the path does not yet exist', async () => {
+    // The production singleton points at <RORO_DB_DIR>/memory2 — a nested path that may not exist. The
+    // store (not just the file-write helpers) must create it before PGlite opens the index subdir.
+    const nested = join(dir, 'does', 'not', 'exist', 'yet');
+    const store = await createMemoryStore({ dir: nested, embed, dim: DIM });
+    try {
+      await store.remember({ tier: 'episode', ownerId: 'o1', text: 'created lazily' });
+      expect((await store.recent({ ownerId: 'o1', k: 1 }))[0].text).toBe('created lazily');
+    } finally { await store.close(); }
+  });
+
   it('remember (episodes) -> recall (episodic) + recent', async () => {
     const store = await createMemoryStore({ dir, embed, dim: DIM });
     try {

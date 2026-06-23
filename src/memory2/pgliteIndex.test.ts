@@ -91,4 +91,21 @@ describe('pgliteIndex — derived PGlite-HNSW IndexStore', () => {
       rmSync(persistDir, { recursive: true, force: true });
     }
   });
+
+  it('fails loud when reopening a persisted index built with a DIFFERENT embed model (same dim)', async () => {
+    // The dim guard catches 768->1536, but two different 768-dim models produce incompatible vector
+    // spaces with the same column type — silent recall corruption. Guard on model identity too.
+    const persistDir = mkdtempSync(join(tmpdir(), 'mem2model-'));
+    try {
+      const a = await createPgliteIndex({ dataDir: persistDir, dim: 8, embedModel: 'nomic-embed-text' });
+      await a.upsert(e({ id: 'a' }), unit(0));
+      await a.close();
+      await expect(createPgliteIndex({ dataDir: persistDir, dim: 8, embedModel: 'mxbai-embed-large' })).rejects.toThrow(/model/i);
+      const b = await createPgliteIndex({ dataDir: persistDir, dim: 8, embedModel: 'nomic-embed-text' }); // same model reopens fine
+      expect(await b.count()).toBe(1);
+      await b.close();
+    } finally {
+      rmSync(persistDir, { recursive: true, force: true });
+    }
+  });
 });
