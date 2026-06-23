@@ -52,6 +52,21 @@ describe('memoryStore — reindex (the rebuildable-cache property: files+manifes
     } finally { await store.close(); }
   });
 
+  it('marks embeddingStatus=failed on reindex when an embed fails (consistent with live indexEntry)', async () => {
+    const store = await createMemoryStore({ dir, embed, dim: DIM });
+    await store.remember({ tier: 'episode', ownerId: 'o1', text: 'boom' });
+    await store.close();
+    // Reopen with an embedder that fails on 'boom', then rebuild — reindex must mark the row failed,
+    // exactly like the incremental indexEntry path does (so a future re-embed retry sees both).
+    const flaky = async (t: string): Promise<number[]> => { if (t === 'boom') throw new Error('embed down'); return embed(t); };
+    const store2 = await createMemoryStore({ dir, embed: flaky, dim: DIM });
+    try {
+      await store2.reindex();
+      const [row] = await store2.recent({ ownerId: 'o1', k: 5 }); // failed rows stay indexed (recency), just no vector
+      expect(row.embeddingStatus).toBe('failed');
+    } finally { await store2.close(); }
+  });
+
   it('is idempotent — a second reindex (and a reopen) leaves the same live set', async () => {
     const store = await createMemoryStore({ dir, embed, dim: DIM });
     await store.remember({ tier: 'episode', ownerId: 'o1', text: 'a' });
