@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { createMemory2Adapter, type Memory2Adapter } from './adapter';
 import { loadOrCreateCipher } from './keyManager';
 import { buildSafeStorageWrapper, type SafeStorageLike } from './safeStorageWrapper';
+import { resolveTracer } from './tracer';
 import { resolveOllamaEmbedDim } from '../brain/ollama';
 import type { Cipher } from './cipher';
 import type { RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch } from '../shared/memory';
@@ -102,6 +103,7 @@ const getAdapter = lazySingleton<Memory2Adapter>(async () => {
     dim: embeddingDim(),
     embedModel: embedModel(),
     cipher: await loadCipher(dir), // encrypt-at-rest by default
+    tracer: resolveTracer(dir), // RORO_TRACE=1 → JSONL observation tap (no-op otherwise)
   });
 });
 

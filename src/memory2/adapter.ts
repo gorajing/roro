@@ -14,6 +14,7 @@
 
 import { createMemoryStore, type MemoryStore } from './memoryStore';
 import type { Cipher } from './cipher';
+import type { Tracer } from './tracer';
 import type { Entry, Tier } from './types';
 import type { MemoryKind, RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch } from '../shared/memory';
 
@@ -68,6 +69,8 @@ export interface Memory2AdapterOpts {
   embedModel?: string;
   /** When present, content is encrypted at rest (passed straight through to the store). */
   cipher?: Cipher;
+  /** One-way observation tap (passed straight through to the store). */
+  tracer?: Tracer;
 }
 
 /** Wrap a memory2 MemoryStore in the orchestrator's old MemoryModule contract. */
