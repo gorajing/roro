@@ -119,6 +119,26 @@ export async function createPgliteIndex(opts: { dataDir?: string; dim?: number; 
       return res.rows.map((r) => ({ entry: r.doc, similarity: Number(r.similarity) }));
     },
 
+    async episodesToPrune({ ownerId, maxLive, maxAgeCutoff, keepNewest, batchSize }): Promise<Array<{ id: string; ownerId: string }>> {
+      // Rank live episodes newest-first PER OWNER; prune those past keepNewest that are also past the
+      // count cap OR older than the age cutoff. created_at is ISO text → lexical compare is chronological.
+      const res = await db.query<{ id: string; owner_id: string }>(
+        `with live as (
+           select id, owner_id, created_at,
+             row_number() over (partition by owner_id order by seq desc) as rn
+           from idx
+           where tier = 'episode' and superseded = false and deleted_at is null
+             and ($1::text is null or owner_id = $1)
+         )
+         select id, owner_id from live
+         where rn > $2 and (rn > $3 or created_at < $4)
+         order by rn desc
+         limit $5`,
+        [ownerId ?? null, keepNewest, maxLive, maxAgeCutoff, batchSize],
+      );
+      return res.rows.map((r) => ({ id: r.id, ownerId: r.owner_id }));
+    },
+
     async recent({ ownerId, k, tier }): Promise<Entry[]> {
       const res = await db.query<{ doc: Entry }>(
         `select doc from idx

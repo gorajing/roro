@@ -20,8 +20,9 @@ export type NewEntry = Omit<Entry, 'seq' | 'contentHash'>;
 export interface MemoryWriter {
   /** Durably commit an entry (any tier): content first, then the manifest op. Assigns seq + contentHash. */
   putEntry(entry: NewEntry): Promise<Entry>;
-  /** Tombstone (hard-delete intent): remove a durable entry's file + record a delete op. */
-  deleteEntry(ref: { tier: Tier; id: string; ownerId: string }): Promise<void>;
+  /** Tombstone (hard-delete intent): remove a durable entry's file + record a delete op. Returns the
+   *  op's seq so a store-level prune can advance the reconciliation cursor (applied_seq) honestly. */
+  deleteEntry(ref: { tier: Tier; id: string; ownerId: string }): Promise<number>;
   /**
    * Atomically replace the active fact for a key: a compound WAL op (carrying the fresh content + the
    * prior ids) is appended + fsync'd FIRST (the commit point), THEN files are materialized (supersede
@@ -112,7 +113,7 @@ export function createMemoryWriter(opts: { dir: string; cipher?: Cipher }): Memo
       });
     },
 
-    deleteEntry(ref: { tier: Tier; id: string; ownerId: string }): Promise<void> {
+    deleteEntry(ref: { tier: Tier; id: string; ownerId: string }): Promise<number> {
       return run(async () => {
         const seq = await allocSeq();
         // Durable per-file entries are removed from disk; log-tier rows are tombstoned via the op
@@ -123,6 +124,7 @@ export function createMemoryWriter(opts: { dir: string; cipher?: Cipher }): Memo
         await appendOp(dir, {
           seq, op: 'delete', id: ref.id, tier: ref.tier, ownerId: ref.ownerId, ts: new Date().toISOString(),
         });
+        return seq;
       });
     },
   };
