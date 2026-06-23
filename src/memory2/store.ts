@@ -44,6 +44,13 @@ export function createMemoryWriter(opts: { dir: string }): MemoryWriter {
 
   return {
     putEntry(entry: NewEntry): Promise<Entry> {
+      // A fact MUST carry a factKey: the single-active-fact unique index is partial on fact_key, and
+      // Postgres allows multiple NULLs — so a keyless fact would silently escape the invariant.
+      if (entry.tier === 'fact' && !entry.factKey) {
+        return Promise.reject(
+          new Error('memory2: a fact entry requires a factKey (the single-active-fact invariant)'),
+        );
+      }
       return run(async () => {
         const seq = await allocSeq();
         const contentHash = computeContentHash({ ...entry, seq } as Entry);

@@ -60,6 +60,11 @@ describe('store — serialized, ordered, durable writer (the files-as-truth cont
     expect(e2.seq).toBe(2);
   });
 
+  it('rejects a fact without a factKey (the single-active-fact invariant needs a non-null key)', async () => {
+    const w = createMemoryWriter({ dir });
+    await expect(w.putEntry({ ...fact(), factKey: undefined })).rejects.toThrow(/factKey/);
+  });
+
   it('deleteEntry records a tombstone op and removes a durable entry file', async () => {
     const w = createMemoryWriter({ dir });
     const e = await w.putEntry(fact());

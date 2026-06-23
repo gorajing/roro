@@ -1,0 +1,31 @@
+// src/memory2/indexStore.ts — the swappable derived-index seam.
+//
+// Files are the source of truth; the IndexStore is a DERIVED, rebuildable cache that serves the fast
+// read paths (vector KNN, recency, active facts). Keeping it behind this interface is what makes the
+// engine choice reversible: the benchmark picked PGlite+pgvector HNSW (flat ~1.5ms KNN to 100k vs
+// sqlite-vec's linear brute force), but a future swap is just another impl + a reindex from files.
+
+import type { Entry, Tier } from './types';
+
+export interface VectorMatch {
+  entry: Entry;
+  similarity: number; // cosine, 1 = identical
+}
+
+export interface IndexStore {
+  /** Insert or replace (by id) a derived row, with its embedding (omit for un-embeddable rows). */
+  upsert(entry: Entry, embedding?: number[]): Promise<void>;
+  /** Owner-scoped vector KNN over live (non-superseded, non-deleted) rows, ranked by cosine. */
+  vectorSearch(opts: { ownerId: string; embedding: number[]; k: number; tier?: Tier }): Promise<VectorMatch[]>;
+  /** Owner-scoped most-recent live rows by seq (the temporal/working path). */
+  recent(opts: { ownerId: string; k: number; tier?: Tier }): Promise<Entry[]>;
+  /** Active (non-superseded, non-deleted) profile facts for an owner, newest-first. */
+  facts(ownerId: string): Promise<Entry[]>;
+  /** Drop a row from the index (the file/manifest tombstone is the source of truth for "forget"). */
+  remove(id: string): Promise<void>;
+  /** Row count (for reconciliation/health checks). */
+  count(): Promise<number>;
+  /** Rebuild the index from the file-store entries — the "derived cache" property (engine/embed swap = reindex). */
+  reindexFrom(entries: Iterable<Entry>, embed: (text: string) => Promise<number[]>): Promise<void>;
+  close(): Promise<void>;
+}
