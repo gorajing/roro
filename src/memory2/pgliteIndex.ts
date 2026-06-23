@@ -33,6 +33,7 @@ export async function createPgliteIndex(opts: { dataDir?: string; dim?: number }
       embedding     vector(${dim}),
       doc           jsonb not null
     );
+    create table if not exists idx_meta (key text primary key, value text not null);
     create index if not exists idx_owner_seq on idx (owner_id, seq desc);
     create index if not exists idx_content_hash on idx (content_hash);
     create unique index if not exists idx_active_fact
@@ -125,6 +126,24 @@ export async function createPgliteIndex(opts: { dataDir?: string; dim?: number }
     async count(): Promise<number> {
       const res = await db.query<{ n: number }>(`select count(*)::int as n from idx`);
       return res.rows[0]?.n ?? 0;
+    },
+
+    async maxSeq(): Promise<number> {
+      const res = await db.query<{ n: number }>(`select coalesce(max(seq), 0)::int as n from idx`);
+      return res.rows[0]?.n ?? 0;
+    },
+
+    async getAppliedSeq(): Promise<number> {
+      const res = await db.query<{ value: string }>(`select value from idx_meta where key = 'applied_seq'`);
+      return res.rows[0] ? Number(res.rows[0].value) : 0;
+    },
+
+    async setAppliedSeq(seq: number): Promise<void> {
+      await db.query(
+        `insert into idx_meta (key, value) values ('applied_seq', $1)
+         on conflict (key) do update set value = $1`,
+        [String(seq)],
+      );
     },
 
     async reindexFrom(entries: Iterable<Entry>, embed: (text: string) => Promise<number[]>): Promise<void> {
