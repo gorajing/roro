@@ -86,7 +86,38 @@ describe('memoryStore — unified API + cursor-based reconciliation', () => {
     const store = await createMemoryStore({ dir, embed: flaky, dim: DIM });
     try {
       expect((await store.recent({ ownerId: 'o1', k: 5 })).map((e) => e.id)).toEqual(['e1']); // indexed without vector
-      expect(await store.recall({ query: 'anything else', ownerId: 'o1', k: 5 })).toEqual([]); // no vector to match
+      // not lost: the recency channel still surfaces it in hybrid recall even with no vector
+      expect((await store.recall({ query: 'anything else', ownerId: 'o1', k: 5 })).map((h) => h.entry.id)).toEqual(['e1']);
+    } finally { await store.close(); }
+  });
+
+  it('hybrid recall surfaces recent work even when the query is phrased unlike it (the original bug, fixed)', async () => {
+    const store = await createMemoryStore({ dir, embed, dim: DIM });
+    try {
+      await store.remember({ tier: 'episode', ownerId: 'o1', text: 'create a file greet.js' });
+      // "what did we just do?" embeds far from "create…" — pure cosine + a 0.3 floor returned NOTHING (the bug).
+      const hits = await store.recall({ query: 'what did we just do?', ownerId: 'o1', k: 5 });
+      expect(hits.map((h) => h.entry.text)).toContain('create a file greet.js'); // recency surfaces it
+    } finally { await store.close(); }
+  });
+
+  it('temporal recall surfaces the newest episode even amid many strong cosine matches (competition)', async () => {
+    const store = await createMemoryStore({ dir, embed, dim: DIM });
+    try {
+      for (let i = 0; i < 5; i++) await store.remember({ tier: 'episode', ownerId: 'o1', text: `topic detail ${i}` });
+      await store.remember({ tier: 'episode', ownerId: 'o1', text: 'newest unrelated thing' });
+      const hits = await store.recall({ query: 'topic detail', ownerId: 'o1', k: 3 });
+      expect(hits.map((h) => h.entry.text)).toContain('newest unrelated thing'); // recency-guaranteed slot
+    } finally { await store.close(); }
+  });
+
+  it('recall falls back to recency when the QUERY embed fails (never empty while recent rows exist)', async () => {
+    const failingQuery = async (t: string): Promise<number[]> => { if (t === 'EMBED_FAIL') throw new Error('embed down'); return embed(t); };
+    const store = await createMemoryStore({ dir, embed: failingQuery, dim: DIM });
+    try {
+      await store.remember({ tier: 'episode', ownerId: 'o1', text: 'something happened' });
+      const hits = await store.recall({ query: 'EMBED_FAIL', ownerId: 'o1', k: 5 });
+      expect(hits.map((h) => h.entry.text)).toEqual(['something happened']); // recency fallback, not empty
     } finally { await store.close(); }
   });
 });
