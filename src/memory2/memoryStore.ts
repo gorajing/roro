@@ -24,6 +24,7 @@ import { readEntryFile, writeEntryFile, entryPath } from './entryFile';
 import { blendCandidates, DEFAULT_WEIGHTS, type BlendWeights, type ScoredEntry } from './memoryScore';
 import { openEntry, type Cipher } from './cipher';
 import { effectiveConfidence } from './forgetting';
+import { NOOP_TRACER, type Tracer, type TraceEvent } from './tracer';
 import type { Entry } from './types';
 import type { IndexStore } from './indexStore';
 
@@ -154,10 +155,18 @@ export async function createMemoryStore(opts: {
   embedModel?: string;
   /** When present, content (text + payload) is encrypted at rest; reads decrypt transparently. */
   cipher?: Cipher;
+  /** One-way observation tap (RORO_TRACE eval substrate). Defaults to a no-op (zero overhead). */
+  tracer?: Tracer;
 }): Promise<MemoryStore> {
-  const { dir, embed, dim, embedModel, cipher } = opts;
+  const { dir, embed, dim, embedModel, cipher, tracer = NOOP_TRACER } = opts;
   // Decrypt an entry read back from the (sealed) index/files; no-op when encryption is off.
   const open = (e: Entry): Entry => (cipher ? openEntry(e, cipher) : e);
+  // Tracing is STRICTLY ONE-WAY: a tracer (even a buggy injected one) must never break a memory op, so
+  // every emit is swallowed here. `tracing` gates the expensive payload construction when the tap is off.
+  const tracing = tracer !== NOOP_TRACER;
+  const safeEmit = (event: TraceEvent): void => {
+    try { tracer.emit(event); } catch { /* one-way: a trace failure never disturbs the operation */ }
+  };
   // Ensure the data root exists before PGlite opens its (non-recursive) index subdir — the file-write
   // helpers create their own tier dirs, but the index dir's parent must exist first.
   await mkdir(dir, { recursive: true });
@@ -190,6 +199,7 @@ export async function createMemoryStore(opts: {
         const entry = await writer.putEntry(base); // durable (file + manifest), SEALED, assigns seq + contentHash
         await indexEntry(index, entry, embed, cipher);
         await index.setAppliedSeq(entry.seq ?? 0);
+        safeEmit({ kind: 'remember', ownerId: entry.ownerId, id: entry.id, tier: entry.tier });
         return open(entry); // plaintext for the caller
       });
     },
@@ -220,9 +230,19 @@ export async function createMemoryStore(opts: {
         .filter((b): b is ScoredEntry => Boolean(b));
       const gIds = new Set(guaranteed.map((g) => g.entry.id));
       // Blend on the SEALED entries (structural fields only), then decrypt the survivors for the caller.
-      return [...guaranteed, ...blended.filter((b) => !gIds.has(b.entry.id))]
+      const result = [...guaranteed, ...blended.filter((b) => !gIds.has(b.entry.id))]
         .slice(0, k)
         .map((s) => ({ ...s, entry: open(s.entry) }));
+      // Observation tap: log the FULL candidate pool's score COMPONENTS + which were returned (no result
+      // text) — the eval substrate to replay alternate weights + diagnose near-misses. Built only when on.
+      if (tracing) {
+        const returnedIds = new Set(result.map((s) => s.entry.id));
+        safeEmit({
+          kind: 'recall', ownerId, query, k,
+          candidates: blended.map((b) => ({ id: b.entry.id, score: b.score, cosine: b.cosine, parts: b.parts, returned: returnedIds.has(b.entry.id) })),
+        });
+      }
+      return result;
     },
 
     async recent({ ownerId, k = 5 }): Promise<Entry[]> {
@@ -252,7 +272,10 @@ export async function createMemoryStore(opts: {
           await index.remove(v.id);
         }
         if (lastSeq > 0) await index.setAppliedSeq(lastSeq); // advance the cursor past the delete ops
-        if (victims.length > 0) console.warn(`[memory2] pruned ${victims.length} old/excess episode(s) (corpus bound)`);
+        if (victims.length > 0) {
+          console.warn(`[memory2] pruned ${victims.length} old/excess episode(s) (corpus bound)`);
+          safeEmit({ kind: 'prune', ownerId, count: victims.length, ids: victims.map((v) => v.id) });
+        }
         return victims.length;
       });
     },
@@ -278,6 +301,7 @@ export async function createMemoryStore(opts: {
         });
         await indexEntry(index, bumped, embed, cipher);
         await index.setAppliedSeq(bumped.seq ?? 0);
+        safeEmit({ kind: 'fact', op: 'reinforce', ownerId, factKey, id: bumped.id, confidence: bumped.confidence });
         return open(bumped);
       });
     },
@@ -302,6 +326,7 @@ export async function createMemoryStore(opts: {
         for (const sup of superseded) await index.upsert(sup); // priors first (unique-index safe), SEALED
         await index.upsert(committed, embedding); // SEALED doc + plaintext embedding
         await index.setAppliedSeq(committed.seq ?? 0);
+        safeEmit({ kind: 'fact', op: 'replace', ownerId: input.ownerId, factKey: input.factKey, id: committed.id, confidence: BASE_CONFIDENCE, supersededIds: priors.map((p) => p.id) });
         return open(committed); // plaintext for the caller
       });
     },
@@ -316,6 +341,7 @@ export async function createMemoryStore(opts: {
         const sup = await writer.putEntry({ ...rest, superseded: true, updatedAt: new Date().toISOString() });
         await index.upsert(sup);
         await index.setAppliedSeq(sup.seq ?? 0);
+        safeEmit({ kind: 'supersede', ownerId: sup.ownerId, id });
       });
     },
 
