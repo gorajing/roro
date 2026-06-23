@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { effectiveConfidence, halfLifeDays } from './forgetting';
+import { effectiveConfidence, effectiveRecency, halfLifeDays } from './forgetting';
 import type { Entry } from './types';
 
 const MS_PER_DAY = 86_400_000;
@@ -42,5 +42,15 @@ describe('forgetting — lazy effective-confidence decay (stored evidence vs ret
 
   it('treats a missing confidence as 0', () => {
     expect(effectiveConfidence(fact({ confidence: undefined }), NOW)).toBe(0);
+  });
+
+  it('effectiveRecency time-decays from last-access (30-day half-life), 1 at age 0', () => {
+    const ep = (over: Partial<Entry> = {}): Entry => ({ ...fact(), tier: 'episode', factKey: undefined, ...over });
+    expect(effectiveRecency(ep({ createdAt: '2026-01-01T00:00:00.000Z' }), NOW)).toBeCloseTo(1, 6); // age 0
+    expect(effectiveRecency(ep({ createdAt: '2026-01-01T00:00:00.000Z' }), NOW + 30 * MS_PER_DAY)).toBeCloseTo(0.5, 5); // one half-life
+    // last-access refreshes recency: a re-surfaced old episode scores higher than an untouched one
+    const stale = ep({ createdAt: '2025-01-01T00:00:00.000Z' });
+    const refreshed = ep({ createdAt: '2025-01-01T00:00:00.000Z', lastAccessedAt: '2026-01-01T00:00:00.000Z' });
+    expect(effectiveRecency(refreshed, NOW)).toBeGreaterThan(effectiveRecency(stale, NOW));
   });
 });
