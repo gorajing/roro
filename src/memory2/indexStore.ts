@@ -25,6 +25,11 @@ export interface IndexStore {
   remove(id: string): Promise<void>;
   /** Row count (for reconciliation/health checks). */
   count(): Promise<number>;
+  /** Highest indexed seq among rows (0 if empty). NOT a reconciliation cursor (regresses on delete). */
+  maxSeq(): Promise<number>;
+  /** Persistent reconciliation cursor: the highest CONTIGUOUS manifest seq fully applied to the index. */
+  getAppliedSeq(): Promise<number>;
+  setAppliedSeq(seq: number): Promise<void>;
   /** Rebuild the index from the file-store entries — the "derived cache" property (engine/embed swap = reindex). */
   reindexFrom(entries: Iterable<Entry>, embed: (text: string) => Promise<number[]>): Promise<void>;
   close(): Promise<void>;
