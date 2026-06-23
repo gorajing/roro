@@ -53,7 +53,7 @@ let dispatchLock = false;
 
 /** Resolve the scratch git repo the coding agents run in. */
 function workdir(): string {
-  return process.env.COMPANION_WORKDIR ?? process.cwd();
+  return process.env.RORO_WORKDIR ?? process.cwd();
 }
 
 function getWindow(): BrowserWindow | null {

@@ -192,7 +192,7 @@ export async function createMemoryStore(opts: {
 let defaultStorePromise: Promise<MemoryStore> | null = null;
 
 function resolveDataDir(): string {
-  return process.env.COMPANION_DB_DIR || join(process.cwd(), '.roro-memory');
+  return process.env.RORO_DB_DIR || join(process.cwd(), '.roro-memory');
 }
 
 function getDefaultStore(): Promise<MemoryStore> {

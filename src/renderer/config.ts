@@ -6,8 +6,8 @@
 // in MAIN — never read those here.
 //
 // Resolution order for each value:
-//   1. window.COMPANION_CFG.<field>  (injected at runtime by MAIN/preload or a
-//      <script> tag; the deployment-time placeholder this component consumes)
+//   1. window.RORO_CFG.<field>  (injected at runtime by MAIN/preload or a <script> tag;
+//      the deployment-time placeholder this component consumes; legacy COMPANION_CFG still read)
 //   2. import.meta.env.VITE_*         (Vite build-time env, optional)
 //   3. a safe empty default
 //
@@ -15,11 +15,11 @@
 // pipeline must still come alive for a model/keys-absent demo. Voice simply
 // refuses to start a call and the UI shows why (see voice/wireEvents + ui).
 //
-// NOTE: ambient.d.ts (which declares window.COMPANION_CFG) is a global type-only
+// NOTE: ambient.d.ts (which declares window.RORO_CFG) is a global type-only
 // declaration picked up automatically by tsc/Vite; it is NOT runtime-imported
 // here (a .d.ts has no JS to import).
 
-export interface CompanionConfig {
+export interface RoroConfig {
   /** Vapi PUBLISHABLE key — safe to ship in the renderer. */
   vapiPublicKey: string;
   /**
@@ -47,24 +47,30 @@ export interface CompanionConfig {
 
 function viteEnv(_key: string): string | undefined {
   // Vite's import.meta.env is omitted here so the shared (commonjs) tsconfig type-checks;
-  // inject runtime config via window.COMPANION_CFG instead (set in index.html / preload).
+  // inject runtime config via window.RORO_CFG instead (set in index.html / preload).
   return undefined;
 }
 
-function read(field: keyof CompanionConfig, viteKey: string, fallback: string): string {
-  const fromWindow = typeof window !== 'undefined' ? window.COMPANION_CFG?.[field] : undefined;
+/** Runtime config field, preferring window.RORO_CFG and falling back to the deprecated COMPANION_CFG. */
+function cfgField(field: keyof RoroConfig): string | boolean | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return window.RORO_CFG?.[field] ?? window.COMPANION_CFG?.[field];
+}
+
+function read(field: keyof RoroConfig, viteKey: string, fallback: string): string {
+  const fromWindow = cfgField(field);
   return typeof fromWindow === 'string' ? fromWindow : viteEnv(viteKey) ?? fallback;
 }
 
-function readBool(field: keyof CompanionConfig, viteKey: string, fallback: boolean): boolean {
-  const fromWindow = typeof window !== 'undefined' ? window.COMPANION_CFG?.[field] : undefined;
+function readBool(field: keyof RoroConfig, viteKey: string, fallback: boolean): boolean {
+  const fromWindow = cfgField(field);
   if (typeof fromWindow === 'boolean') return fromWindow;
   const raw = typeof fromWindow === 'string' ? fromWindow : viteEnv(viteKey);
   if (raw === undefined) return fallback;
   return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
 }
 
-export function loadConfig(): CompanionConfig {
+export function loadConfig(): RoroConfig {
   return {
     vapiPublicKey: read('vapiPublicKey', 'VITE_VAPI_PUBLIC_KEY', ''),
     vapiAssistantId: read('vapiAssistantId', 'VITE_VAPI_ASSISTANT_ID', ''),
@@ -75,6 +81,6 @@ export function loadConfig(): CompanionConfig {
     transcriberModel: read('transcriberModel', 'VITE_TRANSCRIBER_MODEL', 'nova-2'),
     voiceId: read('voiceId', 'VITE_VAPI_VOICE_ID', 'burt'),
     modelUrl: read('modelUrl', 'VITE_LIVE2D_MODEL_URL', './live2d/Haru.model3.json'),
-    floatingWindow: readBool('floatingWindow', 'VITE_COMPANION_FLOATING_WINDOW', false),
+    floatingWindow: readBool('floatingWindow', 'VITE_RORO_FLOATING_WINDOW', false),
   };
 }

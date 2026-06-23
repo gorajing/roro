@@ -6,7 +6,7 @@
 // listeners are wired exactly once (the SDK is an EventEmitter — re-.on() leaks).
 
 import Vapi from '@vapi-ai/web';
-import type { CompanionConfig } from '../config';
+import type { RoroConfig } from '../config';
 
 let instance: Vapi | null = null;
 
@@ -14,7 +14,7 @@ let instance: Vapi | null = null;
 export function getVapi(publicKey: string): Vapi {
   if (instance) return instance;
   if (!publicKey) {
-    throw new Error('Vapi public key missing (window.COMPANION_CFG.vapiPublicKey / VITE_VAPI_PUBLIC_KEY).');
+    throw new Error('Vapi public key missing (window.RORO_CFG.vapiPublicKey / VITE_VAPI_PUBLIC_KEY).');
   }
   instance = new Vapi(publicKey);
   return instance;
@@ -47,7 +47,7 @@ export function resetVapi(): void {
  * union and coupling to it would make this component brittle. The shape below is
  * the documented inline-assistant contract.
  */
-export function buildAssistant(cfg: CompanionConfig): Record<string, unknown> {
+export function buildAssistant(cfg: RoroConfig): Record<string, unknown> {
   return {
     transcriber: { provider: 'deepgram', model: cfg.transcriberModel, language: 'en' },
     voice: { provider: '11labs', voiceId: cfg.voiceId },

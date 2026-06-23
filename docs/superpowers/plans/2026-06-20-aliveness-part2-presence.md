@@ -358,7 +358,7 @@ Expected: 0 type errors, no new lint problems, all tests pass.
 
 - [ ] **Step 5: Verify in the app (manual — GUI)**
 
-Run: `COMPANION_FLOATING_WINDOW=1 npm start`
+Run: `RORO_FLOATING_WINDOW=1 npm start`
 Expected: **single-click the cat** → instant happy burst (little hearts/sparkle above its head); click repeatedly → it keeps reacting, never starts a call. **Hold the cat ~⅓s** → a voice call starts; **release** → it ends. **Drag** → it moves. No call ever starts from a quick tap.
 
 - [ ] **Step 6: Commit**
@@ -569,7 +569,7 @@ Expected: clean; all pass.
 
 - [ ] **Step 3: Verify in the app (manual — GUI)**
 
-Run: `COMPANION_FLOATING_WINDOW=1 npm start`
+Run: `RORO_FLOATING_WINDOW=1 npm start`
 Expected: leave the cat untouched ~2 min → it **curls up, eyes closed** (asleep). Move the mouse / pet it → it **wakes with a brief stretch** and the eyes open and resume tracking. (Tip: to test fast, temporarily lower `asleepMs` in `activity.ts` to e.g. `8_000`.)
 
 - [ ] **Step 4: Commit**

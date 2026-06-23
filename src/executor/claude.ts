@@ -22,9 +22,9 @@ import {
 import { resolveBin } from './resolveBin';
 import { armSigkillEscalation } from './abortKill';
 
-// Resolve the claude binary portably: COMPANION_CLAUDE_BIN override -> PATH -> common install dirs
+// Resolve the claude binary portably: RORO_CLAUDE_BIN override -> PATH -> common install dirs
 // -> bare 'claude' (spawn ENOENTs loud). No machine-specific hardcoded path.
-const CLAUDE_BIN = resolveBin('claude', process.env.COMPANION_CLAUDE_BIN);
+const CLAUDE_BIN = resolveBin('claude', process.env.RORO_CLAUDE_BIN);
 /** Grace after abort's SIGTERM before SIGKILL, so a hung child can't hold the executor slot. */
 const SIGKILL_GRACE_MS = 1000;
 

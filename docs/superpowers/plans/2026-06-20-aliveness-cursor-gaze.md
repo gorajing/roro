@@ -403,7 +403,7 @@ Expected: no TypeScript errors, no new lint errors, 9 tests pass.
 
 > This step needs a real macOS desktop; the GUI can't be observed from a headless agent. Run it and watch the cat.
 
-Run: `COMPANION_FLOATING_WINDOW=1 npm start`
+Run: `RORO_FLOATING_WINDOW=1 npm start`
 Expected: the floating pixel cat appears; as you move the mouse around the screen, the cat's eyes shift toward the pointer (left/right/up/down by one pixel) and ease back to centre when the pointer is near the cat. Also run plain `npm start` (windowed) and confirm the eyes track the cursor over the canvas. No console errors referencing `cursor:move`, `gaze`, or `setGaze`.
 
 - [ ] **Step 11: Commit**

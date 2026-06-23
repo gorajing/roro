@@ -1364,7 +1364,7 @@ Expected: `[]` (empty array, HTTP 200) — proves the function exists and is own
 
 - [ ] **Step 3: Live cross-launch test (the actual magic moment)**
 
-1. `npm start` (or `COMPANION_FLOATING_WINDOW=1 npm start`). Note the minted owner_id: `cat "$(node -e "console.log(require('electron').app?.getPath?.('userData')||'')" 2>/dev/null)"/owner.json` — or read it from the app's userData dir.
+1. `npm start` (or `RORO_FLOATING_WINDOW=1 npm start`). Note the minted owner_id: `cat "$(node -e "console.log(require('electron').app?.getPath?.('userData')||'')" 2>/dev/null)"/owner.json` — or read it from the app's userData dir.
 2. Run a turn that teaches a preference (type into the console prompt, or speak): e.g. *"from now on always write a test alongside any feature you add"*. Let the turn finish.
 3. **Fully quit** the app (Cmd+Q).
 4. `npm start` again. Confirm `owner.json` is unchanged (same id).
@@ -1397,7 +1397,7 @@ git commit --allow-empty -m "chore(memory): A.5 memory spine verified live (cros
 - Supersede-not-overwrite (`superseded` column + flow) → Task 1 + Task 6. ✓
 - Labeled facts segment into `DecideInput.memory`, no contract change → Task 4 + Task 7. ✓
 - Cross-launch fixture (launch-A write → launch-B recall) → Task 7. ✓ Live proof → Task 8. ✓
-- **Carve-out (NOT in this plan, per scope):** the codex-binary PATH resolution + `COMPANION_WORKDIR` first-run prompt ("ship-ability") from the spec's A.5 row — tracked as a separate small follow-up so this plan stays the memory spine. **Noted, not a gap.**
+- **Carve-out (NOT in this plan, per scope):** the codex-binary PATH resolution + `RORO_WORKDIR` first-run prompt ("ship-ability") from the spec's A.5 row — tracked as a separate small follow-up so this plan stays the memory spine. **Noted, not a gap.**
 
 **2. Placeholder scan:** No TBD/TODO; every code step shows complete code; every test step shows the assertion and the run command + expected output.
 

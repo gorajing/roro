@@ -21,9 +21,9 @@ import {
 import { resolveBin } from './resolveBin';
 import { armSigkillEscalation } from './abortKill';
 
-// Resolve the codex binary portably: COMPANION_CODEX_BIN override -> PATH -> common install dirs ->
+// Resolve the codex binary portably: RORO_CODEX_BIN override -> PATH -> common install dirs ->
 // bare 'codex' (spawn ENOENTs loud). Handles packaged Electron stripping PATH without a hardcoded path.
-const CODEX_BIN = resolveBin('codex', process.env.COMPANION_CODEX_BIN);
+const CODEX_BIN = resolveBin('codex', process.env.RORO_CODEX_BIN);
 /** Grace after abort's SIGTERM before SIGKILL, so a hung child can't hold the executor slot. */
 const SIGKILL_GRACE_MS = 1000;
 

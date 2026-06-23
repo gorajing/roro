@@ -4,7 +4,7 @@
 // ONCE, and starts the call with the inline custom-llm assistant. Narration
 // helpers (narrateExact / narrateViaLLM) and teardown (endCall) round it out.
 
-import type { CompanionConfig } from '../config';
+import type { RoroConfig } from '../config';
 import type { CharacterDriver, CaptionSink } from '../character/types';
 import { getVapi, peekVapi, resetVapi, buildAssistant } from './vapiClient';
 import { wireVapiEvents } from './wireEvents';
@@ -28,7 +28,7 @@ export interface VoiceController {
 }
 
 export interface CreateVoiceOptions {
-  config: CompanionConfig;
+  config: RoroConfig;
   character: CharacterDriver;
   captions: CaptionSink;
   sessionId: string;
