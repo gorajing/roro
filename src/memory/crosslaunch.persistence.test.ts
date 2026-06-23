@@ -5,15 +5,15 @@ import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite-pgvector';
 import { createMemoryStore, type Embedder } from './index';
-import { SCHEMA_SQL } from './schema';
+import { SCHEMA_SQL, buildSchemaSql } from './schema';
 import { extractAndStoreFact } from '../main/factStore';
 import { buildRecallContext } from '../main/memoryContext';
 import type { FactPayload } from '../shared/memory';
 
-// Deterministic 1536-dim fake embedder (no network). Identical text -> identical vector.
+// Deterministic 768-dim fake embedder (no network). Identical text -> identical vector.
 const fakeEmbed: Embedder = async (text) => {
-  const v = new Array(1536).fill(0);
-  for (let i = 0; i < text.length; i++) v[i % 1536] += text.charCodeAt(i) / 255;
+  const v = new Array(768).fill(0);
+  for (let i = 0; i < text.length; i++) v[i % 768] += text.charCodeAt(i) / 255;
   v[0] += 1;
   return v;
 };
@@ -86,6 +86,18 @@ describe('MEMORY SPINE — real PGlite persistence across launches', () => {
     }
   });
 
+  it('fails loud when reopening a store whose embedding dimension no longer matches the embedder', async () => {
+    // A legacy store built at vector(1536) (the Nebius era). create-table-if-not-exists cannot widen
+    // or shrink an existing column, so a plain reopen would later fail cryptically on the first insert.
+    const legacy = await PGlite.create(dbDir, { extensions: { vector } });
+    await legacy.exec(buildSchemaSql(1536));
+    await legacy.close();
+
+    // Reopening with the default (768-dim nomic) embedder must throw a CLEAR, actionable error at
+    // OPEN — vector spaces aren't mixable, so switching the embed model needs a deliberate re-embed.
+    await expect(createMemoryStore({ dataDir: dbDir, embed: fakeEmbed })).rejects.toThrow(/dimension/i);
+  });
+
   it('heals pre-existing duplicate active facts when (re)applying the unique-index schema', async () => {
     // A LEGACY store: the memory table WITHOUT the partial-unique index, carrying a duplicate the old
     // non-atomic insert-before-supersede path could leave (two active facts for the same owner+key).
@@ -95,7 +107,7 @@ describe('MEMORY SPINE — real PGlite persistence across launches', () => {
         id uuid primary key default gen_random_uuid(), seq bigserial,
         owner_id text not null, session_id text not null, kind text not null, text text not null,
         payload jsonb, superseded boolean not null default false,
-        embed_model text, embed_dim int, embedding vector(1536),
+        embed_model text, embed_dim int, embedding vector(768),
         created_at timestamptz not null default now());`);
     await db.exec(`insert into memory (owner_id, session_id, kind, text, payload) values
       ('O','s','fact','uses npm',  '{"key":"pkg"}'),

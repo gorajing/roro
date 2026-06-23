@@ -5,12 +5,12 @@ import type { FactPayload } from '../shared/memory';
 const OWNER = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
-// Deterministic fake embedder: identical text -> identical 1536-dim vector (so the cosine
+// Deterministic fake embedder: identical text -> identical 768-dim vector (so the cosine
 // similarity of a query against an identical stored text is ~1.0). The embedding seam is
 // injected so the store is testable end-to-end against a REAL pgvector with no network.
 const fakeEmbed: Embedder = async (text) => {
-  const v = new Array(1536).fill(0);
-  for (let i = 0; i < text.length; i++) v[i % 1536] += text.charCodeAt(i) / 255;
+  const v = new Array(768).fill(0);
+  for (let i = 0; i < text.length; i++) v[i % 768] += text.charCodeAt(i) / 255;
   v[0] += 1; // keep the vector non-zero so cosine distance is always defined
   return v;
 };
@@ -37,8 +37,8 @@ describe('PGlite memory store (owner-scoped)', () => {
     expect(row.superseded).toBe(false);
     expect(typeof row.created_at).toBe('string'); // Date -> ISO string mapping
     expect(() => new Date(row.created_at).toISOString()).not.toThrow();
-    expect(row.embed_model).toBe('Qwen/Qwen3-Embedding-8B');
-    expect(row.embed_dim).toBe(1536);
+    expect(row.embed_model).toBe('nomic-embed-text');
+    expect(row.embed_dim).toBe(768);
   });
 
   it('getProfile returns only the owner\'s active facts, newest first', async () => {
