@@ -224,7 +224,7 @@ export async function createMemoryStore(opts: {
   // helpers create their own tier dirs, but the index dir's parent must exist first.
   await mkdir(dir, { recursive: true });
   const writer = createMemoryWriter({ dir, cipher });
-  const index = await createPgliteIndex({ dataDir: join(dir, 'index'), dim, embedModel });
+  const index = await createPgliteIndex({ dataDir: join(dir, 'index'), dim, embedModel, encrypted: !!cipher });
   await reconcile(dir, index, embed, cipher);
 
   // Serialize the whole write path so the index is updated + the cursor advanced in seq order.
