@@ -7,6 +7,18 @@ const e = (over: Partial<Entry>): Entry => ({
 });
 
 describe('blendCandidates — recency + cosine + importance blend (the recall-quality fix)', () => {
+  it('preserves the RAW cosine on each scored entry (undefined for recency-only)', () => {
+    // The adapter projects this raw cosine back to the old MemoryMatch.similarity contract — so it must
+    // be the unnormalized pgvector cosine, NOT the blended rank or the min-max relevance part.
+    const ranked = blendCandidates([
+      { entry: e({ id: 'hit', seq: 2 }), cosine: 0.42 },
+      { entry: e({ id: 'recent-only', seq: 1 }) },
+    ]);
+    const byId = new Map(ranked.map((r) => [r.entry.id, r]));
+    expect(byId.get('hit')?.cosine).toBe(0.42); // raw, not normalized to 1
+    expect(byId.get('recent-only')?.cosine).toBeUndefined(); // no vector channel -> no cosine
+  });
+
   it('a RECENT low-cosine item still surfaces (the temporal-recall fix)', () => {
     // "old" is a perfect cosine match but ancient; "fresh" barely matches but is the newest.
     const ranked = blendCandidates(
