@@ -19,6 +19,10 @@ export interface IndexStore {
   vectorSearch(opts: { ownerId: string; embedding: number[]; k: number; tier?: Tier }): Promise<VectorMatch[]>;
   /** Owner-scoped most-recent live rows by seq (the temporal/working path). */
   recent(opts: { ownerId: string; k: number; tier?: Tier }): Promise<Entry[]>;
+  /** Ids of the oldest live EPISODES to prune (corpus bounding): per owner, beyond `keepNewest` AND
+   *  (beyond `maxLive` OR older than `maxAgeCutoff`). Oldest first, capped at `batchSize`. ownerId omitted
+   *  ⇒ all owners (per-owner caps via partition). Never returns facts/core. */
+  episodesToPrune(opts: { ownerId?: string; maxLive: number; maxAgeCutoff: string; keepNewest: number; batchSize: number }): Promise<Array<{ id: string; ownerId: string }>>;
   /** Active (non-superseded, non-deleted) profile facts for an owner, newest-first. */
   facts(ownerId: string): Promise<Entry[]>;
   /** Fetch a single row's entry by id (or undefined). */

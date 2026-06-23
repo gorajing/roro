@@ -23,6 +23,7 @@ import { readEpisodes } from './episodeLog';
 import { readEntryFile, writeEntryFile, entryPath } from './entryFile';
 import { blendCandidates, DEFAULT_WEIGHTS, type BlendWeights, type ScoredEntry } from './memoryScore';
 import { openEntry, type Cipher } from './cipher';
+import { effectiveConfidence } from './forgetting';
 import type { Entry } from './types';
 import type { IndexStore } from './indexStore';
 
@@ -35,6 +36,16 @@ const SCHEMA_VERSION = 1;
 const BASE_CONFIDENCE = 0.5;
 const CONFIDENCE_INCREMENT = 0.1;
 const MAX_CONFIDENCE = 1;
+
+// Forgetting (corpus bounding — the 3× accuracy lever): episodes are tombstoned beyond a per-owner cap
+// or age. Facts/core are NEVER pruned (durable identity). Generous defaults so a fresh/small corpus
+// prunes nothing; runs in a bounded batch on store-open. (Archive/summarization + JSONL compaction are
+// deferred; fact "forgetting" is the lazy confidence decay in forgetting.ts, not deletion.)
+const MS_PER_DAY = 86_400_000;
+const PRUNE_MAX_LIVE = 5000;
+const PRUNE_MAX_AGE_DAYS = 90;
+const PRUNE_KEEP_NEWEST = 200;
+const PRUNE_BATCH = 500;
 
 export type RememberInput = Omit<NewEntry, 'id' | 'schemaVersion' | 'createdAt'> & {
   id?: string;
@@ -50,8 +61,12 @@ export interface MemoryStore {
   recall(opts: { query: string; ownerId: string; k?: number; weights?: BlendWeights }): Promise<ScoredEntry[]>;
   /** Most-recent episodes for an owner (the temporal/"what did we just do" path). */
   recent(opts: { ownerId: string; k?: number }): Promise<Entry[]>;
-  /** Active profile facts for an owner ("KNOWN ABOUT THIS USER"), newest-first. */
-  getProfile(ownerId: string): Promise<Entry[]>;
+  /** Active profile facts for an owner ("KNOWN ABOUT THIS USER"), ordered by EFFECTIVE (time-decayed)
+   *  confidence — most-corroborated + freshest first. `now` (ms) is injectable for deterministic tests. */
+  getProfile(ownerId: string, now?: number): Promise<Entry[]>;
+  /** Forgetting: tombstone old/excess EPISODES for an owner (or all owners) to bound the recall corpus.
+   *  Facts/core are never pruned. Returns the number tombstoned. */
+  pruneEpisodes(opts?: { ownerId?: string; maxLive?: number; maxAgeDays?: number; keepNewest?: number; batchSize?: number; now?: number }): Promise<number>;
   /** Set/replace the durable fact for (ownerId, factKey): supersede the prior active one, insert the new
    *  (exactly one active fact per key). Embed-first so a failed embed leaves the prior fact untouched. */
   replaceFact(input: { ownerId: string; factKey: string; text: string; payload?: unknown; sessionId?: string }): Promise<Entry>;
@@ -158,7 +173,7 @@ export async function createMemoryStore(opts: {
     return r;
   }
 
-  return {
+  const api: MemoryStore = {
     remember(input: RememberInput): Promise<Entry> {
       if (input.tier === 'fact') {
         return Promise.reject(new Error('memory2: remember() does not accept facts — use replaceFact (atomic supersede)'));
@@ -214,13 +229,32 @@ export async function createMemoryStore(opts: {
       return (await index.recent({ ownerId, k, tier: 'episode' })).map(open);
     },
 
-    async getProfile(ownerId: string): Promise<Entry[]> {
-      // Surface the most-corroborated facts first (confidence desc, then newest) — the "knows-you" layer
-      // leads with what we're most sure of. index.facts returns active facts (a small set), so the sort
-      // is cheap + needs no confidence column.
+    async getProfile(ownerId: string, now: number = Date.now()): Promise<Entry[]> {
+      // Surface the strongest facts first by EFFECTIVE confidence (stored evidence × time-decay): the
+      // "knows-you" layer leads with what we're most sure of AND most recently confirmed. Stored
+      // confidence is untouched (decay is read-time). index.facts is a small set, so the sort is cheap.
       return (await index.facts(ownerId))
         .map(open)
-        .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0) || (b.seq ?? 0) - (a.seq ?? 0));
+        .sort((a, b) => effectiveConfidence(b, now) - effectiveConfidence(a, now) || (b.seq ?? 0) - (a.seq ?? 0));
+    },
+
+    pruneEpisodes(opts = {}): Promise<number> {
+      const {
+        ownerId, maxLive = PRUNE_MAX_LIVE, maxAgeDays = PRUNE_MAX_AGE_DAYS,
+        keepNewest = PRUNE_KEEP_NEWEST, batchSize = PRUNE_BATCH, now = Date.now(),
+      } = opts;
+      return serialize(async () => {
+        const maxAgeCutoff = new Date(now - maxAgeDays * MS_PER_DAY).toISOString();
+        const victims = await index.episodesToPrune({ ownerId, maxLive, maxAgeCutoff, keepNewest, batchSize });
+        let lastSeq = 0;
+        for (const v of victims) {
+          lastSeq = await writer.deleteEntry({ tier: 'episode', id: v.id, ownerId: v.ownerId }); // durable tombstone op
+          await index.remove(v.id);
+        }
+        if (lastSeq > 0) await index.setAppliedSeq(lastSeq); // advance the cursor past the delete ops
+        if (victims.length > 0) console.warn(`[memory2] pruned ${victims.length} old/excess episode(s) (corpus bound)`);
+        return victims.length;
+      });
     },
 
     reinforceFact({ ownerId, factKey }): Promise<Entry | null> {
@@ -289,4 +323,9 @@ export async function createMemoryStore(opts: {
       await index.close();
     },
   };
+
+  // Self-maintaining corpus bound: prune old/excess episodes once on open (a bounded batch, all owners).
+  // Awaited so it can't race teardown; a no-op on a fresh/small corpus (the generous defaults match none).
+  await api.pruneEpisodes({});
+  return api;
 }
