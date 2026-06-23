@@ -38,7 +38,10 @@ export async function buildRecallContext(
   }
   const facts = factsResult.status === 'fulfilled' ? factsResult.value : [];
   const matches = matchesResult.status === 'fulfilled' ? matchesResult.value : [];
-  const episodes = matches.filter((m) => m.similarity > minSimilarity);
+  // Inclusive floor: memory2's recall already blend-ranks and guarantees recent rows, which carry
+  // cosine 0 — a strict `>` with any non-negative floor would drop exactly those, nullifying the
+  // temporal-recall fix. With minSimilarity=0 (the memory2 path) this keeps the ranked top-k as-is.
+  const episodes = matches.filter((m) => m.similarity >= minSimilarity);
   return {
     context: composeMemoryContext(facts, episodes),
     factCount: facts.length,

@@ -49,6 +49,16 @@ describe('buildRecallContext (cross-launch: facts survive a session change)', ()
     expect(out.context).toContain('writes a test alongside each feature');
   });
 
+  it('keeps a recency-only episode (similarity 0) when the floor is 0 — memory2 is the recall authority', async () => {
+    // memory2's recall blend-ranks and GUARANTEES recent rows; a recency-only row carries cosine 0.
+    // With floor 0 and an inclusive comparison, that row must survive (a strict > would nullify the
+    // temporal-recall fix at the orchestrator).
+    const deps = fakeDeps({ profile: [], matches: [match('what we just did', 0)] });
+    const out = await buildRecallContext(deps, { ownerId: OWNER, sessionId: 'launch-B', query: 'what did we just do', minSimilarity: 0 });
+    expect(out.episodeCount).toBe(1);
+    expect(out.context).toContain('what we just did');
+  });
+
   it('drops episodes below the similarity floor but keeps facts', async () => {
     const deps = fakeDeps({
       profile: [factRow('prefers Zustand', { session_id: 'launch-A' })],

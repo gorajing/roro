@@ -121,7 +121,7 @@ export const loadBrain = makeLoader<BrainModule>('brain', () =>
   import(/* @vite-ignore */ '../brain/index'),
 );
 export const loadMemory = makeLoader<MemoryModule>('memory', () =>
-  import(/* @vite-ignore */ '../memory/index'),
+  import(/* @vite-ignore */ '../memory2/index'),
 );
 export const loadVision = makeLoader<VisionModule>('vision', () =>
   import(/* @vite-ignore */ '../vision/index'),
