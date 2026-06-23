@@ -20,8 +20,9 @@ import { createPgliteIndex } from './pgliteIndex';
 import { readManifest } from './manifest';
 import { readEpisodes } from './episodeLog';
 import { readEntryFile, entryPath } from './entryFile';
+import { blendCandidates, DEFAULT_WEIGHTS, type BlendWeights, type ScoredEntry } from './memoryScore';
 import type { Entry } from './types';
-import type { IndexStore, VectorMatch } from './indexStore';
+import type { IndexStore } from './indexStore';
 
 const SCHEMA_VERSION = 1;
 
@@ -33,8 +34,10 @@ export type RememberInput = Omit<NewEntry, 'id' | 'schemaVersion' | 'createdAt'>
 export interface MemoryStore {
   /** Durably store a memory (episode/core/trace), then embed + index it. Facts go via replaceFact. */
   remember(input: RememberInput): Promise<Entry>;
-  /** Episodic vector recall (excludes facts — those surface via getProfile), owner-scoped. */
-  recall(opts: { query: string; ownerId: string; k?: number }): Promise<VectorMatch[]>;
+  /** Episodic HYBRID recall: blends cosine relevance + recency + importance (excludes facts), owner-scoped.
+   *  The recency channel ensures temporal/meta queries ("what did we just do?") surface recent work even
+   *  when cosine misses — the bug a real turn exposed. Returns ranked entries with explainable parts. */
+  recall(opts: { query: string; ownerId: string; k?: number; weights?: BlendWeights }): Promise<ScoredEntry[]>;
   /** Most-recent episodes for an owner (the temporal/"what did we just do" path). */
   recent(opts: { ownerId: string; k?: number }): Promise<Entry[]>;
   /** Active profile facts for an owner ("KNOWN ABOUT THIS USER"), newest-first. */
@@ -128,9 +131,32 @@ export async function createMemoryStore(opts: {
       });
     },
 
-    async recall({ query, ownerId, k = 5 }): Promise<VectorMatch[]> {
-      const embedding = await embed(query);
-      return index.vectorSearch({ ownerId, embedding, k, tier: 'episode' });
+    async recall({ query, ownerId, k = 5, weights }): Promise<ScoredEntry[]> {
+      // Cosine channel — but a query-time embed outage must NOT suppress recent memories, so degrade to
+      // recency-only on failure (the docs' "never return zero when recent rows exist").
+      let vec: Awaited<ReturnType<IndexStore['vectorSearch']>> = [];
+      try {
+        const embedding = await embed(query);
+        vec = await index.vectorSearch({ ownerId, embedding, k: Math.max(k * 4, 20), tier: 'episode' });
+      } catch (err) {
+        console.warn(`[memory2] recall embed failed — recency-only this turn: ${(err as Error).message}`);
+      }
+      const rec = await index.recent({ ownerId, k: Math.max(k * 2, 10), tier: 'episode' });
+      const candidates = [
+        ...vec.map((m) => ({ entry: m.entry, cosine: m.similarity })),
+        ...rec.map((entry) => ({ entry })), // recency-only candidates (no cosine)
+      ];
+      const blended = blendCandidates(candidates, weights ?? DEFAULT_WEIGHTS);
+
+      // Guarantee the most-recent episodes survive competition (the RECENT-ACTIONS channel): temporal
+      // queries ("what did we just do?") must surface recent work even amid many strong cosine matches.
+      const scoredById = new Map(blended.map((b) => [b.entry.id, b]));
+      const guaranteed = rec
+        .slice(0, Math.min(2, k))
+        .map((e) => scoredById.get(e.id))
+        .filter((b): b is ScoredEntry => Boolean(b));
+      const gIds = new Set(guaranteed.map((g) => g.entry.id));
+      return [...guaranteed, ...blended.filter((b) => !gIds.has(b.entry.id))].slice(0, k);
     },
 
     async recent({ ownerId, k = 5 }): Promise<Entry[]> {
