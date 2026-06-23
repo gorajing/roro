@@ -94,4 +94,39 @@ describe('createVoiceMode (local-voice integration core)', () => {
     deps.fireRunEnd('r1');
     expect(mode.state.mode).toBe('listening');
   });
+
+  it('summon() superseded by unsummon() during a slow backend load does NOT flip the mode back to listening', async () => {
+    // A backend whose start() is deferred (a slow model load).
+    let resolveStart!: () => void;
+    const slow: VoiceBackend = {
+      available: true,
+      start: () => new Promise<void>((r) => { resolveStart = r; }),
+      async stop() {},
+      async speak() {},
+      setMuted() {},
+    };
+    const mode = createVoiceMode({ backend: slow, deps: makeDeps(), driver: driver() });
+    const summoning = mode.summon(); // in-flight (start pending)
+    await mode.unsummon(); // teardown DURING the load
+    resolveStart(); // start resolves late
+    await summoning;
+    expect(mode.state.mode).toBe('off'); // the late summon must not flip it back to 'listening'
+  });
+
+  it('dispose() during a slow backend load also suppresses the late summon (no FSM resurrection)', async () => {
+    let resolveStart!: () => void;
+    const slow: VoiceBackend = {
+      available: true,
+      start: () => new Promise<void>((r) => { resolveStart = r; }),
+      async stop() {},
+      async speak() {},
+      setMuted() {},
+    };
+    const mode = createVoiceMode({ backend: slow, deps: makeDeps(), driver: driver() });
+    const summoning = mode.summon();
+    mode.dispose(); // teardown during the load
+    resolveStart();
+    await summoning;
+    expect(mode.state.mode).toBe('off'); // dispose bumped the epoch -> the late summon is suppressed
+  });
 });

@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { CH } from '../shared/ipc';
 import { cursorToGazeTarget } from '../shared/gaze';
 import { decideSummonAction } from './summon';
+import { withCrossOriginIsolation } from './crossOriginIsolation';
 import { isSafeNavigation } from './navigation';
 
 const SUMMON_ACCELERATOR = 'CommandOrControl+Shift+Space';
@@ -76,6 +77,14 @@ export function createWindow(): BrowserWindow {
     }
   });
   mainWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
+
+  // Cross-origin isolation: COOP same-origin + COEP credentialless on the renderer's responses, so the
+  // on-device voice WASM (whisper/Silero/Kokoro) can use SharedArrayBuffer + threads (the ~3x threaded-SIMD
+  // path, not slow single-thread). credentialless keeps the first-run model downloads working. Set on the
+  // window's session BEFORE load so the document itself is isolated.
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({ responseHeaders: withCrossOriginIsolation(details.responseHeaders) });
+  });
 
   // Keep the template's MAIN_WINDOW_VITE_* loading logic (dev server vs packaged file).
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {

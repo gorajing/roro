@@ -55,6 +55,13 @@ export function createVoiceMode(opts: CreateVoiceModeOptions): VoiceMode {
     onState?.(state);
   }
 
+  // A lifecycle epoch guards summon()'s async window: backend.start() can take a while (model load). If
+  // unsummon() (or a re-summon) runs during that load, the late start() must NOT flip the visible mode
+  // back to 'listening' after teardown. unsummon() + summon() each bump the epoch; summon only applies
+  // its FSM transition if its epoch is still current. (The engine's own generation token discards the
+  // late backend itself — this guards the FSM state.)
+  let lifecycleEpoch = 0;
+
   // Route the universal runEnd through the router (so ONLY this router's run advances its queue) and
   // reflect the end in the visible mode. Keep the unsubscribe so dispose() can detach it.
   const offRunEnd = deps.onRunEnd((runId) => {
@@ -89,14 +96,17 @@ export function createVoiceMode(opts: CreateVoiceModeOptions): VoiceMode {
       return state;
     },
     async summon() {
+      const epoch = ++lifecycleEpoch;
       await backend.start(events);
-      apply({ type: 'summon' });
+      if (epoch === lifecycleEpoch) apply({ type: 'summon' }); // not superseded by an unsummon/re-summon during load
     },
     async unsummon() {
+      lifecycleEpoch++; // invalidate any in-flight summon()
       await backend.stop();
       apply({ type: 'unsummon' });
     },
     dispose() {
+      lifecycleEpoch++; // invalidate any in-flight summon() (like unsummon) so a late start() can't resurrect the FSM
       offRunEnd(); // detach the runEnd handler FIRST so it can't drain the router after teardown
       void backend.stop().catch(() => undefined); // teardown is best-effort: a native stop failure must not reject
     },
