@@ -38,15 +38,21 @@ export function parseEntry(content: string): Entry {
   return { ...(meta as unknown as Entry), text: m[2] }; // body is exact (no trim) — whitespace is meaningful
 }
 
-/** Stable hash of the meaningful content (text + payload + tier + owner) — for dedup + integrity. */
-export function computeContentHash(entry: Entry): string {
-  const canonical = JSON.stringify({
+/** Canonical serialization of the meaningful content (text + payload + tier + owner). MUST be computed
+ *  over PLAINTEXT (before sealing) so the fingerprint is encryption-invariant + stable across key rotation. */
+export function canonicalContent(entry: Entry): string {
+  return JSON.stringify({
     text: entry.text,
     payload: entry.payload ?? null,
     tier: entry.tier,
     ownerId: entry.ownerId,
   });
-  return createHash('sha256').update(canonical).digest('hex');
+}
+
+/** Plaintext SHA-256 of the canonical content — used when encryption is OFF. When a cipher is present
+ *  the writer uses cipher.fingerprint (keyed HMAC) instead, so low-entropy facts aren't guessable at rest. */
+export function computeContentHash(entry: Entry): string {
+  return createHash('sha256').update(canonicalContent(entry)).digest('hex');
 }
 
 async function fsyncDir(dir: string): Promise<void> {

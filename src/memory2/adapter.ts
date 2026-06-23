@@ -13,6 +13,7 @@
 //   specific episodic kind, and facts are surfaced separately via getProfile.
 
 import { createMemoryStore, type MemoryStore } from './memoryStore';
+import type { Cipher } from './cipher';
 import type { Entry, Tier } from './types';
 import type { MemoryKind, RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch } from '../shared/memory';
 
@@ -64,6 +65,8 @@ export interface Memory2AdapterOpts {
   embed: (text: string) => Promise<number[]>;
   dim?: number;
   embedModel?: string;
+  /** When present, content is encrypted at rest (passed straight through to the store). */
+  cipher?: Cipher;
 }
 
 /** Wrap a memory2 MemoryStore in the orchestrator's old MemoryModule contract. */

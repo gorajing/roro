@@ -22,6 +22,7 @@ import { readManifest } from './manifest';
 import { readEpisodes } from './episodeLog';
 import { readEntryFile, writeEntryFile, entryPath } from './entryFile';
 import { blendCandidates, DEFAULT_WEIGHTS, type BlendWeights, type ScoredEntry } from './memoryScore';
+import { openEntry, type Cipher } from './cipher';
 import type { Entry } from './types';
 import type { IndexStore } from './indexStore';
 
@@ -51,18 +52,25 @@ export interface MemoryStore {
   close(): Promise<void>;
 }
 
-/** Index a put op's entry, degrading gracefully if the embedder is down (row stays usable, no vector). */
-async function indexEntry(index: IndexStore, entry: Entry, embed: (t: string) => Promise<number[]>): Promise<void> {
+/** Index a (possibly-sealed) entry: embed from PLAINTEXT but store the SEALED doc. Degrades gracefully
+ *  if the embedder is down (row stays usable, no vector). */
+async function indexEntry(
+  index: IndexStore,
+  entry: Entry,
+  embed: (t: string) => Promise<number[]>,
+  cipher?: Cipher,
+): Promise<void> {
+  const plain = cipher ? openEntry(entry, cipher) : entry; // decrypt for embedding only
   let embedding: number[] | undefined;
-  if (entry.text.trim()) {
+  if (plain.text.trim()) {
     try {
-      embedding = await embed(entry.text);
+      embedding = await embed(plain.text);
     } catch (err) {
       console.warn(`[memory2] embed failed for ${entry.tier}/${entry.id} — indexed without a vector: ${(err as Error).message}`);
       entry = { ...entry, embeddingStatus: 'failed' };
     }
   }
-  await index.upsert(entry, embedding);
+  await index.upsert(entry, embedding); // the SEALED entry is the stored doc
 }
 
 /**
@@ -70,7 +78,7 @@ async function indexEntry(index: IndexStore, entry: Entry, embed: (t: string) =>
  * CONTIGUOUS persistent cursor per op. Survives deletes (cursor is not derived from row max) and never
  * skips a durable write whose prior index update failed.
  */
-async function reconcile(dir: string, index: IndexStore, embed: (t: string) => Promise<number[]>): Promise<void> {
+async function reconcile(dir: string, index: IndexStore, embed: (t: string) => Promise<number[]>, cipher?: Cipher): Promise<void> {
   const applied = await index.getAppliedSeq();
   const ops = (await readManifest(dir)).filter((o) => o.seq > applied).sort((a, b) => a.seq - b.seq);
   if (ops.length === 0) return;
@@ -97,7 +105,7 @@ async function reconcile(dir: string, index: IndexStore, embed: (t: string) => P
       }
       if (op.entry) {
         try { await readEntryFile(entryPath(dir, op.entry)); } catch { await writeEntryFile(dir, op.entry); }
-        await indexEntry(index, op.entry, embed);
+        await indexEntry(index, op.entry, embed, cipher); // op.entry is sealed at rest; indexEntry opens to embed
       }
     } else {
       let entry: Entry | undefined;
@@ -106,7 +114,7 @@ async function reconcile(dir: string, index: IndexStore, embed: (t: string) => P
       } else {
         try { entry = await readEntryFile(entryPath(dir, { tier: op.tier, id: op.id } as Entry)); } catch { entry = undefined; }
       }
-      if (entry) await indexEntry(index, entry, embed);
+      if (entry) await indexEntry(index, entry, embed, cipher);
       else console.warn(`[memory2] reconcile: no file for ${op.tier}/${op.id} (seq ${op.seq}) — files win, skipped`);
     }
     await index.setAppliedSeq(op.seq); // advance the contiguous cursor (processed, even if skipped/deleted)
@@ -118,14 +126,18 @@ export async function createMemoryStore(opts: {
   embed: (text: string) => Promise<number[]>;
   dim?: number;
   embedModel?: string;
+  /** When present, content (text + payload) is encrypted at rest; reads decrypt transparently. */
+  cipher?: Cipher;
 }): Promise<MemoryStore> {
-  const { dir, embed, dim, embedModel } = opts;
+  const { dir, embed, dim, embedModel, cipher } = opts;
+  // Decrypt an entry read back from the (sealed) index/files; no-op when encryption is off.
+  const open = (e: Entry): Entry => (cipher ? openEntry(e, cipher) : e);
   // Ensure the data root exists before PGlite opens its (non-recursive) index subdir — the file-write
   // helpers create their own tier dirs, but the index dir's parent must exist first.
   await mkdir(dir, { recursive: true });
-  const writer = createMemoryWriter({ dir });
+  const writer = createMemoryWriter({ dir, cipher });
   const index = await createPgliteIndex({ dataDir: join(dir, 'index'), dim, embedModel });
-  await reconcile(dir, index, embed);
+  await reconcile(dir, index, embed, cipher);
 
   // Serialize the whole write path so the index is updated + the cursor advanced in seq order.
   let tail: Promise<unknown> = Promise.resolve();
@@ -149,10 +161,10 @@ export async function createMemoryStore(opts: {
           embedModel: input.embedModel ?? embedModel,
           embedDim: input.embedDim ?? dim,
         };
-        const entry = await writer.putEntry(base); // durable (file + manifest), assigns seq + contentHash
-        await indexEntry(index, entry, embed);
+        const entry = await writer.putEntry(base); // durable (file + manifest), SEALED, assigns seq + contentHash
+        await indexEntry(index, entry, embed, cipher);
         await index.setAppliedSeq(entry.seq ?? 0);
-        return entry;
+        return open(entry); // plaintext for the caller
       });
     },
 
@@ -181,15 +193,18 @@ export async function createMemoryStore(opts: {
         .map((e) => scoredById.get(e.id))
         .filter((b): b is ScoredEntry => Boolean(b));
       const gIds = new Set(guaranteed.map((g) => g.entry.id));
-      return [...guaranteed, ...blended.filter((b) => !gIds.has(b.entry.id))].slice(0, k);
+      // Blend on the SEALED entries (structural fields only), then decrypt the survivors for the caller.
+      return [...guaranteed, ...blended.filter((b) => !gIds.has(b.entry.id))]
+        .slice(0, k)
+        .map((s) => ({ ...s, entry: open(s.entry) }));
     },
 
     async recent({ ownerId, k = 5 }): Promise<Entry[]> {
-      return index.recent({ ownerId, k, tier: 'episode' });
+      return (await index.recent({ ownerId, k, tier: 'episode' })).map(open);
     },
 
     async getProfile(ownerId: string): Promise<Entry[]> {
-      return index.facts(ownerId);
+      return (await index.facts(ownerId)).map(open);
     },
 
     replaceFact(input): Promise<Entry> {
@@ -209,19 +224,20 @@ export async function createMemoryStore(opts: {
           createdAt: new Date().toISOString(), embedModel, embedDim: dim,
         };
         const { fresh: committed, superseded } = await writer.commitReplaceFact(fresh, priors.map((p) => p.id));
-        for (const sup of superseded) await index.upsert(sup); // priors first (unique-index safe)
-        await index.upsert(committed, embedding);
+        for (const sup of superseded) await index.upsert(sup); // priors first (unique-index safe), SEALED
+        await index.upsert(committed, embedding); // SEALED doc + plaintext embedding
         await index.setAppliedSeq(committed.seq ?? 0);
-        return committed;
+        return open(committed); // plaintext for the caller
       });
     },
 
     supersede(id: string): Promise<void> {
       if (!id?.trim()) return Promise.reject(new Error('memory2: supersede requires a non-empty id'));
       return serialize(async () => {
-        const entry = await index.get(id);
-        if (!entry) return;
-        const { seq: _s, contentHash: _c, ...rest } = entry;
+        const stored = await index.get(id);
+        if (!stored) return;
+        // Open before re-put: putEntry re-fingerprints over plaintext + re-seals with the new seq's AAD.
+        const { seq: _s, contentHash: _c, ...rest } = open(stored);
         const sup = await writer.putEntry({ ...rest, superseded: true, updatedAt: new Date().toISOString() });
         await index.upsert(sup);
         await index.setAppliedSeq(sup.seq ?? 0);
