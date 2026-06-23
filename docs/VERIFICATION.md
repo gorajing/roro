@@ -15,7 +15,7 @@ npm run verify:floating
 ```
 
 `scripts/smoke-floating-ask.mjs` launches the real Electron renderer over the Chrome DevTools Protocol
-(via the built-in `COMPANION_DEBUG_PORT` hook) and asserts the rendered DOM **and computed CSS
+(via the built-in `RORO_DEBUG_PORT` hook) and asserts the rendered DOM **and computed CSS
 visibility**, then writes `docs/verification/floating-ask.png`. It is opt-in (needs a display + a vite
 build) and not in CI. Checks: `#floating-ask` exists + starts `collapsed`; pill reads "Ask Roro…";
 `#floating-stop` exists and is not `armed`; clicking the pill → `expanded` with the input actually

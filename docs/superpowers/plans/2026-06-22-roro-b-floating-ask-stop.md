@@ -154,7 +154,7 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
 ### Task 5: Verify + Codex review + PR
 
 - [ ] Step 1: `npx tsc --noEmit` (0 errors) + `npx vitest run` (all green, incl. Tasks 1-3 new tests).
-- [ ] Step 2: **On-screen check (flag explicitly):** the floating Ask/Stop render is NOT unit-testable here (no browser harness). State it's verified via `COMPANION_FLOATING_WINDOW=1 npm start` + CDP or by the user — do not claim visual success from code-reading.
+- [ ] Step 2: **On-screen check (flag explicitly):** the floating Ask/Stop render is NOT unit-testable here (no browser harness). State it's verified via `RORO_FLOATING_WINDOW=1 npm start` + CDP or by the user — do not claim visual success from code-reading.
 - [ ] Step 3: **Codex max-effort review** of the staged diff (the loop from the codex-review skill); adjudicate + fix real findings (TDD) until `none`.
 - [ ] Step 4: Push `feat/b-magic-moment`; the PR (#2) updates. Retitle it "Phase B — the magic moment (floating Ask + Stop, dispatch-return)".
 

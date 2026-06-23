@@ -20,7 +20,7 @@ Roro is a three-tier Electron app with a **topologically enforced** boundary, no
 
 - **MAIN** (`src/main/**`, plus `src/brain`, `src/memory`, `src/executor`, `src/vision`) — the trusted process with full Node access. Boots the window, owns OS capabilities (mic TCC, screen capture), holds all secrets, runs the turn loop.
 - **PRELOAD** (`src/preload.ts`) — a single sandboxed bridge. It may import only `electron` and pure `shared/*` modules — *nothing that pulls in a Node builtin* (`preload.ts:5-8`). This self-imposed rule is the keystone of the security model.
-- **RENDERER** (`src/renderer/**`) — sandboxed Chromium (`contextIsolation:true, sandbox:true, nodeIntegration:false`, `window.ts:47-53`). It draws the cat and wires UI, and can reach privileged capability *only* through five frozen namespaces exposed on `window` by the preload: `companion`, `brain`, `memory`, `vision`, `COMPANION_CFG`.
+- **RENDERER** (`src/renderer/**`) — sandboxed Chromium (`contextIsolation:true, sandbox:true, nodeIntegration:false`, `window.ts:47-53`). It draws the cat and wires UI, and can reach privileged capability *only* through five frozen namespaces exposed on `window` by the preload: `companion`, `brain`, `memory`, `vision`, `RORO_CFG`.
 
 A standalone sidecar, `src/proxy/index.ts`, runs outside the Electron graph entirely: an Express server bound to `127.0.0.1` that proxies Vapi→Nebius LLM traffic, injecting `NEBIUS_API_KEY` server-side so the key never reaches the renderer.
 
@@ -140,7 +140,7 @@ What *is* uniformly good is that each subsystem's **decision logic** is extracte
 
 **CRITICAL**
 - **No navigation / window-open hardening anywhere.** A repo-wide search for `will-navigate`/`setWindowOpenHandler`/`web-contents-created` returns nothing. The renderer runs with `'unsafe-eval'` and loads remote surfaces (`*.daily.co`). If any content triggers a navigation or `window.open`, an attacker origin inherits the full `window.companion/brain/memory/vision` bridge — including `companion.runTask`, which dispatches a `workspace-write` coding agent behind only the leaky classifier. ~10-line fix; the single highest-leverage item.
-- **Hardcoded developer home path** `CLAUDE_BIN = '/Users/jinchoi/.local/bin/claude'` (`claude.ts:26`) — breaks for every other user unless `COMPANION_CLAUDE_BIN` is set; `CODEX_BIN` is Homebrew-only. Resolve via `PATH` with env override, fail loud if unresolved.
+- **Hardcoded developer home path** `CLAUDE_BIN = '/Users/jinchoi/.local/bin/claude'` (`claude.ts:26`) — breaks for every other user unless `RORO_CLAUDE_BIN` is set; `CODEX_BIN` is Homebrew-only. Resolve via `PATH` with env override, fail loud if unresolved.
 
 **HIGH**
 - **`connect-src 'self' https: wss:`** is wide open (`index.html:6`) — a compromised renderer can read owner-scoped memory via `window.memory.recall` and exfiltrate anywhere. Tighten to the specific origins.

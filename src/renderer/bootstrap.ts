@@ -120,7 +120,7 @@ export async function bootstrap(): Promise<void> {
   const startVoiceCall = async () => {
     if (callActive || callStarting) return;
     if (!config.vapiPublicKey) {
-      setStatus('Set window.COMPANION_CFG.vapiPublicKey (or VITE_VAPI_PUBLIC_KEY) to start a call.');
+      setStatus('Set window.RORO_CFG.vapiPublicKey (or VITE_VAPI_PUBLIC_KEY) to start a call.');
       return;
     }
     callStarting = true;

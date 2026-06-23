@@ -34,7 +34,7 @@ Drop the WHOLE model folder here. The default path the renderer looks for is:
 public/live2d/Haru.model3.json   (with its textures/, motions/, *.exp3.json, *.physics3.json alongside)
 ```
 
-Override the path via `window.COMPANION_CFG.modelUrl` or the
+Override the path via `window.RORO_CFG.modelUrl` or the
 `VITE_LIVE2D_MODEL_URL` build env. Example using the Live2D sample "Haru":
 
 ```bash

@@ -16,13 +16,13 @@ import type { RememberInput, MemoryRow, MemoryMatch } from './shared/memory';
 type AgentKindArg = 'codex' | 'claude';
 
 // Renderer-safe runtime config injected by MAIN via webPreferences.additionalArguments.
-// A sandboxed preload CAN read process.argv, so we parse the --companion-cfg= argv element
-// here and expose it as window.COMPANION_CFG for src/renderer/config.ts to consume.
-const cfgArg = process.argv.find((a) => a.startsWith('--companion-cfg='));
-let companionCfg: Record<string, string | boolean> = {};
+// A sandboxed preload CAN read process.argv, so we parse the --roro-cfg= argv element
+// here and expose it as window.RORO_CFG for src/renderer/config.ts to consume.
+const cfgArg = process.argv.find((a) => a.startsWith('--roro-cfg='));
+let roroCfg: Record<string, string | boolean> = {};
 if (cfgArg) {
   try {
-    companionCfg = JSON.parse(cfgArg.slice('--companion-cfg='.length));
+    roroCfg = JSON.parse(cfgArg.slice('--roro-cfg='.length));
   } catch {
     /* ignore malformed cfg — renderer falls back to empty defaults */
   }
@@ -106,4 +106,5 @@ contextBridge.exposeInMainWorld('companion', companion);
 contextBridge.exposeInMainWorld('brain', brain);
 contextBridge.exposeInMainWorld('memory', memory);
 contextBridge.exposeInMainWorld('vision', vision);
-contextBridge.exposeInMainWorld('COMPANION_CFG', companionCfg);
+contextBridge.exposeInMainWorld('RORO_CFG', roroCfg);
+contextBridge.exposeInMainWorld('COMPANION_CFG', roroCfg); // deprecated alias — back-compat

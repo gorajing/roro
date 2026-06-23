@@ -14,7 +14,7 @@ import { isSafeNavigation } from './navigation';
 
 const SUMMON_ACCELERATOR = 'CommandOrControl+Shift+Space';
 const MUTE_ACCELERATOR = 'CommandOrControl+Shift+M';
-const FLOATING_WINDOW_FLAG = process.env.COMPANION_FLOATING_WINDOW === '1';
+const FLOATING_WINDOW_FLAG = process.env.RORO_FLOATING_WINDOW === '1';
 const FLOATING_WINDOW_SIZE = {
   width: 380,
   height: 400,
@@ -26,7 +26,7 @@ export function createWindow(): BrowserWindow {
   // dotenv in src/main.ts). Only the Vapi PUBLIC key + non-secret URLs/ids cross
   // into the renderer; private keys stay in MAIN. Passed via additionalArguments
   // (a single argv element — these values contain no spaces).
-  const companionCfg = {
+  const roroCfg = {
     vapiPublicKey: process.env.VAPI_PUBLIC_KEY ?? '',
     vapiAssistantId: process.env.VAPI_ASSISTANT_ID ?? '',
     customLlmUrl: process.env.VAPI_PROXY_URL ?? 'http://127.0.0.1:8787',
@@ -51,7 +51,7 @@ export function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      additionalArguments: ['--companion-cfg=' + JSON.stringify(companionCfg)],
+      additionalArguments: ['--roro-cfg=' + JSON.stringify(roroCfg)],
     },
   });
 

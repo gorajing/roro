@@ -3,7 +3,7 @@
 // The floating Ask + Stop pill (src/renderer/ask/floatingAsk.ts) are jsdom-unit-tested for DOM logic,
 // but jsdom has no CSS layout/visibility — so a CSS regression (collapsed/expanded/tasked, .armed)
 // is invisible to the unit suite. This launches the REAL Electron renderer over the Chrome DevTools
-// Protocol (via the built-in COMPANION_DEBUG_PORT hook in src/main.ts) and asserts the rendered DOM
+// Protocol (via the built-in RORO_DEBUG_PORT hook in src/main.ts) and asserts the rendered DOM
 // + COMPUTED CSS visibility, then saves a screenshot. No extra deps: Node's global fetch + WebSocket.
 //
 // Run on a machine with a display:  npm run verify:floating
@@ -13,7 +13,7 @@ import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { writeFileSync, mkdirSync } from 'node:fs';
 
-const PORT = process.env.COMPANION_DEBUG_PORT || '9223';
+const PORT = process.env.RORO_DEBUG_PORT || '9223';
 const BOOT_TIMEOUT_MS = 180_000;
 const SHOT = 'docs/verification/floating-ask.png';
 
@@ -67,14 +67,14 @@ function cdpClient(url) {
 }
 
 const child = spawn('npm', ['start'], {
-  env: { ...process.env, COMPANION_DEBUG_PORT: PORT },
+  env: { ...process.env, RORO_DEBUG_PORT: PORT },
   stdio: 'inherit',
   detached: true,
 });
 
 let cdp;
 try {
-  console.log(`[smoke] launching app (COMPANION_DEBUG_PORT=${PORT})…`);
+  console.log(`[smoke] launching app (RORO_DEBUG_PORT=${PORT})…`);
   const target = await waitForRendererTarget();
   cdp = cdpClient(target.webSocketDebuggerUrl);
   await cdp.ready;

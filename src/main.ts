@@ -1,4 +1,5 @@
 import 'dotenv/config'; // MUST be first: populates process.env from ./.env before any module reads it.
+import './shared/env-migrate'; // back-compat: COMPANION_* -> RORO_* BEFORE any module reads env at load.
 // src/main.ts — Electron MAIN process entry. Boots a secure window, gates the macOS mic via
 // TCC, installs Chromium permission handlers, registers all typed IPC, and a summon shortcut.
 //
@@ -46,10 +47,10 @@ if (started) {
 }
 
 // Optional Chromium remote-debugging port for end-to-end UI testing. Gated behind
-// an env var so it is OFF for normal/demo runs; launch with COMPANION_DEBUG_PORT=9223
+// an env var so it is OFF for normal/demo runs; launch with RORO_DEBUG_PORT=9223
 // to attach a CDP client to the renderer. Must be set before app 'ready'.
-if (process.env.COMPANION_DEBUG_PORT) {
-  app.commandLine.appendSwitch('remote-debugging-port', process.env.COMPANION_DEBUG_PORT);
+if (process.env.RORO_DEBUG_PORT) {
+  app.commandLine.appendSwitch('remote-debugging-port', process.env.RORO_DEBUG_PORT);
 }
 
 // IPC handlers are stateless and safe to register before windows exist.
@@ -58,7 +59,7 @@ registerIpcHandlers();
 app.whenReady().then(async () => {
   // 0. Device-stable owner_id — the memory spine. Must exist before any turn runs. The local
   //    PGlite store lives beside owner.json in userData (single-writer, owned by main only).
-  process.env.COMPANION_DB_DIR ||= join(app.getPath('userData'), 'memory');
+  process.env.RORO_DB_DIR ||= join(app.getPath('userData'), 'memory');
   await initOwnerId();
 
   // 1. Chromium-level media permission grant for the renderer's getUserMedia (request+check).
