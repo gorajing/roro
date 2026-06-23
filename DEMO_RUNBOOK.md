@@ -1,5 +1,10 @@
 # Companion — Demo Runbook (hackathon)
 
+> **Historical artifact (2026-06-19 hackathon).** This runbook describes the original
+> cloud demo (Nebius brain + Insforge memory). The current app is **local-first** —
+> local Ollama brain + local PGlite memory; see [`README.md`](README.md) and
+> [`RUN.md`](RUN.md). Kept for the record of the original wow-moment measurement.
+
 **Verdict:** the wow moment is proven end-to-end — Nebius `decide()` → real Codex
 → `calc.py` fixed → tests pass (measured: 78.9s, red→green). Everything below is
 the *same single app launch* (one `sessionId` is minted per launch and memory
