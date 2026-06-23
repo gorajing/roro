@@ -10,6 +10,7 @@
 // (off by default → zero overhead via NOOP_TRACER).
 
 import { appendFileSync, mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
 declare const process: { env: Record<string, string | undefined> };
@@ -24,9 +25,9 @@ export type TraceEvent =
       // whether it was returned — so an offline eval can replay alternate weights + diagnose near-misses.
       candidates: Array<{ id: string; score: number; cosine?: number; parts: { relevance: number; recency: number; importance: number }; returned: boolean }>;
     }
-  | { kind: 'remember'; ownerId: string; id: string; tier: string }
-  | { kind: 'fact'; ownerId: string; factKey: string; op: 'replace' | 'reinforce'; id: string; confidence?: number; supersededIds?: string[] }
-  | { kind: 'supersede'; ownerId: string; id: string }
+  | { kind: 'remember'; ownerId: string; id: string; tier: string; sessionId?: string }
+  | { kind: 'fact'; ownerId: string; factKey: string; op: 'replace' | 'reinforce'; id: string; confidence?: number; supersededIds?: string[]; sessionId?: string }
+  | { kind: 'supersede'; ownerId: string; id: string; sessionId?: string }
   | { kind: 'prune'; ownerId?: string; count: number; ids: string[] };
 
 export interface Tracer {
@@ -36,8 +37,15 @@ export interface Tracer {
 
 export const NOOP_TRACER: Tracer = { emit() {} };
 
-/** Append-only JSONL tracer; stamps each event with a ts. Swallows all I/O errors (one-way). */
-export function createJsonlTracer(path: string): Tracer {
+/** A short keyed-less fingerprint of the recall query — joinable across traces, not human-readable. */
+function queryFingerprint(query: string): string {
+  return createHash('sha256').update(query).digest('hex').slice(0, 16);
+}
+
+/** Append-only JSONL tracer; stamps each event with a ts. By default the recall QUERY is hashed (it's
+ *  often the user transcript — privacy), so an opt-in trace file can't leak it; pass hashQuery=false to
+ *  log it plaintext. Swallows all I/O errors (one-way). */
+export function createJsonlTracer(path: string, hashQuery = true): Tracer {
   let dirReady = false;
   return {
     emit(event: TraceEvent): void {
@@ -46,7 +54,8 @@ export function createJsonlTracer(path: string): Tracer {
           mkdirSync(dirname(path), { recursive: true });
           dirReady = true;
         }
-        appendFileSync(path, JSON.stringify({ ts: new Date().toISOString(), ...event }) + '\n');
+        const out = hashQuery && event.kind === 'recall' ? { ...event, query: queryFingerprint(event.query) } : event;
+        appendFileSync(path, JSON.stringify({ ts: new Date().toISOString(), ...out }) + '\n');
       } catch {
         /* tracing is diagnostic — a failed write must never disturb the memory operation */
       }
@@ -54,8 +63,10 @@ export function createJsonlTracer(path: string): Tracer {
   };
 }
 
-/** RORO_TRACE=1 → a JSONL tracer at RORO_TRACE_FILE (or <dir>/trace.jsonl); else NOOP (zero overhead). */
+/** RORO_TRACE=1 → a JSONL tracer at RORO_TRACE_FILE (or <dir>/trace.jsonl); else NOOP (zero overhead).
+ *  The recall query is hashed unless RORO_TRACE_QUERY=plaintext (opt-in, for local relevance eval). */
 export function resolveTracer(dir: string): Tracer {
   if (process.env.RORO_TRACE !== '1') return NOOP_TRACER;
-  return createJsonlTracer(process.env.RORO_TRACE_FILE || join(dir, 'trace.jsonl'));
+  const hashQuery = process.env.RORO_TRACE_QUERY !== 'plaintext';
+  return createJsonlTracer(process.env.RORO_TRACE_FILE || join(dir, 'trace.jsonl'), hashQuery);
 }

@@ -256,7 +256,7 @@ export async function createMemoryStore(opts: {
           : await writer.commitOverwrite(base);
         await indexEntry(index, entry, embed, cipher);
         await index.setAppliedSeq(entry.seq ?? 0);
-        safeEmit({ kind: 'remember', ownerId: entry.ownerId, id: entry.id, tier: entry.tier });
+        safeEmit({ kind: 'remember', ownerId: entry.ownerId, id: entry.id, tier: entry.tier, sessionId: entry.sessionId });
         return open(entry); // plaintext for the caller
       });
     },
@@ -359,7 +359,7 @@ export async function createMemoryStore(opts: {
         });
         await indexEntry(index, bumped, embed, cipher);
         await index.setAppliedSeq(bumped.seq ?? 0);
-        safeEmit({ kind: 'fact', op: 'reinforce', ownerId, factKey, id: bumped.id, confidence: bumped.confidence });
+        safeEmit({ kind: 'fact', op: 'reinforce', ownerId, factKey, id: bumped.id, confidence: bumped.confidence, sessionId: bumped.sessionId });
         return open(bumped);
       });
     },
@@ -384,7 +384,7 @@ export async function createMemoryStore(opts: {
         for (const sup of superseded) await index.upsert(sup); // priors first (unique-index safe), SEALED
         await index.upsert(committed, embedding); // SEALED doc + plaintext embedding
         await index.setAppliedSeq(committed.seq ?? 0);
-        safeEmit({ kind: 'fact', op: 'replace', ownerId: input.ownerId, factKey: input.factKey, id: committed.id, confidence: BASE_CONFIDENCE, supersededIds: priors.map((p) => p.id) });
+        safeEmit({ kind: 'fact', op: 'replace', ownerId: input.ownerId, factKey: input.factKey, id: committed.id, confidence: BASE_CONFIDENCE, supersededIds: priors.map((p) => p.id), sessionId: committed.sessionId });
         return open(committed); // plaintext for the caller
       });
     },
@@ -403,7 +403,7 @@ export async function createMemoryStore(opts: {
           : await writer.commitOverwrite(next);
         await index.upsert(sup);
         await index.setAppliedSeq(sup.seq ?? 0);
-        safeEmit({ kind: 'supersede', ownerId: sup.ownerId, id });
+        safeEmit({ kind: 'supersede', ownerId: sup.ownerId, id, sessionId: sup.sessionId });
       });
     },
 
