@@ -24,6 +24,7 @@ import { readEntryFile, writeEntryFile, entryPath } from './entryFile';
 import { blendCandidates, DEFAULT_WEIGHTS, type BlendWeights, type ScoredEntry } from './memoryScore';
 import { openEntry, type Cipher } from './cipher';
 import { effectiveConfidence } from './forgetting';
+import { assertEncryptionMode } from './encryptionMode';
 import { NOOP_TRACER, type Tracer, type TraceEvent } from './tracer';
 import type { Entry } from './types';
 import type { IndexStore } from './indexStore';
@@ -223,8 +224,12 @@ export async function createMemoryStore(opts: {
   // Ensure the data root exists before PGlite opens its (non-recursive) index subdir — the file-write
   // helpers create their own tier dirs, but the index dir's parent must exist first.
   await mkdir(dir, { recursive: true });
+  // Encrypt-at-rest is all-or-nothing per store: fail loud on a mode mismatch (plaintext store + cipher,
+  // or encrypted store + no cipher). The marker is files-as-truth (store root), so it survives an index
+  // rebuild — unlike a derived-index marker, which a wiped index would lose.
+  await assertEncryptionMode(dir, !!cipher);
   const writer = createMemoryWriter({ dir, cipher });
-  const index = await createPgliteIndex({ dataDir: join(dir, 'index'), dim, embedModel, encrypted: !!cipher });
+  const index = await createPgliteIndex({ dataDir: join(dir, 'index'), dim, embedModel });
   await reconcile(dir, index, embed, cipher);
 
   // Serialize the whole write path so the index is updated + the cursor advanced in seq order.
