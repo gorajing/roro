@@ -37,10 +37,11 @@ export interface IndexStore {
   getAppliedSeq(): Promise<number>;
   setAppliedSeq(seq: number): Promise<void>;
   /** Rebuild the index from a set of stored (possibly SEALED) entries — the "derived cache" property
-   *  (engine/embed swap = reindex). `embedFor` receives each stored entry and returns its embedding (the
-   *  caller opens/decrypts before embedding, and skips un-embeddable rows by returning undefined), so the
-   *  doc is stored as-is (sealed) while the vector is computed from plaintext. Atomic: embed-all-first,
-   *  then delete+insert in one txn — a failure never empties the index. */
-  reindexFrom(entries: Iterable<Entry>, embedFor: (entry: Entry) => Promise<number[] | undefined>): Promise<void>;
+   *  (engine/embed swap = reindex). `embedFor` receives each stored entry and returns {embedding} (caller
+   *  opens/decrypts first), {} for an un-embeddable/empty row, or {failed:true} when the embedder is down
+   *  (the row is indexed without a vector + stamped embeddingStatus:'failed', exactly like the incremental
+   *  path) — or it may THROW to abort the whole rebuild. The doc is stored as-is (sealed); the vector is
+   *  from plaintext. Atomic: embed-all-first, then delete+insert in one txn — a failure never empties it. */
+  reindexFrom(entries: Iterable<Entry>, embedFor: (entry: Entry) => Promise<{ embedding?: number[]; failed?: boolean }>): Promise<void>;
   close(): Promise<void>;
 }

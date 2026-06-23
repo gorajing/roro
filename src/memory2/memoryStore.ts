@@ -418,8 +418,9 @@ export async function createMemoryStore(opts: {
         await index.reindexFrom(live, async (entry) => {
           // Embed from PLAINTEXT (open the sealed entry) but reindexFrom stores the sealed doc as-is.
           const text = open(entry).text;
-          if (!text.trim()) return undefined;
-          try { return await embed(text); } catch { return undefined; } // graceful: index without a vector
+          if (!text.trim()) return {};
+          try { return { embedding: await embed(text) }; }
+          catch { return { failed: true }; } // graceful: index without a vector, marked failed (like indexEntry)
         });
         // Advance the cursor to the manifest head so a subsequent open's reconcile is a no-op.
         const maxSeq = (await readManifest(dir)).reduce((m, o) => Math.max(m, o.seq), 0);
