@@ -9,9 +9,10 @@
 // increment; this layer is the durable system of record they rebuild from.)
 
 import { unlink } from 'node:fs/promises';
-import { writeEntryFile, readEntryFile, entryPath, computeContentHash } from './entryFile';
+import { writeEntryFile, readEntryFile, entryPath, computeContentHash, canonicalContent } from './entryFile';
 import { appendEpisode } from './episodeLog';
 import { appendOp, nextSeq, type ManifestOp } from './manifest';
+import { sealEntry, type Cipher } from './cipher';
 import type { Entry, Tier } from './types';
 
 export type NewEntry = Omit<Entry, 'seq' | 'contentHash'>;
@@ -32,10 +33,19 @@ export interface MemoryWriter {
 
 const isLogTier = (t: Tier): boolean => t === 'episode' || t === 'trace';
 
-export function createMemoryWriter(opts: { dir: string }): MemoryWriter {
-  const { dir } = opts;
+export function createMemoryWriter(opts: { dir: string; cipher?: Cipher }): MemoryWriter {
+  const { dir, cipher } = opts;
   let seqCounter: number | null = null;
   let tail: Promise<unknown> = Promise.resolve();
+
+  // Stamp the keyed (HMAC) fingerprint when encrypting, else the plaintext SHA-256. Computed over the
+  // PLAINTEXT canonical (before sealing), so it's stable regardless of encryption / key rotation.
+  function fingerprint(plain: Entry): string {
+    return cipher ? cipher.fingerprint(canonicalContent(plain)) : computeContentHash(plain);
+  }
+  // Seal content for at-rest storage (no-op when encryption is off). Must run AFTER seq is assigned
+  // (seq is bound into the AAD).
+  const seal = (e: Entry): Entry => (cipher ? sealEntry(e, cipher) : e);
 
   // Serialize every write through one chain (runs after the prior settles, success or failure).
   function run<T>(fn: () => Promise<T>): Promise<T> {
@@ -60,25 +70,27 @@ export function createMemoryWriter(opts: { dir: string }): MemoryWriter {
       }
       return run(async () => {
         const seq = await allocSeq();
-        const contentHash = computeContentHash({ ...entry, seq } as Entry);
-        const e: Entry = { ...entry, seq, contentHash };
-        // 1) durable content first
+        // Hash over PLAINTEXT, then seal (seq is assigned first — it's bound into the seal's AAD).
+        const plain: Entry = { ...entry, seq, contentHash: fingerprint({ ...entry, seq } as Entry) };
+        const e: Entry = seal(plain);
+        // 1) durable content first (SEALED at rest)
         if (isLogTier(e.tier)) await appendEpisode(dir, e);
         else await writeEntryFile(dir, e);
         // 2) then the manifest op (the durability authority records the intent + order)
         const op: ManifestOp = {
-          seq, op: 'put', id: e.id, tier: e.tier, ownerId: e.ownerId, contentHash, ts: e.createdAt,
+          seq, op: 'put', id: e.id, tier: e.tier, ownerId: e.ownerId, contentHash: e.contentHash, ts: e.createdAt,
         };
         await appendOp(dir, op);
-        return e;
+        return e; // SEALED — the caller (memoryStore) opens it for the API / embedding
       });
     },
 
     commitReplaceFact(fresh: NewEntry, supersedeIds: string[]): Promise<{ fresh: Entry; superseded: Entry[] }> {
       return run(async () => {
         const seq = await allocSeq();
-        const freshEntry: Entry = { ...fresh, seq, contentHash: computeContentHash({ ...fresh, seq } as Entry) };
-        // 1) WAL: append the compound op FIRST (carries fresh content + prior ids) — the commit point.
+        // Hash over PLAINTEXT, then seal — the WAL op.entry + fresh file are SEALED at rest.
+        const freshEntry: Entry = seal({ ...fresh, seq, contentHash: fingerprint({ ...fresh, seq } as Entry) });
+        // 1) WAL: append the compound op FIRST (carries sealed fresh content + prior ids) — the commit point.
         await appendOp(dir, {
           seq, op: 'replace_fact', id: freshEntry.id, tier: 'fact', ownerId: freshEntry.ownerId,
           contentHash: freshEntry.contentHash, ts: freshEntry.createdAt, entry: freshEntry, supersedeIds,

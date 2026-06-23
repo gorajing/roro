@@ -10,10 +10,13 @@
 
 import { join } from 'node:path';
 import { createMemory2Adapter, type Memory2Adapter } from './adapter';
+import { loadOrCreateCipher } from './keyManager';
+import { buildSafeStorageWrapper, type SafeStorageLike } from './safeStorageWrapper';
 import { resolveOllamaEmbedDim } from '../brain/ollama';
+import type { Cipher } from './cipher';
 import type { RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch } from '../shared/memory';
 
-declare const process: { env: Record<string, string | undefined>; cwd(): string };
+declare const process: { env: Record<string, string | undefined>; cwd(): string; platform: string };
 
 // The brain's embedder determines the vector space + dimension (local nomic-embed-text → 768, or
 // OLLAMA_EMBED_DIM when overriding; the Nebius escape hatch → 1536). Shares brain/ollama's resolver so
@@ -67,18 +70,40 @@ async function embedText(text: string): Promise<number[]> {
   return assertEmbedding(await (await loadBrainEmbed())(text));
 }
 
-let adapterPromise: Promise<Memory2Adapter> | null = null;
-function getAdapter(): Promise<Memory2Adapter> {
-  if (!adapterPromise) {
-    adapterPromise = createMemory2Adapter({
-      dir: resolveDataDir(),
-      embed: embedText,
-      dim: embeddingDim(),
-      embedModel: embedModel(),
-    });
-  }
-  return adapterPromise;
+/** Load the at-rest cipher (encrypt-by-default): wrap the per-store DEK with Electron safeStorage. The
+ *  electron import is DYNAMIC so non-Electron contexts (vite-node smoke) don't force-load it; in the real
+ *  app this runs in the main process. Fails loud if the OS keychain is unavailable (keyManager). */
+async function loadCipher(dir: string): Promise<Cipher> {
+  const { safeStorage } = (await import('electron')) as unknown as { safeStorage: SafeStorageLike };
+  const wrapper = buildSafeStorageWrapper(safeStorage, process.platform);
+  return loadOrCreateCipher({ dir, wrapper });
 }
+
+/** Memoize an async build, but CLEAR the cache on rejection so a transient failure can be retried.
+ *  A caching-the-rejection singleton would brick memory if the first call hit a not-yet-ready OS keychain
+ *  (safeStorage) — and siblings.loadMemory is written to re-attempt failed loads, which this preserves. */
+export function lazySingleton<T>(factory: () => Promise<T>): () => Promise<T> {
+  let pending: Promise<T> | null = null;
+  return () => {
+    if (!pending) {
+      const p = factory();
+      pending = p;
+      p.catch(() => { if (pending === p) pending = null; });
+    }
+    return pending;
+  };
+}
+
+const getAdapter = lazySingleton<Memory2Adapter>(async () => {
+  const dir = resolveDataDir();
+  return createMemory2Adapter({
+    dir,
+    embed: embedText,
+    dim: embeddingDim(),
+    embedModel: embedModel(),
+    cipher: await loadCipher(dir), // encrypt-at-rest by default
+  });
+});
 
 export async function remember(input: RememberInput): Promise<MemoryRow> {
   return (await getAdapter()).remember(input);
