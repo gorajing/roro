@@ -72,9 +72,16 @@ native. Conclusion: **Path A is viable.**
   is barge-in-ready (never closes the shared AudioContext). **No-GPL license firewall** (lockfile ban +
   bundle scan + positive control). ORT wasm reuses `public/ort/` (same transformers 1.22 — no skew). Weights
   download-from-HF (offline-staging is a follow-up). Activate: `RORO_TTS_VOICE=1 npm start`.
-- **Phase 4** 🧪/🎧 — Audio-level barge-in: talk over the cat → the engine halts its own TTS.
-- **Phase 5** 🧪/🎧 — Voice packs: injectable Kokoro voice id; free `af_heart` + paid voice bundles (the
-  cosmetics bridge).
+- **Phase 4** ✅ 🧪/🎧 — Audio-level barge-in: the VAD's `onSpeechStart` halts the cat's in-flight TTS
+  (`speaker.stop()`), gated like the ear-perk (`!muted`); self-barge-in mitigated by mic `echoCancellation`.
+- **Phase 5** ✅ 🧪/🎧 — Voice packs: a catalog of real Kokoro voices with free/paid tier metadata, a total
+  fail-safe (`resolveVoiceId` → `af_heart`), runtime-switchable (`__roroVoice.setVoice`, read per-utterance).
+  Free `af_heart` + a paid bundle — the cosmetics bridge; entitlement gating is the future store's seam.
 
-**Roadmap fit:** voice is the **last local substrate** (brain ✓ Ollama, memory ✓ rebuilt) → Roro becomes
-fully local-first, $0-idle, end-to-end → then the cosmetics phase, which Phase 5 opens.
+**Roadmap fit:** voice was the **last local substrate** (brain ✓ Ollama, memory ✓ rebuilt, voice ✓ Phases
+0–5) → Roro is now fully local-first, $0-idle, end-to-end on-device voice. Phase 5 opens the cosmetics phase
+(voice packs are the first monetizable cosmetic); the next frontier is the cosmetics store + entitlement.
+
+**Status: COMPLETE.** PRs #35 (P0) · #36 (P1) · #37 (P2) · #38 (P3) · #39 (P4) · #40 (P5), all merged to
+`main`. Cross-cutting follow-ups (not blocking): offline weight-staging for whisper + Kokoro; hardware smokes
+for the live audio paths (self-barge-in, AEC); the cosmetics store + entitlement gating.
