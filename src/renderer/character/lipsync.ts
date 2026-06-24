@@ -1,6 +1,6 @@
 // src/renderer/character/lipsync.ts — amplitude-driven mouth movement.
 //
-// Feed setAmplitude() from Vapi's volume-level (0..1) while the assistant TTS
+// Feed setAmplitude() from the on-device TTS amplitude (0..1) while the assistant
 // speaks. A ticker registered at UPDATE_PRIORITY.LOW runs AFTER the model's own
 // per-frame update (Live2D auto-updates at HIGH), so our ParamMouthOpenY write
 // isn't overwritten by the idle/talking motion. For the placeholder we drive its
@@ -29,7 +29,7 @@ export class AmplitudeLipSync {
 
   constructor(private avatar: Avatar) {}
 
-  /** Latest amplitude from Vapi volume-level (clamped 0..1). */
+  /** Latest amplitude from the on-device TTS (clamped 0..1). */
   setAmplitude(a: number): void {
     this.target = Math.max(0, Math.min(1, a));
   }

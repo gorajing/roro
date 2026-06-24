@@ -29,8 +29,8 @@ export interface ActivityCue {
  *
  * - setState(s): reflect agent activity via the 6 canonical AvatarStates
  *   (idle/listening/thinking/working/done/error). Idempotent.
- * - setMouthOpen(v): live amplitude lip-sync, 0..1, driven by Vapi volume-level
- *   while the assistant TTS speaks. Independent of setState.
+ * - setMouthOpen(v): live amplitude lip-sync, 0..1, driven by the on-device TTS
+ *   amplitude while the assistant speaks. Independent of setState.
  */
 export interface CharacterDriver {
   setState(s: AvatarState): void;
@@ -40,7 +40,7 @@ export interface CharacterDriver {
   readonly state: AvatarState | null;
   /**
    * Optional: gate the "talking" body animation on/off. The 6 canonical states
-   * have no 'talking' member, so assistant-speech boundaries (Vapi
+   * have no 'talking' member, so assistant-speech boundaries (on-device TTS
    * speech-start/speech-end) toggle this instead of inventing a 7th state.
    * No-op for the placeholder beyond a visual cue.
    */

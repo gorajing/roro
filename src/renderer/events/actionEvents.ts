@@ -22,7 +22,7 @@ export interface SubscribeOptions {
    * Optional captions sink. When present, the brain's narration ('message'
    * events) and the agent's final summary ('run.completed' finalText) are shown
    * as assistant caption lines — this is what makes the text-input turn readable
-   * on screen without a Vapi voice call.
+   * on screen without any voice output.
    */
   captions?: CaptionSink;
 }
@@ -109,7 +109,7 @@ export function subscribeActionEvents(opts: SubscribeOptions): () => void {
         if (activity) character.setActivity(activity);
         timeline.append(e);
         // Surface narration + final summary as assistant caption lines so the
-        // text-input turn is legible without Vapi TTS.
+        // text-input turn is legible without any voice output.
         if (captions) {
           if (e.kind === 'message' && e.text) {
             reasoningBuf = ''; // turn's spoken line has landed; end the live-reasoning view

@@ -64,20 +64,24 @@ needs **no model files**. It renders out of the box.
 > model into `public/live2d/` and point `modelUrl` at it (see `public/live2d/README.md`).
 > The model-agnostic `CharacterDriver` facade drives either one.
 
-## 5. Voice (optional today: Vapi; local voice is Phase D)
+## 5. Voice (optional, fully on-device — no keys)
 
-Voice currently uses Vapi (hosted). The local-voice control core + `VoiceBackend` seam
-are built (Phase D); the on-device whisper.cpp/Silero/Kokoro adapter + Voice Mode UI land
-on a machine with the native binaries + a mic. For the Vapi path, inject renderer config
-(in `index.html` before the bundle, or via preload):
+Voice runs entirely on-device — Silero VAD (ear-perk), whisper STT (transcribe), and
+Kokoro TTS (speak) — behind dev flags, all default off. There is **no cloud and no key**.
+Each flag composes the next stage of the pipeline:
 
-```js
-window.RORO_CFG = {
-  vapiPublicKey: '...', customLlmUrl: '<ngrok-https-root>',
-  voiceId: '<11labs-id>',
-  // modelUrl is OPTIONAL — only if you added a Live2D model (§4).
-};
+```sh
+RORO_VAD_VOICE=1 npm start    # ears only — the cat perks at speech (≤80ms); no STT/TTS
+RORO_STT_VOICE=1 npm start    # + whisper transcribes your speech -> turnRun (mouth-not-brain)
+RORO_TTS_VOICE=1 npm start    # + Kokoro speaks the assistant's reply on-device, with lip-sync
+RORO_FAKE_VOICE=1 npm start   # scripted engine (no mic/models): in DevTools, __roroVoice.utter("…")
+RORO_VOICE_PACK=bm_george npm start   # optional Kokoro voice-pack id (default af_heart)
 ```
+
+The committed transcript funnels through the **same** orchestrator as the typed path
+(turnRun -> recall -> decide -> execute -> narrate -> remember) — voice is a mouth, never a
+second brain. On-device model weights are fetched on first use today; offline weight-staging
+and the Voice Mode UI land next.
 
 ## 6. macOS permissions
 

@@ -84,8 +84,8 @@ class Live2DCharacterDriver implements CharacterDriver {
     if (!model || typeof model.speak !== 'function') {
       // No model (placeholder): can't lip-sync a clip; just fire onFinish so
       // callers' state transitions still proceed. (Audio playback itself is the
-      // Voice layer's concern via Vapi; this path is only for the model.speak
-      // lip-sync integration.)
+      // voice layer's concern via the on-device TTS; this path is only for the
+      // model.speak lip-sync integration.)
       onFinish?.();
       return;
     }

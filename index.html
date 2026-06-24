@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob: https://*.daily.co; worker-src 'self' blob: https://*.daily.co; child-src 'self' blob: https://*.daily.co; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob: https:; connect-src 'self' http://127.0.0.1:* https://*.daily.co wss://*.daily.co https://api.vapi.ai https://*.vapi.ai; font-src 'self' data:;" />
+      content="default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:*; font-src 'self' data:;" />
     <title>Roro</title>
 
     <!--
@@ -28,8 +28,8 @@
             <b>Local</b> · PGlite + pgvector
           </div>
           <div id="controls">
-            <button id="start-btn" type="button">Start call</button>
-            <button id="stop-btn" type="button" disabled>End call</button>
+            <!-- Disabled until the on-device voice path actually mounts (there is no mic to mute on the
+                 default typed-only launch); bootstrap.ts enables it when a voice engine is summoned. -->
             <button id="mute-btn" type="button" disabled>Mute</button>
           </div>
         </header>
@@ -42,9 +42,9 @@
         </section>
 
         <!--
-          Text-input fallback. Drives the SAME orchestrator pipeline as voice
+          Text-input path. Drives the SAME orchestrator pipeline as the on-device voice
           (window.companion.turnRun -> recall[memory2/PGlite] -> decide[local Ollama] ->
-          executor[Codex]) but needs no microphone and no Vapi call, so it is the
+          executor[Codex]) but needs no microphone, so it is the default surface and the
           reliable demo path when the Electron mic misbehaves. See bootstrap.ts.
         -->
         <form id="prompt-form" autocomplete="off">

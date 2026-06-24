@@ -57,7 +57,7 @@ export interface Placeholder {
   setActivity(cue: ActivityCue | null): void;
   /** 0..1 mouth openness for lip-sync feedback. */
   setMouthOpen(v: number): void;
-  /** Assistant speech boundary from Vapi. */
+  /** Assistant speech boundary from the on-device TTS. */
   setTalking(talking: boolean): void;
   /** Presentation-mode mic input gate. */
   setMuted(muted: boolean): void;

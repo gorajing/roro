@@ -14,7 +14,7 @@ describe('isSafeNavigation', () => {
   it('blocks cross-origin navigation from the dev server', () => {
     expect(isSafeNavigation('https://evil.example/', DEV)).toBe(false);
     expect(isSafeNavigation('http://localhost:9999/', DEV)).toBe(false);
-    expect(isSafeNavigation('https://api.vapi.ai/', DEV)).toBe(false);
+    expect(isSafeNavigation('https://api.external.example/', DEV)).toBe(false);
   });
 
   it('allows file:// navigation within the packaged app dir', () => {
@@ -28,7 +28,7 @@ describe('isSafeNavigation', () => {
   });
 
   it('blocks remote schemes, javascript:, and garbage', () => {
-    expect(isSafeNavigation('https://meet.daily.co/room', FILE)).toBe(false);
+    expect(isSafeNavigation('https://meet.remote.example/room', FILE)).toBe(false);
     expect(isSafeNavigation('javascript:alert(1)', DEV)).toBe(false);
     expect(isSafeNavigation('data:text/html,<script>1</script>', DEV)).toBe(false);
     expect(isSafeNavigation('not a url', DEV)).toBe(false);
