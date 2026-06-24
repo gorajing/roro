@@ -65,8 +65,13 @@ native. Conclusion: **Path A is viable.**
   — DISTINCT from Silero's `public/vad/` (transformers ORT 1.22 vs vad-web 1.27, non-interchangeable). Weights
   download-from-HF + Cache-API (credentialless permits it). Activate: `RORO_STT_VOICE=1 npm start`. *(WASM-vs-
   WebGPU profiling gate + small.en WebGPU upgrade remain a follow-up.)*
-- **Phase 3** 🧪/🎧 — TTS + lipsync: Kokoro ONNX + non-GPL G2P (eSpeak excluded, CI-asserted), streamed,
-  `AnalyserNode` amplitude → mouth (one mouth driver per utterance).
+- **Phase 3** ✅ 🧪/🎧 — TTS + lipsync: Kokoro-82M **raw-ONNX** via `@huggingface/transformers` (NOT
+  kokoro-js — it statically bundles GPLv3 eSpeak). G2P via **`phonemize`** (MIT, pure-JS) + the load-bearing
+  `ɫ→l, ɝ→ɚ` normalizer (those two symbols aren't in Kokoro's 115-char vocab; it silently drops them).
+  Sentence-streamed; `AnalyserNode` RMS → the driver's `AmplitudeLipSync` (one utterance at a time); stop()
+  is barge-in-ready (never closes the shared AudioContext). **No-GPL license firewall** (lockfile ban +
+  bundle scan + positive control). ORT wasm reuses `public/ort/` (same transformers 1.22 — no skew). Weights
+  download-from-HF (offline-staging is a follow-up). Activate: `RORO_TTS_VOICE=1 npm start`.
 - **Phase 4** 🧪/🎧 — Audio-level barge-in: talk over the cat → the engine halts its own TTS.
 - **Phase 5** 🧪/🎧 — Voice packs: injectable Kokoro voice id; free `af_heart` + paid voice bundles (the
   cosmetics bridge).

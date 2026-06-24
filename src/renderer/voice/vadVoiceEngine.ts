@@ -13,6 +13,7 @@
 
 import type { NativeVoiceEngine } from './voiceLocalAdapter';
 import type { VoiceBackendEvents } from './voiceBackend';
+import type { KokoroSpeaker } from './kokoroVoiceEngine';
 
 export interface VadCallbacks {
   /** Speech rising edge — the ear-perk trigger. */
@@ -43,7 +44,11 @@ export type Transcribe = (
   opts?: { onPartial?: (text: string) => void },
 ) => Promise<string>;
 
-export function createVadVoiceEngine(createVad: CreateVad, transcribe?: Transcribe): NativeVoiceEngine {
+export function createVadVoiceEngine(
+  createVad: CreateVad,
+  transcribe?: Transcribe,
+  speaker?: KokoroSpeaker, // the MOUTH (Phase 3): speak() delegates here; stop()/barge-in halts it
+): NativeVoiceEngine {
   let vad: VadSource | undefined;
   let emit: VoiceBackendEvents | undefined;
   let muted = false;
@@ -110,13 +115,14 @@ export function createVadVoiceEngine(createVad: CreateVad, transcribe?: Transcri
     async stop(): Promise<void> {
       generation++; // invalidate any in-flight start() + transcription (decoding finals dropped by gen check)
       capturing = undefined; // abandon any in-progress speech capture
+      speaker?.stop(); // halt any in-flight TTS too (the cat stops talking when the engine tears down)
       const v = vad;
       vad = undefined;
       emit = undefined; // detach first so any in-flight callback is dropped
       await v?.destroy();
     },
-    async speak(): Promise<void> {
-      /* Phase 3: Kokoro TTS */
+    async speak(text: string): Promise<void> {
+      await speaker?.speak(text); // the MOUTH: Kokoro TTS + lip-sync (no-op until a speaker is injected)
     },
     setMuted(m: boolean): void {
       muted = m;

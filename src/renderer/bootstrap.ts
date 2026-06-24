@@ -22,6 +22,9 @@ import { createVoice } from './voice';
 import { mountLocalVoiceMode } from './voice/mountLocalVoiceMode';
 import { createFakeVoiceEngine } from './voice/fakeVoiceEngine';
 import { createVadVoiceEngine } from './voice/vadVoiceEngine';
+import type { NativeVoiceEngine } from './voice/voiceLocalAdapter';
+import type { KokoroSpeaker } from './voice/kokoroVoiceEngine';
+import type { CharacterDriver } from './character/types';
 import type { VapiToolCall } from './voice/messages';
 
 function el<T extends HTMLElement>(id: string): T | null {
@@ -31,6 +34,31 @@ function el<T extends HTMLElement>(id: string): T | null {
 function setStatus(text: string): void {
   const s = el('status');
   if (s) s.textContent = text;
+}
+
+/**
+ * Build the cat's MOUTH (Phase 3): the Kokoro speaker driving lip-sync through the driver. Dynamically
+ * imports the Kokoro glue (transformers.js + model) so it only loads when ttsVoice is on. A dedicated 24kHz
+ * AudioContext matches Kokoro's rate (no resample); it's resumed on each speak (the cat replies after the
+ * user has interacted, so the autoplay gesture is satisfied). The LipSyncDriver adapts the driver: amplitude
+ * → setMouthOpen (its always-on AmplitudeLipSync), and start/stop → setTalking (which rests the mouth to 0).
+ */
+async function buildKokoroSpeaker(driver: Pick<CharacterDriver, 'setTalking' | 'setMouthOpen'>): Promise<KokoroSpeaker> {
+  const { createKokoroVoiceEngine } = await import('./voice/kokoroVoiceEngine');
+  const { synthStream } = await import('./voice/kokoroSynthesize');
+  const ctx = new AudioContext({ sampleRate: 24000 });
+  return createKokoroVoiceEngine({
+    synthesize: (text, opts) => {
+      void ctx.resume(); // idempotent; ensure the context is running before playback
+      return synthStream(text, opts);
+    },
+    audio: ctx,
+    lipSync: {
+      start: () => driver.setTalking(true),
+      stop: () => driver.setTalking(false),
+      setAmplitude: (v) => driver.setMouthOpen(v),
+    },
+  });
 }
 
 export async function bootstrap(): Promise<void> {
@@ -283,28 +311,31 @@ export async function bootstrap(): Promise<void> {
 
   // The ON-DEVICE voice path (mouth-not-brain), behind dev flags until the full whisper/Silero/Kokoro
   // engine lands. Default (all flags off) leaves the Vapi facade unchanged.
-  if (config.sttVoice || config.vadVoice || config.fakeVoice) {
+  if (config.sttVoice || config.vadVoice || config.ttsVoice || config.fakeVoice) {
     const c = getCompanion();
-    // sttVoice → REAL Silero VAD + on-device whisper STT (Phase 2: ear-perk + committed transcript);
-    // vadVoice → REAL Silero VAD only (Phase 1: ear-perk, no STT); else fakeVoice → a scripted engine
-    // (no mic/models). The Silero + whisper glue is DYNAMICALLY imported here only, so onnxruntime-web/
-    // WASM (and the whisper model load) never touch non-voice users or the fake path.
-    const useRealVad = config.sttVoice || config.vadVoice;
+    // The on-device engine is composed from ears + transcript + mouth, each behind its own flag:
+    //   vadVoice → REAL Silero VAD (Phase 1: ear-perk); sttVoice → + whisper STT (Phase 2: transcript);
+    //   ttsVoice → + Kokoro TTS (Phase 3: the mouth). Any real flag mounts the VAD. else fakeVoice → a
+    //   scripted engine. All glue is DYNAMICALLY imported here only, so its WASM + model loads never touch
+    //   non-voice users or the fake path.
+    const useRealVad = config.sttVoice || config.vadVoice || config.ttsVoice;
     const fakeEngine = useRealVad ? undefined : createFakeVoiceEngine();
-    const engine = config.sttVoice
-      ? createVadVoiceEngine(
-          (await import('./voice/sileroVad')).createSileroVad,
-          // createWhisperTranscribe() returns synchronously and warms the ~77MB base.en model in the
-          // BACKGROUND (the cat's ears are live immediately; only the first transcript awaits any remaining
-          // load). progress_callback → status so a cold first run shows download %, not a frozen cat.
-          (await import('./voice/whisperTranscribe')).createWhisperTranscribe((p) => {
+    let engine: NativeVoiceEngine;
+    if (useRealVad) {
+      const { createSileroVad } = await import('./voice/sileroVad');
+      // createWhisperTranscribe() returns synchronously and warms the ~77MB base.en model in the BACKGROUND
+      // (the ears are live immediately; only the first transcript awaits any remaining load). progress → status.
+      const transcribe = config.sttVoice
+        ? (await import('./voice/whisperTranscribe')).createWhisperTranscribe((p) => {
             if (p.status === 'progress') setStatus(`Loading speech model… ${Math.round(p.progress)}%`);
-            else if (p.status === 'ready') setStatus("Local voice (VAD+STT) ready — speak; the cat transcribes on-device.");
-          }),
-        )
-      : config.vadVoice
-        ? createVadVoiceEngine((await import('./voice/sileroVad')).createSileroVad)
-        : fakeEngine!;
+            else if (p.status === 'ready') setStatus('Local voice ready — speak; the cat transcribes on-device.');
+          })
+        : undefined;
+      const speaker = config.ttsVoice ? await buildKokoroSpeaker(driver) : undefined;
+      engine = createVadVoiceEngine(createSileroVad, transcribe, speaker);
+    } else {
+      engine = fakeEngine!;
+    }
     const localVoice = mountLocalVoiceMode({
       engine,
       detect: () => true,
@@ -328,8 +359,10 @@ export async function bootstrap(): Promise<void> {
       fakeEngine
         ? 'Fake voice mode — in DevTools call __roroVoice.utter("add a logout route")'
         : config.sttVoice
-          ? "Local voice (VAD+STT) — speak; the cat's ears perk (≤80ms), then it transcribes on-device."
-          : "Local voice (VAD) — speak and the cat's ears perk (≤80ms). No STT/TTS yet.",
+          ? `Local voice (VAD+STT${config.ttsVoice ? '+TTS' : ''}) — speak; the cat's ears perk (≤80ms), then it transcribes${config.ttsVoice ? ' and replies' : ''} on-device.`
+          : config.ttsVoice
+            ? "Local voice (VAD+TTS) — the cat's ears perk (≤80ms) and it speaks its replies on-device."
+            : "Local voice (VAD) — speak and the cat's ears perk (≤80ms). No STT/TTS yet.",
     );
     (window as unknown as { __roroVoice?: unknown }).__roroVoice = {
       state: () => localVoice.mode.state,

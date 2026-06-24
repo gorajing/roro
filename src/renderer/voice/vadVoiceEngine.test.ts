@@ -66,9 +66,22 @@ describe('createVadVoiceEngine — VAD-only engine (the ear-perk + mic lifecycle
     expect(ev.speechStart).toBe(0);
   });
 
-  it('speak() is a no-op in Phase 1 (TTS is Phase 3)', async () => {
+  it('speak() is a no-op when no speaker is injected', async () => {
     const engine = createVadVoiceEngine(fakeVad().create);
     await expect(engine.speak('hi')).resolves.toBeUndefined();
+  });
+
+  it('delegates speak() to the injected speaker and stop() halts it (mouth wiring, barge-in-ready)', async () => {
+    const { create } = fakeVad();
+    const spoken: string[] = [];
+    let stopped = 0;
+    const speaker = { speak: async (t: string) => { spoken.push(t); }, stop: () => { stopped++; } };
+    const engine = createVadVoiceEngine(create, undefined, speaker);
+    await engine.start(sink().events);
+    await engine.speak('on it');
+    expect(spoken).toEqual(['on it']); // mouth: message → speak
+    await engine.stop();
+    expect(stopped).toBe(1); // teardown halts any in-flight speech
   });
 
   it('stop() DURING a slow createVad() discards the late VAD — no mic opened, no ear-perk', async () => {
@@ -240,7 +253,7 @@ describe('createVadVoiceEngine — STT over the utterance (Phase 2)', () => {
   });
 
   it('a transcription failure is contained (drops the utterance, keeps listening) — no unhandled rejection', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const { f, create } = fakeVad();
     const transcribe: Transcribe = async () => { throw new Error('whisper model exploded'); };
     const engine = createVadVoiceEngine(create, transcribe);
