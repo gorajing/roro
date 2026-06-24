@@ -1,5 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { buildFactPrompt, parseFactResponse } from './extractFact';
+import { buildFactPrompt, parseFactResponse, isPlausiblePreference } from './extractFact';
+
+describe('isPlausiblePreference — gate extraction toward null (the 3B model cannot)', () => {
+  const inp = (transcript: string) => ({ transcript, narration: 'ok', outcome: 'answered' as const });
+
+  it('passes turns that read like a stated preference / convention', () => {
+    for (const t of ['from now on always use pnpm', 'I prefer tabs over spaces', 'our tests always live in tests', 'by default use 2-space indent', 'we use vitest in this repo']) {
+      expect(isPlausiblePreference(inp(t)), t).toBe(true);
+    }
+  });
+
+  it('BLOCKS one-off tasks / chitchat / questions (no preference language → no model call)', () => {
+    for (const t of ['add a logout route', 'fix the typo on line 5', 'thanks', 'run the tests', 'what time is it', 'deploy to staging', 'create a new branch']) {
+      expect(isPlausiblePreference(inp(t)), t).toBe(false);
+    }
+  });
+
+  it('is CONSERVATIVE: a marker-less preference is missed (favours silence over a wrong fact)', () => {
+    // documents the known recall gap — "a missed fact is harmless; a wrong fact poisons the profile"
+    expect(isPlausiblePreference(inp('use vitest, not jest'))).toBe(false);
+  });
+});
 
 describe('parseFactResponse (null-when-unsure)', () => {
   it('returns a candidate for a well-formed fact', () => {

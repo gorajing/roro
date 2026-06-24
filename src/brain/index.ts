@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 
 import type { Command, Decision, DecideInput } from '../shared/brain';
-import { buildFactPrompt, parseFactResponse, FACT_SYSTEM_PROMPT, type FactExtractInput, type FactCandidate } from './extractFact';
+import { buildFactPrompt, parseFactResponse, isPlausiblePreference, FACT_SYSTEM_PROMPT, type FactExtractInput, type FactCandidate } from './extractFact';
 import { ollamaChat, ollamaEmbed, ollamaTags, hasModel, resolveOllamaEmbedDim, assertEmbedDimMatch } from './ollama';
 
 declare const process: { env: Record<string, string | undefined> };
@@ -235,6 +235,11 @@ export async function decide(input: DecideInput, options: DecideOptions = {}): P
  * Returns at most one durable fact, or null when there is nothing worth remembering.
  */
 export async function extractFact(input: FactExtractInput): Promise<FactCandidate | null> {
+  // Gate FIRST: the local model can't be trusted to output null, so only consult it when the transcript
+  // reads like a stated preference. Most turns are one-off tasks/chitchat → return null without a model call
+  // (also saves the call). This is what keeps the memory profile from filling with invented facts.
+  if (!isPlausiblePreference(input)) return null;
+
   const models = getModelIds();
   const userPrompt = buildFactPrompt(input);
 
