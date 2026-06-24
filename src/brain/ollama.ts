@@ -13,6 +13,14 @@ export function ollamaHost(): string {
   return process.env.OLLAMA_HOST || DEFAULT_HOST;
 }
 
+/** Per-call timeout for Ollama fetches. A wedged daemon (TCP-connected but never responding) would otherwise
+ *  hang the whole turn forever; this bounds it. Generous by default (covers a slow first token / model load)
+ *  and overridable via OLLAMA_TIMEOUT_MS. */
+function ollamaTimeoutMs(): number {
+  const v = Number(process.env.OLLAMA_TIMEOUT_MS);
+  return Number.isFinite(v) && v > 0 ? v : 120_000;
+}
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -183,9 +191,9 @@ export async function ollamaEmbed(model: string, input: string | string[]): Prom
 export async function ollamaTags(): Promise<string[]> {
   let res: Response;
   try {
-    res = await fetch(`${ollamaHost()}/api/tags`);
+    res = await fetch(`${ollamaHost()}/api/tags`, { signal: AbortSignal.timeout(ollamaTimeoutMs()) });
   } catch (err) {
-    throw new Error(`Ollama daemon unreachable at ${ollamaHost()} (${(err as Error).message}). Start it with: ollama serve`);
+    throw new Error(ollamaFetchError(err));
   }
   if (!res.ok) throw new Error(`Ollama tags failed ${res.status}`);
   const j = (await res.json()) as { models?: Array<{ name?: unknown }> };
@@ -206,11 +214,19 @@ async function fetchOllama(path: string, body: unknown): Promise<Response> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(ollamaTimeoutMs()), // a wedged daemon must fail, not hang the turn
     });
   } catch (err) {
-    // Connection refused / DNS / network: the daemon almost certainly isn't running.
-    throw new Error(
-      `Ollama daemon unreachable at ${ollamaHost()} (${(err as Error).message}). Start it with: ollama serve`,
-    );
+    throw new Error(ollamaFetchError(err));
   }
+}
+
+/** Distinguish a TIMEOUT (daemon wedged / model loading) from an UNREACHABLE daemon — both are actionable,
+ *  but the remedies differ. AbortSignal.timeout() rejects with a TimeoutError. */
+function ollamaFetchError(err: unknown): string {
+  if ((err as Error)?.name === 'TimeoutError') {
+    return `Ollama timed out after ${ollamaTimeoutMs()}ms at ${ollamaHost()} (the daemon may be wedged or a model is still loading). Raise OLLAMA_TIMEOUT_MS, or restart it: ollama serve`;
+  }
+  // Connection refused / DNS / network: the daemon almost certainly isn't running.
+  return `Ollama daemon unreachable at ${ollamaHost()} (${(err as Error).message}). Start it with: ollama serve`;
 }

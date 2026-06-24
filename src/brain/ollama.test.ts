@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   buildChatBody,
   parseChatLine,
@@ -7,6 +7,8 @@ import {
   hasModel,
   resolveOllamaEmbedDim,
   assertEmbedDimMatch,
+  ollamaChat,
+  ollamaTags,
 } from './ollama';
 
 describe('ollama pure helpers', () => {
@@ -77,5 +79,31 @@ describe('ollama embedding dimension', () => {
 
   it('assertEmbedDimMatch fails loud with the OLLAMA_EMBED_DIM remedy on a mismatch', () => {
     expect(() => assertEmbedDimMatch('mxbai-embed-large', 1024, 768)).toThrow(/OLLAMA_EMBED_DIM=1024/);
+  });
+});
+
+describe('ollama fetch timeout (a wedged daemon must fail, not hang)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.OLLAMA_TIMEOUT_MS;
+  });
+
+  // A fetch that NEVER resolves but honors AbortSignal — simulating a daemon that connected then wedged.
+  const hangingFetch = (_url: string, opts?: { signal?: AbortSignal }): Promise<Response> =>
+    new Promise((_resolve, reject) => {
+      const signal = opts?.signal;
+      signal?.addEventListener('abort', () => reject(signal.reason));
+    });
+
+  it('ollamaChat rejects with a TIMEOUT error (not an infinite hang) when the daemon wedges', async () => {
+    process.env.OLLAMA_TIMEOUT_MS = '20';
+    vi.stubGlobal('fetch', hangingFetch);
+    await expect(ollamaChat({ model: 'm', user: 'hi', stream: false })).rejects.toThrow(/timed out/i);
+  });
+
+  it('ollamaTags rejects with a TIMEOUT error when /api/tags wedges', async () => {
+    process.env.OLLAMA_TIMEOUT_MS = '20';
+    vi.stubGlobal('fetch', hangingFetch);
+    await expect(ollamaTags()).rejects.toThrow(/timed out/i);
   });
 });

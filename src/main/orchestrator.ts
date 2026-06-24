@@ -28,6 +28,7 @@ import { extractAndStoreFact } from './factStore';
 import { classifyDestructive } from './destructive';
 import { requestConfirm, resolveConfirm } from './confirmGate';
 import { isCleanTree } from './gitTree';
+import { resolveWorkdir } from './workdir';
 import type { FactExtractInput } from '../brain/extractFact';
 
 const RECALL_K = 5;
@@ -53,11 +54,6 @@ let lastTurnId: string | null = null;
 /** Held synchronously across the clean-tree-check → dispatch critical section so that section can't
  *  interleave: it guarantees a destructive run's clean-tree result is fresh at dispatch (no TOCTOU). */
 let dispatchLock = false;
-
-/** Resolve the scratch git repo the coding agents run in. */
-function workdir(): string {
-  return process.env.RORO_WORKDIR ?? process.cwd();
-}
 
 function getWindow(): BrowserWindow | null {
   return BrowserWindow.getAllWindows()[0] ?? null;
@@ -107,7 +103,7 @@ async function confirmIfDestructive(
  * — the clean-tree result is therefore fresh at dispatch (closes the TOCTOU), and only one coding
  * agent ever runs on the repo at a time. Returns false (and emits a terminal) if it can't dispatch.
  */
-async function guardedDispatch(runId: string, destructive: boolean, dispatch: () => void): Promise<boolean> {
+async function guardedDispatch(runId: string, destructive: boolean, repo: string, dispatch: () => void): Promise<boolean> {
   if (dispatchLock || activeRuns.size > 0) {
     emitNarration(runId, "I'm already working on something — Stop that first, or wait for it to finish.");
     pushRunEnd(runId);
@@ -115,7 +111,7 @@ async function guardedDispatch(runId: string, destructive: boolean, dispatch: ()
   }
   dispatchLock = true;
   try {
-    if (destructive && !(await isCleanTree(workdir()))) {
+    if (destructive && !(await isCleanTree(repo))) {
       emitNarration(runId, "Skipping that — the git tree isn't clean, so a destructive step couldn't be safely undone — commit or stash first.");
       pushRunEnd(runId);
       return false;
@@ -295,6 +291,7 @@ async function dispatchExecutor(
   sessionId: string,
   prompt: string,
   agent: AgentKind,
+  repo: string,
   factCtx?: { transcript: string; narration: string; task: string },
 ): Promise<void> {
   const controller = new AbortController();
@@ -342,7 +339,7 @@ async function dispatchExecutor(
   try {
     const executor = getExecutor(agent);
     for await (const ev of executor.run({
-      repo: workdir(),
+      repo,
       prompt,
       agent,
       signal: controller.signal,
@@ -539,6 +536,16 @@ async function actOnDecision(
     }
 
     case 'run_agent': {
+      // Choose the repo the agent will edit — FAIL LOUD if none is set, never silently touch cwd
+      // (which is the app bundle / roro's own checkout). Surfaces as a terminal run.failed, not a crash.
+      let repo: string;
+      try {
+        repo = resolveWorkdir(process.env, process.cwd());
+      } catch (err) {
+        pushEvent({ kind: 'run.failed', runId, ok: false, error: (err as Error).message, ts: Date.now() });
+        pushRunEnd(runId);
+        return;
+      }
       // Speak the narration first, then run the coding agent on args.task.
       if (decision.narration) emitNarration(runId, decision.narration);
       const task =
@@ -563,8 +570,8 @@ async function actOnDecision(
       }
       // Lock-protected single-executor dispatch (fresh clean-tree check inside; resolves at DISPATCH —
       // the action stream arrives over push channels; the AbortController registers synchronously).
-      await guardedDispatch(runId, confirm.destructive, () => {
-        void dispatchExecutor(runId, sessionId, task, agent, {
+      await guardedDispatch(runId, confirm.destructive, repo, () => {
+        void dispatchExecutor(runId, sessionId, task, agent, repo, {
           transcript,
           narration: decision.narration,
           task,
@@ -646,6 +653,15 @@ export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId
   // runTask bypasses the brain, so the destructive gate MUST run here too (or a renderer caller
   // could `rm -rf` unconfirmed). Gate then dispatch off the critical path; return {runId} now.
   void (async () => {
+    // Same fail-loud repo selection as the run_agent path — runTask bypasses the brain but still edits files.
+    let repo: string;
+    try {
+      repo = resolveWorkdir(process.env, process.cwd());
+    } catch (err) {
+      pushEvent({ kind: 'run.failed', runId, ok: false, error: (err as Error).message, ts: Date.now() });
+      pushRunEnd(runId);
+      return;
+    }
     const confirm = await confirmIfDestructive(runId, prompt);
     if (!confirm.ok) {
       emitNarration(runId, `Skipping that — ${confirm.reason ?? "it was blocked"}.`);
@@ -656,8 +672,8 @@ export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId
       pushStopped(runId);
       return;
     }
-    await guardedDispatch(runId, confirm.destructive, () => {
-      void dispatchExecutor(runId, `task_${runId}`, prompt, agent);
+    await guardedDispatch(runId, confirm.destructive, repo, () => {
+      void dispatchExecutor(runId, `task_${runId}`, prompt, agent, repo);
     });
   })();
   return { runId };

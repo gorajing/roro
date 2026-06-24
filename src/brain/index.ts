@@ -172,16 +172,32 @@ export async function decide(input: DecideInput, options: DecideOptions = {}): P
   if (brainProvider() === 'ollama') {
     // Local path: Ollama /api/chat with format:'json'. qwen streams CONTENT only (no separate
     // reasoning channel), so onReasoning never fires — the avatar still animates off content deltas.
-    const content = await ollamaChat({
-      model: models.reason,
-      system: SYSTEM_PROMPT,
-      user: userPrompt,
-      json: true,
-      temperature: 0.3,
-      stream: true,
-      onContent: options.onContent,
-    });
-    return parseDecision(content);
+    const askOllama = (user: string, stream: boolean): Promise<string> =>
+      ollamaChat({
+        model: models.reason,
+        system: SYSTEM_PROMPT,
+        user,
+        json: true,
+        temperature: stream ? 0.3 : 0,
+        stream,
+        onContent: stream ? options.onContent : undefined,
+      });
+
+    const content = await askOllama(userPrompt, true);
+    try {
+      return parseDecision(content);
+    } catch {
+      // One-shot JSON repair: the 3B model occasionally emits an unparseable/invalid decision (M1 eval).
+      // Re-ask ONCE for only the JSON object (non-streamed, deterministic) so a malformed reply self-
+      // recovers instead of becoming run.failed. Still-bad after this one repair → throws → run.failed.
+      const repaired = await askOllama(
+        `${userPrompt}\n\nYour previous reply was NOT a valid decision. Reply with ONLY the JSON object ` +
+          `{"narration": string, "command": "run_agent"|"answer"|"capture_screen"|"clarify", "args": object} ` +
+          `and nothing else.`,
+        false,
+      );
+      return parseDecision(repaired);
+    }
   }
 
   const stream = await getNebiusClient().chat.completions.create({

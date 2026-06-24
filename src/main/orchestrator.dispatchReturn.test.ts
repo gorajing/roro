@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Phase B hinge: turnRun must resolve at DISPATCH (return {runId} once the executor is handed
 // off), NOT after the whole run finishes — that's what makes Stop / preempt / voice barge-in
@@ -31,13 +31,22 @@ vi.mock('../executor', () => ({ getExecutor: () => ({ run: h.run }) }));
 import { runTurn } from './orchestrator';
 
 describe('orchestrator dispatch-return: turnRun resolves at dispatch', () => {
+  let savedAllowCwd: string | undefined;
   beforeEach(() => {
     vi.clearAllMocks();
+    // Make dispatch deterministic regardless of .env / CI: this turn must reach the executor, so opt into
+    // cwd as the repo (the run_agent path now fails loud without a chosen repo — see orchestrator.workdir.test).
+    savedAllowCwd = process.env.RORO_ALLOW_CWD;
+    process.env.RORO_ALLOW_CWD = '1';
     h.memory.recall.mockResolvedValue([]);
     h.memory.getProfile.mockResolvedValue([]);
     h.memory.remember.mockResolvedValue({ id: 'x', owner_id: 'O', session_id: 's', kind: 'observation', text: '', payload: null, superseded: false, created_at: 't' });
     h.brain.extractFact.mockResolvedValue(null);
     h.brain.decide.mockResolvedValue({ narration: 'on it', command: 'run_agent', args: { task: 'do the thing' } });
+  });
+  afterEach(() => {
+    if (savedAllowCwd === undefined) delete process.env.RORO_ALLOW_CWD;
+    else process.env.RORO_ALLOW_CWD = savedAllowCwd;
   });
 
   it('returns {runId} before the executor run reaches its terminal event', async () => {
@@ -53,6 +62,7 @@ describe('orchestrator dispatch-return: turnRun resolves at dispatch', () => {
     const { runId } = await runTurn({ transcript: 'do the thing', sessionId: 's' });
 
     expect(runId).toBeTruthy();
+    expect(h.run).toHaveBeenCalled(); // it actually reached the executor (not the new fail-loud path)
     expect(reachedTerminal).toBe(false); // resolved at dispatch, not at completion
     gate.resolve(); // unblock the background run (cleanup)
     await new Promise((r) => setImmediate(r));
