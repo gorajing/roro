@@ -12,6 +12,7 @@
 //   - Tolerant parse: skip lines not starting with '{', wrap JSON.parse in try/catch.
 //   - Filter to KNOWN message types; unknown types (hook spam, status, replay) -> null.
 import { spawn } from 'node:child_process';
+import { finalTerminalEvent } from './exitAccounting';
 import { createInterface } from 'node:readline';
 import {
   ActionEvent,
@@ -360,13 +361,20 @@ export async function* runClaude(
   // {signal} sends SIGTERM on abort; escalate to SIGKILL if the child ignores it.
   armSigkillEscalation(child, opts.signal, SIGKILL_GRACE_MS);
 
-  // Drain stderr; hook/diagnostic spam, never JSONL.
-  child.stderr?.on('data', () => { /* drain: stderr is logs, not JSONL */ });
+  // Drain stderr (hook/diagnostic spam, never JSONL) — keep a TAIL to diagnose a crash-without-a-result.
+  let stderrTail = '';
+  child.stderr?.on('data', (d) => { stderrTail = (stderrTail + String(d)).slice(-1000); });
 
   let spawnError: Error | null = null;
   child.on('error', (err) => {
     spawnError = err;
   });
+
+  // Capture the child's EXIT so a nonzero/killed termination with NO JSON terminal fails loud (c5).
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+    child.on('close', (code, signal) => resolve({ code, signal }));
+  });
+  let emittedTerminal = false;
 
   const corr = newClaudeCorrelation();
   let emittedStart = false;
@@ -414,7 +422,10 @@ export async function* runClaude(
       }
 
       const mapped = mapClaudeMessage(obj, runId, corr);
-      if (mapped) yield mapped;
+      if (mapped) {
+        if (mapped.kind === 'run.completed' || mapped.kind === 'run.failed') emittedTerminal = true;
+        yield mapped;
+      }
     }
   } catch (e) {
     yield {
@@ -439,6 +450,23 @@ export async function* runClaude(
       error: messageOf(spawnError),
       ts: Date.now(),
     };
+    return;
+  }
+
+  // The stream ended with NO terminal, not aborted, no spawn error → account for the child's EXIT (c5).
+  // A nonzero/killed exit must fail loud (never read as success). The 5s race bounds a lingering child.
+  if (!emittedTerminal) {
+    const exit = await Promise.race([
+      closed,
+      new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((r) =>
+        setTimeout(() => r({ code: null, signal: null }), 5000),
+      ),
+    ]);
+    const terminal = finalTerminalEvent(
+      { runId, bin: 'claude', emittedTerminal, aborted: Boolean(opts.signal?.aborted), spawnError: false, code: exit.code, signal: exit.signal, stderrTail },
+      Date.now(),
+    );
+    if (terminal) yield terminal;
   }
 }
 

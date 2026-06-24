@@ -11,6 +11,7 @@
 //   - Tolerant parse: skip lines not starting with '{', wrap JSON.parse in try/catch.
 //   - Unknown event/item types -> map to null (skip), never throw.
 import { spawn } from 'node:child_process';
+import { finalTerminalEvent } from './exitAccounting';
 import { createInterface } from 'node:readline';
 import {
   ActionEvent,
@@ -253,8 +254,9 @@ export async function* runCodex(
   // {signal} sends SIGTERM on abort; escalate to SIGKILL if the child ignores it.
   armSigkillEscalation(child, opts.signal, SIGKILL_GRACE_MS);
 
-  // Drain stderr; it is plain logs (skill-load errors, telemetry), NOT JSONL.
-  child.stderr?.on('data', () => { /* drain: stderr is logs, not JSONL */ });
+  // Drain stderr (plain logs / telemetry, NOT JSONL) — but keep a TAIL to diagnose a crash-without-a-result.
+  let stderrTail = '';
+  child.stderr?.on('data', (d) => { stderrTail = (stderrTail + String(d)).slice(-1000); });
 
   // Surface a clean run.failed if the binary cannot be spawned (ENOENT) or the
   // AbortSignal kills it — instead of letting the process error escape the loop.
@@ -262,6 +264,13 @@ export async function* runCodex(
   child.on('error', (err) => {
     spawnError = err;
   });
+
+  // Capture the child's EXIT so a nonzero/killed termination with NO JSON terminal event fails loud (c5),
+  // instead of the orchestrator synthesizing a fabricated run.completed (and persisting a false success).
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+    child.on('close', (code, signal) => resolve({ code, signal }));
+  });
+  let emittedTerminal = false;
 
   const rl = createInterface({ input: child.stdout!, crlfDelay: Infinity });
   try {
@@ -276,7 +285,10 @@ export async function* runCodex(
         continue; // tolerate partial/garbage lines
       }
       const mapped = mapCodexThreadEvent(obj, runId);
-      if (mapped) yield mapped;
+      if (mapped) {
+        if (mapped.kind === 'run.completed' || mapped.kind === 'run.failed') emittedTerminal = true;
+        yield mapped;
+      }
     }
   } catch (e) {
     yield {
@@ -301,6 +313,24 @@ export async function* runCodex(
       error: messageOf(spawnError),
       ts: Date.now(),
     };
+    return;
+  }
+
+  // The stream ended with NO terminal event, not aborted, no spawn error → account for the child's EXIT.
+  // A nonzero/killed exit must fail loud (never read as success). The 5s race bounds a child that closed
+  // stdout but lingers; an unknown exit (code null) is treated as failure (the safe direction).
+  if (!emittedTerminal) {
+    const exit = await Promise.race([
+      closed,
+      new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((r) =>
+        setTimeout(() => r({ code: null, signal: null }), 5000),
+      ),
+    ]);
+    const terminal = finalTerminalEvent(
+      { runId, bin: 'codex', emittedTerminal, aborted: Boolean(opts.signal?.aborted), spawnError: false, code: exit.code, signal: exit.signal, stderrTail },
+      Date.now(),
+    );
+    if (terminal) yield terminal;
   }
 }
 
