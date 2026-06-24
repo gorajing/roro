@@ -75,7 +75,11 @@ export function createVadVoiceEngine(
       const source = await createVad({
         onSpeechStart() {
           capturing = { tainted: muted }; // this utterance's own taint record (true if already muted at start)
-          if (!muted && generation === gen) emit?.onSpeechStart(); // ear-perk; muted/superseded → silent
+          if (!muted && generation === gen) {
+            speaker?.stop(); // BARGE-IN (Phase 4): talking over the cat halts its in-flight TTS at once. Safe
+            // from self-trigger because the mic stream has echoCancellation (the cat's own voice is removed).
+            emit?.onSpeechStart(); // ear-perk; muted/superseded → silent
+          }
         },
         async onSpeechEnd(audio: Float32Array) {
           const utt = capturing ?? { tainted: muted }; // own record (VAD may skip onSpeechStart in tests)
