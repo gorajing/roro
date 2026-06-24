@@ -53,6 +53,10 @@ export interface RoroConfig {
    *  committed transcript (partials → caption tell, final → turnRun). Implies vadVoice; takes precedence
    *  over it. Default false. */
   sttVoice: boolean;
+  /** Dev: give the cat a MOUTH — on-device Kokoro TTS + lip-sync (Phase 3). The assistant's committed
+   *  `message` is spoken on-device with a moving mouth. Mounts the real VAD engine too (ears), and composes
+   *  with sttVoice for the full local voice loop. Default false. */
+  ttsVoice: boolean;
 }
 
 function viteEnv(_key: string): string | undefined {
@@ -95,5 +99,6 @@ export function loadConfig(): RoroConfig {
     fakeVoice: readBool('fakeVoice', 'VITE_RORO_FAKE_VOICE', false),
     vadVoice: readBool('vadVoice', 'VITE_RORO_VAD_VOICE', false),
     sttVoice: readBool('sttVoice', 'VITE_RORO_STT_VOICE', false),
+    ttsVoice: readBool('ttsVoice', 'VITE_RORO_TTS_VOICE', false),
   };
 }

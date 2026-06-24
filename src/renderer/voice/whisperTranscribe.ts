@@ -11,39 +11,17 @@
 
 import {
   pipeline,
-  env,
   TextStreamer,
   type AutomaticSpeechRecognitionPipeline,
   type ProgressInfo,
 } from '@huggingface/transformers';
 import type { Transcribe } from './vadVoiceEngine';
 import { isNonSpeechAnnotation } from './nonSpeechFilter';
+import { configureOnnxRuntimeWasm } from './onnxRuntimeEnv';
 
-// ── ORT WASM backend config (runs once at module load — i.e. only when sttVoice dynamically imports us) ──
-
-// Self-host the ORT WASM same-origin, resolved against the document URL — mirrors sileroVad.ts EXACTLY.
-// A root-absolute '/ort/' points at the filesystem root under the packaged file:// build; new URL('ort/',
-// window.location.href) resolves to .../renderer/main_window/ort/ in prod AND http://localhost/ort/ in dev.
-// CRITICAL: this MUST be transformers.js's OWN bundled wasm (ORT 1.22), staged into public/ort/ SEPARATELY
-// from Silero's public/vad/ (ORT 1.27). The two ORT builds are non-interchangeable — pointing here at the
-// 1.27 wasm yields the classic "expected magic word 00 61 73 6d" load failure. (stage-voice-assets.mjs.)
-env.backends.onnx.wasm.wasmPaths = new URL('ort/', window.location.href).href;
-
-// Threads only engage under cross-origin isolation; ORT SILENTLY forces numThreads=1 otherwise (~2–4× slower,
-// no error). The renderer is isolated by crossOriginIsolation.ts (COOP same-origin + COEP credentialless,
-// applied to every response incl. the file:// load), so this is true in dev AND prod. Leave a core for the
-// PixiJS render loop + audio.
-const cores = navigator.hardwareConcurrency || 4;
-env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, Math.max(1, cores - 1)) : 1;
-// Run inference in a worker so a multi-hundred-ms decode never blocks the render loop. (Must be OFF if this
-// ever switches to device:'webgpu' for the small.en upgrade — the WebGPU EP can't run under the proxy worker.)
-env.backends.onnx.wasm.proxy = true;
-
-// Model weights: download-from-HF then cache (Cache API). The COEP 'credentialless' choice was made for exactly
-// this — a no-cred cross-origin HF GET that require-corp would have blocked. One network event ever, then the
-// app is offline (useBrowserCache/useWasmCache default true). We redistribute nothing by not staging the weights.
-env.allowRemoteModels = true;
-env.allowLocalModels = false; // skip a wasted localModelPath 404 probe in the renderer
+// Configure the shared transformers.js ORT-WASM backend (self-hosted public/ort/ wasm, threads under
+// cross-origin isolation, worker, download-and-cache). Same config Kokoro TTS uses — see onnxRuntimeEnv.ts.
+configureOnnxRuntimeWasm();
 
 // base.en is the tested floor (threaded-SIMD WASM). The small.en WebGPU upgrade is a later, explicitly-gated path.
 const MODEL_ID = 'onnx-community/whisper-base.en';

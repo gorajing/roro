@@ -40,6 +40,7 @@ export function createWindow(): BrowserWindow {
     fakeVoice: process.env.RORO_FAKE_VOICE === '1',
     vadVoice: process.env.RORO_VAD_VOICE === '1',
     sttVoice: process.env.RORO_STT_VOICE === '1',
+    ttsVoice: process.env.RORO_TTS_VOICE === '1',
   };
 
   const mainWindow = new BrowserWindow({
