@@ -219,7 +219,7 @@ export async function bootstrap(): Promise<void> {
   });
 
   // Text-input path: feed a typed task straight to MAIN's orchestrator
-  // (turnRun -> recall[Insforge] -> decide[Nebius] -> executor[Codex]). No mic,
+  // (turnRun -> recall[memory2] -> decide[local Ollama] -> executor[Codex]). No mic,
   // no Vapi call. ActionEvents stream back over the same subscribeActionEvents
   // wiring that drives the avatar, captions, and timeline.
   const promptForm = el<HTMLFormElement>('prompt-form');

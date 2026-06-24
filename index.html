@@ -43,7 +43,7 @@
 
         <!--
           Text-input fallback. Drives the SAME orchestrator pipeline as voice
-          (window.companion.turnRun -> recall[Insforge] -> decide[Nebius] ->
+          (window.companion.turnRun -> recall[memory2/PGlite] -> decide[local Ollama] ->
           executor[Codex]) but needs no microphone and no Vapi call, so it is the
           reliable demo path when the Electron mic misbehaves. See bootstrap.ts.
         -->

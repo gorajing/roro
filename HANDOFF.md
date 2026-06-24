@@ -56,7 +56,7 @@ A developer's ambient coding companion in the shape of a pet you bond with. You 
 - **The 11-kind `ActionEvent` union (`src/shared/events.ts`) is FROZEN** — it's the spine everything animates/narrates off. Don't add kinds casually (one planned addition, `status`, then re-freeze).
 - **Provider-seam law:** every substrate sits behind an interface with a **local adapter** (free tier) and optionally a **hosted adapter** (later). Memory, brain, voice, executor are all swappable.
 - **Streaming rule:** `ipcMain.handle` is request/response only; all token/action streams go over `webContents.send` push channels (`CH.actionEvent`, `CH.runEnd`, `CH.brainReasoning`, …). The invoke promise resolves with just `{runId}`.
-- **Key hinge for Phase B:** `turnRun` currently `await`s the whole run before returning. It must **resolve at *dispatch*** (return `{runId}` once the executor is handed off) so Stop / preempt / voice barge-in become wireable. (Today the code claims "returns early" but actually awaits — see `orchestrator.ts`.)
+- **Dispatch-return (done):** `turnRun` **resolves at *dispatch*** — it returns `{runId}` once the executor is handed off, not after the whole run — so Stop / preempt / voice barge-in are wireable. Proven by `src/main/orchestrator.dispatchReturn.test.ts`.
 
 ## 5. Substrate — the stack (local-first)
 

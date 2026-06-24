@@ -78,7 +78,7 @@ flowchart LR
 | Electron shell | windowing, IPC, macOS permission checks, floating mode | [`src/main/`](src/main/) |
 | Character | pixel cat, state machine, lip sync facade | [`src/renderer/character/`](src/renderer/character/) |
 | Brain | local Ollama reasoning/vision/embeddings (Nebius escape hatch) | [`src/brain/`](src/brain/) |
-| Memory | PGlite + pgvector remember/recall (local, owner-scoped) | [`src/memory/`](src/memory/) |
+| Memory | encrypted files-as-truth + PGlite-HNSW hybrid recall (local, owner-scoped) | [`src/memory2/`](src/memory2/) |
 | Executor | Codex and Claude stream adapters | [`src/executor/`](src/executor/) |
 | Voice | Vapi web client + the local-voice seam (Phase D) | [`src/renderer/voice/`](src/renderer/voice/) |
 | Shared contracts | typed IPC, action events, avatar states | [`src/shared/`](src/shared/) |
@@ -191,7 +191,7 @@ What needs extra setup or a real device:
 src/main/                 Electron main process and orchestration
 src/renderer/             UI, character, voice, captions, event wiring
 src/brain/                local Ollama decision, vision, embeddings (Nebius escape hatch)
-src/memory/               local PGlite + pgvector memory read/write
+src/memory2/              local encrypted files-as-truth + PGlite-HNSW memory
 src/executor/             Codex and Claude adapters
 src/shared/               IPC, event, memory, avatar, env contracts
 public/live2d/            optional Live2D assets
