@@ -144,7 +144,7 @@ export function createMemoryWriter(opts: { dir: string; cipher?: Cipher }): Memo
         // Durable per-file entries are removed from disk; log-tier rows are tombstoned via the op
         // (reconciliation applies it — a JSONL line can't be edited in place).
         if (!isLogTier(ref.tier)) {
-          await unlink(entryPath(dir, { tier: ref.tier, id: ref.id } as Entry)).catch(() => {});
+          await unlink(entryPath(dir, { tier: ref.tier, id: ref.id } as Entry)).catch(() => { /* best-effort: an already-missing file is fine (the op tombstone is the source of truth) */ });
         }
         await appendOp(dir, {
           seq, op: 'delete', id: ref.id, tier: ref.tier, ownerId: ref.ownerId, ts: new Date().toISOString(),
