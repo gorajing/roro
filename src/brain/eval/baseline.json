@@ -1,0 +1,21 @@
+{
+  "brain": "qwen2.5:3b (local Ollama)",
+  "decide": {
+    "total": 22,
+    "ok": 18,
+    "accuracy": 0.8181818181818182,
+    "byMode": {
+      "ok": 18,
+      "wrong_command": 4
+    }
+  },
+  "extract": {
+    "total": 10,
+    "ok": 5,
+    "accuracy": 0.5,
+    "byMode": {
+      "ok": 5,
+      "false_fact": 5
+    }
+  }
+}
