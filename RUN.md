@@ -52,7 +52,7 @@ ANTHROPIC_API_KEY=...                          # only if you use the Claude exec
 Memory is an in-process PGlite database with pgvector, stored under the app's userData
 dir (override with `RORO_DB_DIR`). It is owner-scoped and survives restarts — **no
 external database, no SQL provisioning, no keys**. A taught fact in one launch is
-recalled in the next (proven by `src/memory/crosslaunch.persistence.test.ts`).
+recalled in the next (proven by `src/main/memorySpine.crosslaunch.test.ts`).
 
 ## 4. The avatar — a hand-built pixel-art cat (default; no assets needed)
 
