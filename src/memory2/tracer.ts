@@ -35,7 +35,7 @@ export interface Tracer {
   emit(event: TraceEvent): void;
 }
 
-export const NOOP_TRACER: Tracer = { emit() {} };
+export const NOOP_TRACER: Tracer = { emit() { /* null tracer: discard events (zero overhead when RORO_TRACE is off) */ } };
 
 /** A short keyed-less fingerprint of the recall query — joinable across traces, not human-readable. */
 function queryFingerprint(query: string): string {

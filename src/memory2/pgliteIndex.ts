@@ -82,7 +82,7 @@ export async function createPgliteIndex(opts: { dataDir?: string; dim?: number; 
   // (Encryption-MODE is a store property, guarded at the files-as-truth layer — see encryptionMode.ts.
   // The dim + embed_model guards above are INDEX properties, so they belong here in idx_meta.)
   // Larger candidate window so owner/tier/live FILTERS around the approximate HNSW scan don't under-return.
-  await db.exec(`set hnsw.ef_search = 100;`).catch(() => {});
+  await db.exec(`set hnsw.ef_search = 100;`).catch(() => { /* best-effort tuning hint; recall still works at the default ef_search */ });
 
   const UPSERT = `insert into idx
       (id, owner_id, tier, seq, fact_key, superseded, deleted_at, created_at,
