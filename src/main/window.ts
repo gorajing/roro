@@ -41,6 +41,7 @@ export function createWindow(): BrowserWindow {
     vadVoice: process.env.RORO_VAD_VOICE === '1',
     sttVoice: process.env.RORO_STT_VOICE === '1',
     ttsVoice: process.env.RORO_TTS_VOICE === '1',
+    voicePack: process.env.RORO_VOICE_PACK ?? '',
   };
 
   const mainWindow = new BrowserWindow({

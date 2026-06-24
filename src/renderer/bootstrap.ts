@@ -24,6 +24,7 @@ import { createFakeVoiceEngine } from './voice/fakeVoiceEngine';
 import { createVadVoiceEngine } from './voice/vadVoiceEngine';
 import type { NativeVoiceEngine } from './voice/voiceLocalAdapter';
 import type { KokoroSpeaker } from './voice/kokoroVoiceEngine';
+import { createVoiceSelection, listVoicePacks } from './voice/voicePacks';
 import type { CharacterDriver } from './character/types';
 import type { VapiToolCall } from './voice/messages';
 
@@ -43,7 +44,10 @@ function setStatus(text: string): void {
  * user has interacted, so the autoplay gesture is satisfied). The LipSyncDriver adapts the driver: amplitude
  * → setMouthOpen (its always-on AmplitudeLipSync), and start/stop → setTalking (which rests the mouth to 0).
  */
-async function buildKokoroSpeaker(driver: Pick<CharacterDriver, 'setTalking' | 'setMouthOpen'>): Promise<KokoroSpeaker> {
+async function buildKokoroSpeaker(
+  driver: Pick<CharacterDriver, 'setTalking' | 'setMouthOpen'>,
+  voiceId: () => string, // the selected voice-pack id, read per-utterance (Phase 5 cosmetic)
+): Promise<KokoroSpeaker> {
   const { createKokoroVoiceEngine } = await import('./voice/kokoroVoiceEngine');
   const { synthStream } = await import('./voice/kokoroSynthesize');
   const ctx = new AudioContext({ sampleRate: 24000 });
@@ -58,6 +62,7 @@ async function buildKokoroSpeaker(driver: Pick<CharacterDriver, 'setTalking' | '
       stop: () => driver.setTalking(false),
       setAmplitude: (v) => driver.setMouthOpen(v),
     },
+    voiceId,
   });
 }
 
@@ -320,6 +325,9 @@ export async function bootstrap(): Promise<void> {
     //   non-voice users or the fake path.
     const useRealVad = config.sttVoice || config.vadVoice || config.ttsVoice;
     const fakeEngine = useRealVad ? undefined : createFakeVoiceEngine();
+    // Phase 5: the selected voice pack (only when the mouth is on). The engine reads voiceSel.current() per
+    // utterance, so __roroVoice.setVoice switches mid-session. A bad config / set falls back to af_heart.
+    const voiceSel = config.ttsVoice ? createVoiceSelection(config.voicePack) : undefined;
     let engine: NativeVoiceEngine;
     if (useRealVad) {
       const { createSileroVad } = await import('./voice/sileroVad');
@@ -331,7 +339,7 @@ export async function bootstrap(): Promise<void> {
             else if (p.status === 'ready') setStatus('Local voice ready — speak; the cat transcribes on-device.');
           })
         : undefined;
-      const speaker = config.ttsVoice ? await buildKokoroSpeaker(driver) : undefined;
+      const speaker = voiceSel ? await buildKokoroSpeaker(driver, () => voiceSel.current()) : undefined;
       engine = createVadVoiceEngine(createSileroVad, transcribe, speaker);
     } else {
       engine = fakeEngine!;
@@ -366,6 +374,9 @@ export async function bootstrap(): Promise<void> {
     );
     (window as unknown as { __roroVoice?: unknown }).__roroVoice = {
       state: () => localVoice.mode.state,
+      ...(voiceSel
+        ? { setVoice: (id: string) => voiceSel.set(id), voice: () => voiceSel.current(), voices: () => listVoicePacks() }
+        : {}),
       ...(fakeEngine ? { utter: (t: string) => fakeEngine.utter(t), spoken: () => fakeEngine.spoken } : {}),
     };
   }
