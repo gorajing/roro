@@ -1,10 +1,10 @@
 // src/renderer/voice/voiceMode.ts — the local-voice integration core (Phase D).
 //
-// Wires a VoiceBackend (voiceLocalAdapter, or the stub) to the CANONICAL voiceTurnRouter — the SAME
-// turn-manager the Vapi path uses (wireEvents.ts) — so the local path enforces mouth-not-brain
-// (committed utterance -> turnRun) and C1 barge-in identically. It drives the ear-perk tell off VAD and
-// advances the Voice Mode FSM (voiceModeState). No audio + no DOM here: summon()/unsummon() open/close
-// the injected backend; bootstrap mounts the UI + picks the backend (local when available, else Vapi).
+// Wires a VoiceBackend (voiceLocalAdapter, or the stub) to the CANONICAL voiceTurnRouter — the on-device
+// path's turn-manager — so the local path enforces mouth-not-brain (committed utterance -> turnRun) and
+// C1 barge-in. It drives the ear-perk tell off VAD and advances the Voice Mode FSM (voiceModeState). No
+// audio + no DOM here: summon()/unsummon() open/close the injected backend; bootstrap mounts the UI and
+// supplies the backend (the on-device engine when available, else an inert stub).
 
 import { makeVoiceTurnRouter, type VoiceTurnDeps } from './voiceTurnRouter';
 import { reduceVoiceMode, INITIAL_VOICE_MODE_STATE, type VoiceModeState, type VoiceModeEvent } from './voiceModeState';

@@ -5,12 +5,12 @@ import './shared/env-migrate'; // back-compat: COMPANION_* -> RORO_* BEFORE any 
 //
 // Ordering matters: session permission handlers + the mic TCC prompt run INSIDE whenReady,
 // BEFORE the window is created, so the renderer's getUserMedia is never raced/denied.
-console.log('[main] env loaded, VAPI_PUBLIC_KEY set:', Boolean(process.env.VAPI_PUBLIC_KEY));
 import { app, BrowserWindow } from 'electron';
 import { join } from 'node:path';
 import started from 'electron-squirrel-startup';
 
 import { ensureMicAccess, installPermissionHandlers } from './main/mic';
+import { voiceMicNeeded } from './main/voiceFlags';
 import { registerIpcHandlers } from './main/ipc';
 import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorTracking } from './main/window';
 import { cancelAllRuns } from './main/orchestrator';
@@ -63,15 +63,19 @@ app.whenReady().then(async () => {
   await initOwnerId();
 
   // 1. Chromium-level media permission grant for the renderer's getUserMedia (request+check).
+  //    Cheap + promptless, so it is always installed; it only matters if voice later opens the mic.
   installPermissionHandlers();
 
-  // 2. macOS TCC mic consent up-front (surfaces the system prompt before any Vapi call).
-  const micStatus = await ensureMicAccess();
-  if (micStatus !== 'granted') {
-    console.warn(
-      `[main] microphone access is '${micStatus}'. The renderer must prompt the user to ` +
-        `enable it in System Settings and relaunch.`,
-    );
+  // 2. macOS TCC mic consent up-front — ONLY when an on-device voice flag that opens the mic is set.
+  //    The default typed-only launch never touches the mic, so it must never surface the system prompt.
+  if (voiceMicNeeded(process.env)) {
+    const micStatus = await ensureMicAccess();
+    if (micStatus !== 'granted') {
+      console.warn(
+        `[main] microphone access is '${micStatus}'. The renderer must prompt the user to ` +
+          `enable it in System Settings and relaunch.`,
+      );
+    }
   }
 
   // 3. Secure window + summon shortcut.

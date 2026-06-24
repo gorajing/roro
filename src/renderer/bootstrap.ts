@@ -1,13 +1,14 @@
 // src/renderer/bootstrap.ts — wires the whole renderer together.
 //
 // Order:
-//   1. load config (public Vapi key, proxy URL, model path)
+//   1. load config (Live2D model path + on-device voice feature flags)
 //   2. build the character (real Live2D model OR placeholder) on #live2d-canvas
 //   3. subscribe to the executor ActionEvent stream + brain reasoning
-//   4. construct the Voice controller; bind the Start/Stop/Mute buttons
+//   4. bind the Mute control; optionally mount the on-device voice path (dev flags)
 //
-// The Vapi call is started behind a user gesture (Start button): getUserMedia +
-// WebRTC + model.speak() all need a user-gesture-unlocked AudioContext.
+// There is no cloud-voice call. The default surface is the typed prompt path; the
+// on-device voice path (Silero VAD + whisper STT + Kokoro TTS) mounts only behind
+// RORO_*_VOICE flags. model.speak()/AudioContext still need a user gesture to unlock.
 
 import { loadConfig } from './config';
 import { sessionId } from './session';
@@ -18,7 +19,6 @@ import { mountFloatingAsk } from './ask/floatingAsk';
 import { mountConfirmChip } from './confirm/confirmChip';
 import { getCompanion } from './events/bridge';
 import { runState } from './events/runState';
-import { createVoice } from './voice';
 import { mountLocalVoiceMode } from './voice/mountLocalVoiceMode';
 import { createFakeVoiceEngine } from './voice/fakeVoiceEngine';
 import { createVadVoiceEngine } from './voice/vadVoiceEngine';
@@ -26,7 +26,6 @@ import type { NativeVoiceEngine } from './voice/voiceLocalAdapter';
 import type { KokoroSpeaker } from './voice/kokoroVoiceEngine';
 import { createVoiceSelection, listVoicePacks } from './voice/voicePacks';
 import type { CharacterDriver } from './character/types';
-import type { VapiToolCall } from './voice/messages';
 
 function el<T extends HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
@@ -98,91 +97,23 @@ export async function bootstrap(): Promise<void> {
   // interactions (pet/summon/task), which is what makes idle->sleep reachable.
   getCompanion()?.onCursor?.((target) => driver.setGaze?.(target));
 
-  // 4: voice.
-  const onToolCalls = (list: VapiToolCall[]) => {
-    for (const tc of list) {
-      timeline.marker(`tool-call: ${tc.name} ${JSON.stringify(tc.arguments)}`);
-      // The in-process orchestrator dispatch is owned by MAIN via turnRun; here
-      // we just surface the request. Hook orchestrator.dispatch here if/when a
-      // client-side tool path is added.
-    }
-  };
-
-  const startBtn = el<HTMLButtonElement>('start-btn');
-  const stopBtn = el<HTMLButtonElement>('stop-btn');
+  // The Mute button is the only call-era control that survives: it drives the SHARED mic-mute state the
+  // on-device voice path reads. Start/End-call were the legacy Vapi cloud surface and are gone.
   const muteBtn = el<HTMLButtonElement>('mute-btn');
 
-  let callActive = false;
-  let callStarting = false;
   let micMuted = false;
   // Set by the local-voice block (below) when the on-device path is mounted, so the mic-mute toggle
   // reaches the engine's at-the-source mute gate (deaf cat — no ear-perk, no STT compute). undefined
-  // when only the Vapi facade is active.
+  // when the on-device path isn't mounted (typed-only default).
   let localVoiceMute: ((muted: boolean) => void) | undefined;
-
-  const setCallActive = (active: boolean, status?: string): void => {
-    callActive = active;
-    driver.setInCall?.(active);
-    if (status) setStatus(status);
-    if (startBtn) startBtn.disabled = active || callStarting;
-    if (stopBtn) stopBtn.disabled = !active;
-    if (muteBtn) muteBtn.disabled = !active;
-  };
 
   const setMicMuted = (next: boolean, status?: string): void => {
     micMuted = next;
     driver.setMuted(next);
-    if (voice.isActive) voice.setMuted(next);
     localVoiceMute?.(next); // on-device path: mute the cat's ears at the source (no perk, no whisper)
     if (muteBtn) muteBtn.textContent = next ? 'Unmute' : 'Mute';
     setStatus(status ?? (next ? 'Roro mic muted. Judge-talk is ignored.' : 'Roro mic live.'));
   };
-
-  const voice = createVoice({
-    config,
-    character: driver,
-    captions,
-    sessionId,
-    onToolCalls,
-    onError: (e) => setStatus(`Voice error: ${describeError(e)}`),
-    onCallActiveChange: (active) => {
-      setCallActive(
-        active,
-        active
-          ? micMuted
-            ? 'Call active. Roro mic muted.'
-            : 'Call active. Speak to Roro.'
-          : 'Call ended. Click Roro to talk.',
-      );
-      if (active) voice.setMuted(micMuted);
-    },
-    isInputMuted: () => micMuted,
-  });
-
-  const startVoiceCall = async () => {
-    if (callActive || callStarting) return;
-    if (!config.vapiPublicKey) {
-      setStatus('Set window.RORO_CFG.vapiPublicKey (or VITE_VAPI_PUBLIC_KEY) to start a call.');
-      return;
-    }
-    callStarting = true;
-    if (startBtn) startBtn.disabled = true;
-    try {
-      setStatus('Starting call…');
-      await voice.startCompanionCall();
-      voice.setMuted(micMuted);
-      setCallActive(true, micMuted ? 'Call active. Roro mic muted.' : 'Call active. Speak to Roro.');
-    } catch (e) {
-      setStatus(`Could not start call: ${describeError(e)}`);
-    } finally {
-      callStarting = false;
-      if (!callActive && startBtn) startBtn.disabled = false;
-    }
-  };
-
-  startBtn?.addEventListener('click', () => {
-    void startVoiceCall();
-  });
 
   if (config.floatingWindow) {
     canvas.setAttribute('role', 'button');
@@ -209,18 +140,13 @@ export async function bootstrap(): Promise<void> {
     setMicMuted(!micMuted);
   });
 
-  stopBtn?.addEventListener('click', () => {
-    voice.endCall();
-    setCallActive(false, 'Call ended.');
-  });
-
   muteBtn?.addEventListener('click', () => {
     setMicMuted(!micMuted);
   });
 
   // Text-input path: feed a typed task straight to MAIN's orchestrator
   // (turnRun -> recall[memory2] -> decide[local Ollama] -> executor[Codex]). No mic,
-  // no Vapi call. ActionEvents stream back over the same subscribeActionEvents
+  // no voice. ActionEvents stream back over the same subscribeActionEvents
   // wiring that drives the avatar, captions, and timeline.
   const promptForm = el<HTMLFormElement>('prompt-form');
   const promptInput = el<HTMLInputElement>('prompt-input');
@@ -244,10 +170,8 @@ export async function bootstrap(): Promise<void> {
       setStatus('Coding agent running — click Stop to abort.');
     } else if (e.kind === 'run.completed') {
       driver.setBusy?.(false);
-      if (voice.isActive) voice.narrateExact('Done. I finished that.');
     } else if (e.kind === 'run.failed') {
       driver.setBusy?.(false);
-      if (voice.isActive) voice.narrateExact('I got stuck. Please check the app.');
     }
   });
 
@@ -315,7 +239,7 @@ export async function bootstrap(): Promise<void> {
   });
 
   // The ON-DEVICE voice path (mouth-not-brain), behind dev flags until the full whisper/Silero/Kokoro
-  // engine lands. Default (all flags off) leaves the Vapi facade unchanged.
+  // engine lands. Default (all flags off) mounts no voice surface — only the typed prompt path is live.
   if (config.sttVoice || config.vadVoice || config.ttsVoice || config.fakeVoice) {
     const c = getCompanion();
     // The on-device engine is composed from ears + transcript + mouth, each behind its own flag:
@@ -362,7 +286,12 @@ export async function bootstrap(): Promise<void> {
     });
     localVoiceMute = (muted) => localVoice.setMuted(muted); // mic-mute toggle → engine's deaf-cat gate
     localVoice.setMuted(micMuted); // apply the current mute state at mount
-    void localVoice.mode.summon();
+    if (muteBtn) muteBtn.disabled = false; // there is now a real mic to mute — light up the control
+    // Fail loud, not silent: a voice-startup failure (getUserMedia/VAD/model load) must surface, not
+    // vanish into an unhandled rejection. The typed path stays fully usable either way.
+    void localVoice.mode.summon().catch((e) => {
+      setStatus(`Voice failed to start: ${describeError(e)} — the typed path still works.`);
+    });
     setStatus(
       fakeEngine
         ? 'Fake voice mode — in DevTools call __roroVoice.utter("add a logout route")'
@@ -385,7 +314,6 @@ export async function bootstrap(): Promise<void> {
   // without a model/keys). Non-enumerable-ish; purely a debugging aid.
   (window as unknown as { __companion?: unknown }).__companion = {
     driver,
-    voice,
     setState: (s: Parameters<typeof driver.setState>[0]) => driver.setState(s),
     setActivity: (cue: Parameters<typeof driver.setActivity>[0]) => driver.setActivity(cue),
     setMouthOpen: (v: number) => driver.setMouthOpen(v),

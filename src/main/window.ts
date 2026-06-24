@@ -23,20 +23,15 @@ const FLOATING_WINDOW_SIZE = {
 const FLOATING_WINDOW_ASPECT_RATIO = FLOATING_WINDOW_SIZE.width / FLOATING_WINDOW_SIZE.height;
 
 export function createWindow(): BrowserWindow {
-  // Renderer-safe runtime config, sourced from MAIN's process.env (populated by
-  // dotenv in src/main.ts). Only the Vapi PUBLIC key + non-secret URLs/ids cross
-  // into the renderer; private keys stay in MAIN. Passed via additionalArguments
+  // Renderer-safe runtime config, sourced from MAIN's process.env (populated by dotenv in src/main.ts).
+  // Only non-secret values cross into the renderer; private keys stay in MAIN. Passed via additionalArguments
   // (a single argv element — these values contain no spaces).
   const roroCfg = {
-    vapiPublicKey: process.env.VAPI_PUBLIC_KEY ?? '',
-    vapiAssistantId: process.env.VAPI_ASSISTANT_ID ?? '',
-    customLlmUrl: process.env.VAPI_PROXY_URL ?? 'http://127.0.0.1:8787',
-    customLlmModel: process.env.NEBIUS_MODEL ?? 'deepseek-ai/DeepSeek-V3.2',
     modelUrl: process.env.LIVE2D_MODEL_URL ?? '/live2d/model.model3.json',
     floatingWindow: FLOATING_WINDOW_FLAG,
     // On-device voice dev flags — the renderer's only activation path (config.ts reads window.RORO_CFG, and
     // its viteEnv() is a deliberate no-op). RORO_STT_VOICE=1 npm start → real VAD + whisper STT; RORO_VAD_VOICE
-    // → VAD ear-perk only; RORO_FAKE_VOICE → scripted engine (no mic/models). All default off (Vapi unchanged).
+    // → VAD ear-perk only; RORO_FAKE_VOICE → scripted engine (no mic/models). All default off.
     fakeVoice: process.env.RORO_FAKE_VOICE === '1',
     vadVoice: process.env.RORO_VAD_VOICE === '1',
     sttVoice: process.env.RORO_STT_VOICE === '1',

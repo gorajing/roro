@@ -80,7 +80,7 @@ flowchart LR
 | Brain | local Ollama reasoning/vision/embeddings (Nebius escape hatch) | [`src/brain/`](src/brain/) |
 | Memory | encrypted files-as-truth + PGlite-HNSW hybrid recall (local, owner-scoped) | [`src/memory2/`](src/memory2/) |
 | Executor | Codex and Claude stream adapters | [`src/executor/`](src/executor/) |
-| Voice | Vapi web client + the local-voice seam (Phase D) | [`src/renderer/voice/`](src/renderer/voice/) |
+| Voice | on-device VAD + STT + TTS (Silero / whisper / Kokoro), behind dev flags | [`src/renderer/voice/`](src/renderer/voice/) |
 | Shared contracts | typed IPC, action events, avatar states | [`src/shared/`](src/shared/) |
 
 The important boundary is the canonical action-event vocabulary in
@@ -148,8 +148,8 @@ ANTHROPIC_API_KEY=...           # optional, only for the Claude executor
 ```
 
 Memory is local PGlite + pgvector under the app's userData dir (`RORO_DB_DIR` to
-override) — no external database. See [`RUN.md`](RUN.md) for the Vapi proxy notes,
-macOS permissions, and the full live-run checklist.
+override) — no external database. See [`RUN.md`](RUN.md) for the on-device voice
+flags, macOS permissions, and the full live-run checklist.
 
 > Migrating from an older checkout: the internal env prefix was renamed
 > `COMPANION_*` → `RORO_*` (and `VITE_COMPANION_FLOATING_WINDOW` →
@@ -176,12 +176,12 @@ What is working:
   live daemon; Nebius remains as a `BRAIN_PROVIDER=nebius` escape hatch
 - **local PGlite + pgvector memory** (owner-scoped, survives restarts)
 - Codex and Claude executor adapters behind one event stream
-- typed text path + the Phase D local-voice control core/seam
+- typed text path + the on-device voice control core/seam
 
 What needs extra setup or a real device:
 
-- Vapi call flow and microphone permission (the on-device whisper/Silero/Kokoro
-  voice adapter lands on a machine with the native binaries + a mic)
+- on-device voice (Silero VAD + whisper STT + Kokoro TTS) behind the `RORO_*_VOICE`
+  dev flags + microphone permission — fully local, no cloud and no keys
 - screen capture permission for vision (the 7B vision model needs substantial RAM)
 - optional Live2D model swap
 

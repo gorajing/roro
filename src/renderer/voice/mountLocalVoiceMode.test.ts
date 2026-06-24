@@ -73,7 +73,7 @@ describe('mountLocalVoiceMode — composes the local voice path (input + output)
     lv.dispose();
   });
 
-  it('is inert + available=false when no engine is present (caller falls back to Vapi/stub)', () => {
+  it('is inert + available=false when no engine is present (caller leaves the typed path untouched)', () => {
     const bus = fakeBus();
     const lv = mountLocalVoiceMode({ detect: () => false, deps: fakeDeps(), onActionEvent: bus.onActionEvent, driver: { poke: vi.fn() } });
     expect(lv.available).toBe(false);

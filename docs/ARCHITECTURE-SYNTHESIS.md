@@ -1,4 +1,8 @@
 <!-- Generated 2026-06-22 by a 12-agent architecture-synthesis workflow (8 subsystem maps -> 3 lenses -> synthesis), grounded in the merged main. -->
+<!-- PARTIALLY SUPERSEDED (2026-06-24): the legacy Vapi cloud-voice path has since been DELETED — voice is now a single on-device stack (Silero VAD + whisper STT + Kokoro TTS). Navigation/window-open hardening (isSafeNavigation) has since landed. Treat HANDOFF.md as the living current-state doc; the §Voice and the navigation/voice-stack security findings below are kept as a point-in-time record. -->
+
+
+> **Status note (2026-06-24):** This is a point-in-time synthesis. Two findings below have since been addressed: the **legacy Vapi cloud-voice path was deleted** (voice is now one on-device stack), and **navigation hardening landed** (`isSafeNavigation`). See `HANDOFF.md` for current state.
 
 # Roro — Architecture Synthesis
 
@@ -94,7 +98,7 @@ Everything downstream of the executor speaks one vocabulary: the **11-kind** dis
 
 **Main / IPC / security boundary** (`src/main.ts`, `main/ipc.ts`, `preload.ts`, `main/window.ts`, `main/mic.ts`, `main/siblings.ts`, `shared/ipc.ts`). Boots a hardened window in ordered sequence (`initOwnerId → installPermissionHandlers → ensureMicAccess → createWindow → startCursorTracking → registerSummonShortcut`), exposes the 13 invoke channels with input narrowing (`asAgentKind`, `finitePixelDelta`), and injects `owner_id` MAIN-side so the renderer can never assert identity. `CH` (`shared/ipc.ts`) is the single channel registry both sides import.
 
-**Voice** (`src/renderer/voice/**`). Two parallel stacks. The **legacy Vapi cloud path** (`index.ts`/`vapiClient.ts`/`wireEvents.ts`/`messages.ts`) is live: it wraps `@vapi-ai/web`, drives the `CharacterDriver`, and routes only *final* user transcripts to `companion.turnRun`. The **local-first seam** (`voiceBackend.ts` + `voiceTurnRouter.ts`) is pure DI scaffolding (whisper.cpp/Silero/Kokoro), defined but unwired, with a no-op stub backend. Neither path is speech-to-speech; partials only update captions.
+**Voice** (`src/renderer/voice/**`). *(Updated 2026-06-24 — the legacy Vapi cloud path described in the original synthesis has been DELETED.)* A single **on-device** stack: Silero VAD (ear-perk) + whisper STT (transcribe) + Kokoro TTS (speak), composed behind the say-only `VoiceBackend` seam and the canonical `voiceTurnRouter`, gated by the `RORO_*_VOICE` dev flags (default off). It routes only *final* committed transcripts to `companion.turnRun` (mouth-not-brain); when no engine is mounted the mode is inert and only the typed path is live. Not yet speech-to-speech; partials only update captions.
 
 **Cosmetics** (`src/renderer/voice/pets.ts`). A pure-data `-ro` pet-variant catalog (palette/roster/lookups: roro/miro/sero/taro) driving the procedural cat. Exactly one `isDefault`; `resolvePet` always returns a variant (invalid id → default). No store, no payments — foundation only, deliberately deferred pending validation.
 
@@ -146,7 +150,7 @@ What *is* uniformly good is that each subsystem's **decision logic** is extracte
 - **`connect-src 'self' https: wss:`** is wide open (`index.html:6`) — a compromised renderer can read owner-scoped memory via `window.memory.recall` and exfiltrate anywhere. Tighten to the specific origins.
 - **The destructive classifier is defense-in-depth, not a sandbox.** It inspects the *task prompt string*, never the agent's argv, so paraphrase/obfuscation evades it (`find -delete`, `git push --delete`, `shred`, fork-bombs are not in `PATTERNS`), and the agent can emit `rm -rf` mid-run fully unguarded — the gate guards *intent*, not *execution*.
 - **The watchdog leaks the executor slot by design.** A stuck/orphaned child holds the single-executor slot forever (`releaseSlot` runs only when the stream truly ends; `orchestrator.ts:308-327`) — no recovery short of quit. Add an operator-visible force-release.
-- **Two parallel, divergent voice stacks.** The single-executor/barge-in law is implemented twice and differently: `voiceTurnRouter` (`isRunActive` + barge-in queue) vs `wireEvents` (`turnInFlight` + drop-second). Worse, `wireEvents` releases `turnInFlight` on *any* `onRunEnd`, not a run-id-matched one (acknowledged TODO). Reconcile to one turn-manager before wiring local voice.
+- **~~Two parallel, divergent voice stacks.~~ RESOLVED (2026-06-24).** The legacy `wireEvents` turn-manager was deleted with the Vapi path; `voiceTurnRouter` (`isRunActive` + barge-in queue) is now the single turn-manager for the on-device voice path. *(Original finding: the single-executor/barge-in law was implemented twice and differently, and `wireEvents` released `turnInFlight` on any `onRunEnd` rather than a run-id-matched one.)*
 
 **MED — silent-correctness cliffs**
 - **Three un-pinned frozen unions** (`Command`/`COMMANDS`/prompt; `ActionEvent`/`eventToAvatarState`) — add a compile-time exhaustiveness assertion.

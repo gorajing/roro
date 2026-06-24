@@ -3,8 +3,8 @@
 // Wires the local backend (an injected NativeVoiceEngine behind the fail-loud `available` gate) through
 // createVoiceMode (INPUT: committed utterance -> turnRun, mouth-not-brain + ear-perk + FSM) and
 // wireSpeechOutput (OUTPUT: the assistant's `message` -> backend.speak()). Returns the VoiceMode + a
-// dispose. When no engine is present (`available` false) the mode is inert and bootstrap falls back to
-// the Vapi facade / stub — so this never regresses the existing path. Testable end-to-end with a fake
+// dispose. When no engine is present (`available` false) the mode is inert and bootstrap leaves the
+// typed prompt path as the only surface — so this never regresses it. Testable end-to-end with a fake
 // engine; the real whisper/Silero/Kokoro engine slots in (Phases 1-3) behind the unchanged interface.
 
 import { createLocalVoiceBackend, type NativeVoiceEngine } from './voiceLocalAdapter';
