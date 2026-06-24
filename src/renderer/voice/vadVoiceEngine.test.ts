@@ -71,6 +71,27 @@ describe('createVadVoiceEngine — VAD-only engine (the ear-perk + mic lifecycle
     await expect(engine.speak('hi')).resolves.toBeUndefined();
   });
 
+  it('barge-in (Phase 4): a VAD speech-start halts the cat’s TTS via speaker.stop() (talk over the cat → it stops)', async () => {
+    const { f, create } = fakeVad();
+    let stopped = 0;
+    const speaker = { speak: async () => { /* noop */ }, stop: () => { stopped++; } };
+    const engine = createVadVoiceEngine(create, undefined, speaker);
+    await engine.start(sink().events);
+    f.cb?.onSpeechStart(); // the user starts speaking while the cat may be talking
+    expect(stopped).toBe(1); // barge-in: the cat's mouth is halted at the moment speech is detected
+  });
+
+  it('a MUTED engine does NOT barge-in (deaf cat keeps talking)', async () => {
+    const { f, create } = fakeVad();
+    let stopped = 0;
+    const speaker = { speak: async () => { /* noop */ }, stop: () => { stopped++; } };
+    const engine = createVadVoiceEngine(create, undefined, speaker);
+    await engine.start(sink().events);
+    engine.setMuted(true);
+    f.cb?.onSpeechStart();
+    expect(stopped).toBe(0); // muted → the cat ignores the mic entirely, including barge-in
+  });
+
   it('delegates speak() to the injected speaker and stop() halts it (mouth wiring, barge-in-ready)', async () => {
     const { create } = fakeVad();
     const spoken: string[] = [];
