@@ -57,6 +57,9 @@ export interface RoroConfig {
    *  `message` is spoken on-device with a moving mouth. Mounts the real VAD engine too (ears), and composes
    *  with sttVoice for the full local voice loop. Default false. */
   ttsVoice: boolean;
+  /** The initial voice-pack id (Phase 5 cosmetic; RORO_VOICE_PACK). Empty/unknown → the free default
+   *  af_heart. Switchable at runtime via __roroVoice.setVoice. Only meaningful when ttsVoice is on. */
+  voicePack: string;
 }
 
 function viteEnv(_key: string): string | undefined {
@@ -100,5 +103,6 @@ export function loadConfig(): RoroConfig {
     vadVoice: readBool('vadVoice', 'VITE_RORO_VAD_VOICE', false),
     sttVoice: readBool('sttVoice', 'VITE_RORO_STT_VOICE', false),
     ttsVoice: readBool('ttsVoice', 'VITE_RORO_TTS_VOICE', false),
+    voicePack: read('voicePack', 'VITE_RORO_VOICE_PACK', ''),
   };
 }
