@@ -52,12 +52,19 @@ native. Conclusion: **Path A is viable.**
 
 ## Phased build (each behind `available`/a flag; 🧪 CI-testable / 🎧 hardware-gated)
 
-- **Phase 0** 🧪 — Glue + flag vs a *fake* engine: a testable mount factory (local backend → `createVoiceMode`
+- **Phase 0** ✅ 🧪 — Glue + flag vs a *fake* engine: a testable mount factory (local backend → `createVoiceMode`
   → `turnRun`) + the `message`/`message.delta` → `speak()` output wiring; bootstrap selects local when
   available, else the existing Vapi/stub. No regression: Vapi untouched when local is unavailable.
-- **Phase 1** 🧪/🎧 — VAD-only engine: the ≤80ms ear-perk + mic lifecycle (proves near-zero-idle). COOP/COEP.
-- **Phase 2** 🧪/🎧 — STT: chunked partials + committed final (base.en default; the WASM-vs-WebGPU profiling
-  gate lives here; small.en WebGPU-gated upgrade).
+- **Phase 1** ✅ 🧪/🎧 — VAD-only engine: the ≤80ms ear-perk + mic lifecycle (proves near-zero-idle). COOP/COEP
+  (credentialless). Activate: `RORO_VAD_VOICE=1 npm start`.
+- **Phase 2** ✅ 🧪/🎧 — STT: whisper **base.en** over the VAD's `onSpeechEnd` PCM via `@huggingface/transformers`
+  v3 (`onnx-community/whisper-base.en`, dtype q8, threaded-SIMD WASM, `proxy` worker). Partials → caption tell
+  (TextStreamer deltas, accumulated to cumulative); committed final → `turnRun`. Guards: English-only model
+  (no `language`/`task`), non-speech-annotation drop (`[Music]`/`[BLANK_AUDIO]`), mute-taint (a mute *during*
+  decode drops the final), deaf-cat mute (engine `setMuted` skips STT). ORT wasm self-hosted in `public/ort/`
+  — DISTINCT from Silero's `public/vad/` (transformers ORT 1.22 vs vad-web 1.27, non-interchangeable). Weights
+  download-from-HF + Cache-API (credentialless permits it). Activate: `RORO_STT_VOICE=1 npm start`. *(WASM-vs-
+  WebGPU profiling gate + small.en WebGPU upgrade remain a follow-up.)*
 - **Phase 3** 🧪/🎧 — TTS + lipsync: Kokoro ONNX + non-GPL G2P (eSpeak excluded, CI-asserted), streamed,
   `AnalyserNode` amplitude → mouth (one mouth driver per utterance).
 - **Phase 4** 🧪/🎧 — Audio-level barge-in: talk over the cat → the engine halts its own TTS.

@@ -62,6 +62,17 @@ describe('mountLocalVoiceMode — composes the local voice path (input + output)
     expect(deps.turnRun).not.toHaveBeenCalled(); // can't dispatch a queued turn
   });
 
+  it('setMuted forwards to the engine (a muted local cat goes deaf — no perk, no STT compute)', () => {
+    const engine = createFakeVoiceEngine();
+    const lv = mountLocalVoiceMode({ engine, detect: () => true, deps: fakeDeps(), onActionEvent: fakeBus().onActionEvent, driver: { poke: vi.fn() } });
+    expect(engine.muted).toBe(false);
+    lv.setMuted(true);
+    expect(engine.muted).toBe(true); // the mic-mute toggle reaches the engine's mute gate
+    lv.setMuted(false);
+    expect(engine.muted).toBe(false);
+    lv.dispose();
+  });
+
   it('is inert + available=false when no engine is present (caller falls back to Vapi/stub)', () => {
     const bus = fakeBus();
     const lv = mountLocalVoiceMode({ detect: () => false, deps: fakeDeps(), onActionEvent: bus.onActionEvent, driver: { poke: vi.fn() } });

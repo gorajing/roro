@@ -82,6 +82,10 @@ export async function bootstrap(): Promise<void> {
   let callActive = false;
   let callStarting = false;
   let micMuted = false;
+  // Set by the local-voice block (below) when the on-device path is mounted, so the mic-mute toggle
+  // reaches the engine's at-the-source mute gate (deaf cat — no ear-perk, no STT compute). undefined
+  // when only the Vapi facade is active.
+  let localVoiceMute: ((muted: boolean) => void) | undefined;
 
   const setCallActive = (active: boolean, status?: string): void => {
     callActive = active;
@@ -96,6 +100,7 @@ export async function bootstrap(): Promise<void> {
     micMuted = next;
     driver.setMuted(next);
     if (voice.isActive) voice.setMuted(next);
+    localVoiceMute?.(next); // on-device path: mute the cat's ears at the source (no perk, no whisper)
     if (muteBtn) muteBtn.textContent = next ? 'Unmute' : 'Mute';
     setStatus(status ?? (next ? 'Roro mic muted. Judge-talk is ignored.' : 'Roro mic live.'));
   };
@@ -277,16 +282,29 @@ export async function bootstrap(): Promise<void> {
   });
 
   // The ON-DEVICE voice path (mouth-not-brain), behind dev flags until the full whisper/Silero/Kokoro
-  // engine lands. Default (both flags off) leaves the Vapi facade unchanged.
-  if (config.vadVoice || config.fakeVoice) {
+  // engine lands. Default (all flags off) leaves the Vapi facade unchanged.
+  if (config.sttVoice || config.vadVoice || config.fakeVoice) {
     const c = getCompanion();
-    // config.vadVoice → the REAL Silero VAD engine (Phase 1: ear-perk + mic lifecycle, no STT/TTS yet);
-    // else config.fakeVoice → a scripted engine (no mic/models). The Silero glue is DYNAMICALLY imported
-    // here only, so its onnxruntime-web/WASM never loads for non-voice users (or in the fake path).
-    const fakeEngine = config.vadVoice ? undefined : createFakeVoiceEngine();
-    const engine = config.vadVoice
-      ? createVadVoiceEngine((await import('./voice/sileroVad')).createSileroVad)
-      : fakeEngine!;
+    // sttVoice → REAL Silero VAD + on-device whisper STT (Phase 2: ear-perk + committed transcript);
+    // vadVoice → REAL Silero VAD only (Phase 1: ear-perk, no STT); else fakeVoice → a scripted engine
+    // (no mic/models). The Silero + whisper glue is DYNAMICALLY imported here only, so onnxruntime-web/
+    // WASM (and the whisper model load) never touch non-voice users or the fake path.
+    const useRealVad = config.sttVoice || config.vadVoice;
+    const fakeEngine = useRealVad ? undefined : createFakeVoiceEngine();
+    const engine = config.sttVoice
+      ? createVadVoiceEngine(
+          (await import('./voice/sileroVad')).createSileroVad,
+          // createWhisperTranscribe() returns synchronously and warms the ~77MB base.en model in the
+          // BACKGROUND (the cat's ears are live immediately; only the first transcript awaits any remaining
+          // load). progress_callback → status so a cold first run shows download %, not a frozen cat.
+          (await import('./voice/whisperTranscribe')).createWhisperTranscribe((p) => {
+            if (p.status === 'progress') setStatus(`Loading speech model… ${Math.round(p.progress)}%`);
+            else if (p.status === 'ready') setStatus("Local voice (VAD+STT) ready — speak; the cat transcribes on-device.");
+          }),
+        )
+      : config.vadVoice
+        ? createVadVoiceEngine((await import('./voice/sileroVad')).createSileroVad)
+        : fakeEngine!;
     const localVoice = mountLocalVoiceMode({
       engine,
       detect: () => true,
@@ -303,11 +321,15 @@ export async function bootstrap(): Promise<void> {
       captions,
       isMuted: () => micMuted,
     });
+    localVoiceMute = (muted) => localVoice.setMuted(muted); // mic-mute toggle → engine's deaf-cat gate
+    localVoice.setMuted(micMuted); // apply the current mute state at mount
     void localVoice.mode.summon();
     setStatus(
       fakeEngine
         ? 'Fake voice mode — in DevTools call __roroVoice.utter("add a logout route")'
-        : "Local voice (VAD) — speak and the cat's ears perk (≤80ms). No STT/TTS yet.",
+        : config.sttVoice
+          ? "Local voice (VAD+STT) — speak; the cat's ears perk (≤80ms), then it transcribes on-device."
+          : "Local voice (VAD) — speak and the cat's ears perk (≤80ms). No STT/TTS yet.",
     );
     (window as unknown as { __roroVoice?: unknown }).__roroVoice = {
       state: () => localVoice.mode.state,

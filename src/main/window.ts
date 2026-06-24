@@ -34,6 +34,12 @@ export function createWindow(): BrowserWindow {
     customLlmModel: process.env.NEBIUS_MODEL ?? 'deepseek-ai/DeepSeek-V3.2',
     modelUrl: process.env.LIVE2D_MODEL_URL ?? '/live2d/model.model3.json',
     floatingWindow: FLOATING_WINDOW_FLAG,
+    // On-device voice dev flags — the renderer's only activation path (config.ts reads window.RORO_CFG, and
+    // its viteEnv() is a deliberate no-op). RORO_STT_VOICE=1 npm start → real VAD + whisper STT; RORO_VAD_VOICE
+    // → VAD ear-perk only; RORO_FAKE_VOICE → scripted engine (no mic/models). All default off (Vapi unchanged).
+    fakeVoice: process.env.RORO_FAKE_VOICE === '1',
+    vadVoice: process.env.RORO_VAD_VOICE === '1',
+    sttVoice: process.env.RORO_STT_VOICE === '1',
   };
 
   const mainWindow = new BrowserWindow({
