@@ -374,16 +374,20 @@ async function dispatchExecutor(
       void rememberEvent(sessionId, stamped);
     }
     if (!terminalSeen && !uiEnded && !controller.signal.aborted) {
-      const completed: ActionEvent = {
-        kind: 'run.completed',
+      // The executor stream ended with NO terminal event. Both adapters emit a terminal on success AND
+      // failure (+ exitAccounting.ts now fails loud on a nonzero/killed exit), so a MISSING verdict means
+      // the child died/exited without completing — FAIL LOUD, never synthesize a false success (which would
+      // also persist a fabricated outcome to memory). This is the catch-all behind the adapter accounting.
+      const failed: ActionEvent = {
+        kind: 'run.failed',
         runId,
-        ok: true,
-        finalText: 'The coding agent finished.',
+        ok: false,
+        error: 'the coding agent ended without a result (no completion or failure was reported)',
         ts: Date.now(),
       };
-      pushEvent(completed);
-      notifyJobDone(true, completed.finalText);
-      void rememberEvent(sessionId, completed);
+      pushEvent(failed);
+      notifyJobDone(false, failed.error);
+      void rememberEvent(sessionId, failed);
     }
   } catch (err) {
     // The executors normally translate failures into a run.failed event, but guard the
