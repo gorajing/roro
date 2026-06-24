@@ -24,7 +24,9 @@ export const createSileroVad: CreateVad = async (callbacks): Promise<VadSource> 
     baseAssetPath: assetBase,
     onnxWASMBasePath: assetBase,
     onSpeechStart: () => callbacks.onSpeechStart(),
-    onSpeechEnd: (_audio: Float32Array) => callbacks.onSpeechEnd(), // Phase 2: hand _audio to whisper STT
+    // Hand the captured utterance PCM to the engine, which runs STT over it (Phase 2). The engine's
+    // handler is async but never rejects; vad-web ignores the returned promise.
+    onSpeechEnd: (audio: Float32Array) => { void callbacks.onSpeechEnd(audio); },
     getStream: () =>
       navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },

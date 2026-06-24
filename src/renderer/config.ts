@@ -49,6 +49,10 @@ export interface RoroConfig {
   /** Dev: mount the REAL VAD engine (Silero, on-device) — Phase 1 = the ear-perk + mic lifecycle (no STT/
    *  TTS yet). Takes precedence over fakeVoice. Default false. */
   vadVoice: boolean;
+  /** Dev: mount the REAL VAD + on-device STT (Silero + whisper base.en) — Phase 2 = the ear-perk PLUS a
+   *  committed transcript (partials → caption tell, final → turnRun). Implies vadVoice; takes precedence
+   *  over it. Default false. */
+  sttVoice: boolean;
 }
 
 function viteEnv(_key: string): string | undefined {
@@ -90,5 +94,6 @@ export function loadConfig(): RoroConfig {
     floatingWindow: readBool('floatingWindow', 'VITE_RORO_FLOATING_WINDOW', false),
     fakeVoice: readBool('fakeVoice', 'VITE_RORO_FAKE_VOICE', false),
     vadVoice: readBool('vadVoice', 'VITE_RORO_VAD_VOICE', false),
+    sttVoice: readBool('sttVoice', 'VITE_RORO_STT_VOICE', false),
   };
 }

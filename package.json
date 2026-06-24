@@ -49,6 +49,7 @@
   "dependencies": {
     "@electric-sql/pglite": "^0.5.3",
     "@electric-sql/pglite-pgvector": "^0.0.4",
+    "@huggingface/transformers": "^3.8.1",
     "@ngrok/ngrok": "^1.7.0",
     "@pixi/unsafe-eval": "^7.4.3",
     "@ricky0123/vad-web": "^0.0.30",

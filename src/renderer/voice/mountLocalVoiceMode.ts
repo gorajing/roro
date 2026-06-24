@@ -31,6 +31,9 @@ export interface LocalVoice {
   mode: VoiceMode;
   /** True when the on-device backend is available (engine + mic). */
   readonly available: boolean;
+  /** Push the mic-mute state into the engine (muted → no ear-perk, no STT compute). The brain-routing
+   *  gate stays voiceMode's isMuted pull; this is the at-the-source "deaf cat" gate. */
+  setMuted(muted: boolean): void;
   dispose(): void;
 }
 
@@ -53,6 +56,9 @@ export function mountLocalVoiceMode(opts: MountLocalVoiceOptions): LocalVoice {
   return {
     mode,
     available: backend.available,
+    setMuted(muted: boolean): void {
+      backend.setMuted(muted); // -> engine.setMuted: suppresses the ear-perk + skips STT while muted
+    },
     dispose(): void {
       unsubSpeech();
       mode.dispose(); // detaches onRunEnd + releases the backend (no late runEnd can drain the router)
