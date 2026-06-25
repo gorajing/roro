@@ -72,6 +72,7 @@ const companion = {
   onBootstrapStatus: (cb: (s: BootstrapStatusMsg) => void): (() => void) =>
     subscribe<BootstrapStatusMsg>(CH.bootstrapStatus, cb),
   getBootstrapStatus: (): Promise<BootstrapStatusMsg | null> => ipcRenderer.invoke(CH.bootstrapStatusGet),
+  openExternal: (url: string): Promise<void> => ipcRenderer.invoke(CH.openExternal, url),
   pullModels: (models: string[]): Promise<void> => ipcRenderer.invoke(CH.modelPull, models),
   onPullProgress: (cb: (p: ModelPullProgressMsg) => void): (() => void) =>
     subscribe<ModelPullProgressMsg>(CH.modelPullProgress, cb),

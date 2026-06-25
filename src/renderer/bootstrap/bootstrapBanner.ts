@@ -16,8 +16,12 @@ export interface BootstrapBannerDeps {
   getStatus: () => Promise<BootstrapStatusMsg | null>;
   /** Pull the given models, streaming progress. Resolves when all are done; rejects on failure. */
   pull: (models: string[], onProgress: (p: ModelPullProgressMsg) => void) => Promise<void>;
+  /** Open an external URL (the Ollama download page) — MAIN allowlists the URL. */
+  openExternal: (url: string) => void;
   host?: HTMLElement;
 }
+
+const OLLAMA_DOWNLOAD_URL = 'https://ollama.com/download';
 
 function fmtBytes(bytes: number): string {
   return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`;
@@ -40,13 +44,13 @@ export function mountBootstrapBanner(deps: BootstrapBannerDeps): () => void {
     text.textContent = msg;
     banner.hidden = false;
   }
-  function clearButton(): void {
+  function clearButtons(): void {
     banner.querySelector('#bootstrap-download')?.remove();
+    banner.querySelector('#bootstrap-get-ollama')?.remove();
   }
 
   function renderMissing(status: BootstrapStatusMsg): void {
     show(`Roro needs its core models (~${fmtBytes(status.essentialBytes)}) to think on-device.`);
-    if (banner.querySelector('#bootstrap-download')) return; // already offered
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.id = 'bootstrap-download';
@@ -77,10 +81,18 @@ export function mountBootstrapBanner(deps: BootstrapBannerDeps): () => void {
 
   function apply(status: BootstrapStatusMsg | null): void {
     if (pulling) return; // don't clobber an in-flight download with a re-pushed/re-fetched status
-    if (!status || status.ready) { banner.hidden = true; clearButton(); return; }
+    clearButtons(); // start each render clean so a state transition can't leave a stale button behind
+    if (!status || status.ready) { banner.hidden = true; return; }
     if (status.needsOllamaInstall) {
-      clearButton();
-      show("Ollama isn't running. Install it from ollama.com, then Roro can pull its models.");
+      show("Ollama isn't running — Roro thinks on-device with it. Install it, then come back.");
+      // Guide the install (open the official download page) rather than auto-running a shell installer —
+      // a local-first/trust-first app shouldn't silently execute an OS-level install.
+      const get = document.createElement('button');
+      get.type = 'button';
+      get.id = 'bootstrap-get-ollama';
+      get.textContent = 'Get Ollama →';
+      get.addEventListener('click', () => deps.openExternal(OLLAMA_DOWNLOAD_URL));
+      banner.append(get);
       return;
     }
     if (status.missing.length > 0) { renderMissing(status); return; }
