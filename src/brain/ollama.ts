@@ -64,6 +64,41 @@ export function parseChatLine(line: string): { delta: string; done: boolean } {
   return { delta, done: o.done === true };
 }
 
+/** One /api/pull progress line (M7b): a status + optional byte counts. */
+export interface PullProgress {
+  status: string;
+  total?: number;
+  completed?: number;
+  /** completed/total as 0-100 (capped), present only when total>0. */
+  percent?: number;
+}
+
+/**
+ * PURE: parse one /api/pull NDJSON line. Returns null for a blank/garbage/status-less line (skip it), and
+ * THROWS on an {"error":…} line so a pull failure surfaces (fail-loud) rather than masquerading as progress.
+ */
+export function parsePullProgress(line: string): PullProgress | null {
+  const s = line.trim();
+  if (!s) return null;
+  let obj: { status?: unknown; total?: unknown; completed?: unknown; error?: unknown };
+  try {
+    obj = JSON.parse(s);
+  } catch {
+    return null; // tolerate a partial/garbage line
+  }
+  if (typeof obj.error === 'string') throw new Error(`Ollama pull error: ${obj.error}`);
+  if (typeof obj.status !== 'string') return null;
+  const out: PullProgress = { status: obj.status };
+  if (typeof obj.total === 'number' && obj.total > 0) {
+    out.total = obj.total;
+    if (typeof obj.completed === 'number') {
+      out.completed = obj.completed;
+      out.percent = Math.min(100, Math.round((obj.completed / obj.total) * 100));
+    }
+  }
+  return out;
+}
+
 /** PURE: accumulate a full /api/chat NDJSON response into its content, firing onContent per delta. */
 export function accumulateChatStream(ndjson: string, onContent?: (delta: string) => void): string {
   let content = '';
@@ -205,6 +240,45 @@ export async function ollamaTags(): Promise<string[]> {
 /** Whether `id` (e.g. 'nomic-embed-text' or 'qwen2.5:3b') is among installed tags (tolerating :latest). */
 export function hasModel(tags: string[], id: string): boolean {
   return tags.includes(id) || tags.includes(`${id}:latest`);
+}
+
+/**
+ * Stream `ollama pull <name>` (M7b): POST /api/pull and fire onProgress per NDJSON line until completion.
+ * NO request timeout — a multi-GB pull legitimately takes minutes, and the streamed progress IS the liveness
+ * signal (pass an AbortSignal to cancel). Throws on a non-OK response or an error line (fail-loud). Verify
+ * against a live daemon (opt-in / on a device) — like the other ollama HTTP calls, it's integration-gated.
+ */
+export async function pullModel(
+  name: string,
+  onProgress?: (p: PullProgress) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`${ollamaHost()}/api/pull`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: name, stream: true }),
+    signal,
+  });
+  if (!res.ok) throw new Error(`Ollama pull failed ${res.status}: ${await res.text().catch(() => '')}`);
+  if (!res.body) throw new Error('Ollama pull returned no stream');
+  const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  const emit = (line: string): void => {
+    const p = parsePullProgress(line); // throws on an {"error":…} line → propagates (fail-loud)
+    if (p) onProgress?.(p);
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf('\n')) !== -1) {
+      emit(buf.slice(0, nl));
+      buf = buf.slice(nl + 1);
+    }
+  }
+  emit(buf); // trailing line without a newline
 }
 
 async function fetchOllama(path: string, body: unknown): Promise<Response> {
