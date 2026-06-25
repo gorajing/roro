@@ -43,4 +43,6 @@ export const CH = {
   // renderer invokes a one-click pull; MAIN streams progress.
   bootstrapStatus: 'bootstrap:status', bootstrapStatusGet: 'bootstrap:statusGet',
   modelPull: 'model:pull', modelPullProgress: 'model:pullProgress',
+  // Open an allowlisted external URL in the default browser (the Ollama download page).
+  openExternal: 'shell:openExternal',
 } as const;

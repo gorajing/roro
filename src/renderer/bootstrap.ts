@@ -102,6 +102,7 @@ export async function bootstrap(): Promise<void> {
   mountBootstrapBanner({
     subscribe: (cb) => getCompanion()?.onBootstrapStatus?.((s) => cb(s)) ?? (() => undefined),
     getStatus: () => getCompanion()?.getBootstrapStatus?.() ?? Promise.resolve(null),
+    openExternal: (url) => { void getCompanion()?.openExternal?.(url); },
     pull: (models, onProgress) => {
       const unsub = getCompanion()?.onPullProgress?.(onProgress) ?? (() => undefined);
       return (getCompanion()?.pullModels?.(models) ?? Promise.resolve()).finally(unsub);

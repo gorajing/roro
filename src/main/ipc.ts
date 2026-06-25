@@ -17,11 +17,12 @@
 //   CH.memoryRemember     -> memory.remember()                 (sibling: src/memory)
 //   CH.memoryRecall       -> memory.recall()                   (sibling: src/memory)
 //   CH.visionAsk          -> vision.askScreen()                (sibling: src/vision)
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain, shell } from 'electron';
 import { CH } from '../shared/ipc';
 import type { MicStatus, TurnInput, ModelPullProgressMsg } from '../shared/ipc';
 import { pullModel } from '../brain/ollama';
 import { DEFAULT_MODEL_SPECS } from './bootstrapPlan';
+import { isAllowedExternalUrl } from './openExternalGuard';
 import type { Decision, DecideInput } from '../shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch } from '../shared/memory';
 import { assertRendererMemoryKind } from '../shared/memory';
@@ -133,6 +134,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(CH.memoryForget, async (_e, id: string): Promise<void> => {
     const memory = await loadMemory();
     await memory.forgetFact(getOwnerId(), id);
+  });
+
+  // Open an external URL in the default browser — STRICTLY allowlisted (https + ollama.com only, see
+  // isAllowedExternalUrl) so a renderer can't turn this into an arbitrary shell.openExternal (file://,
+  // custom schemes, phishing).
+  ipcMain.handle(CH.openExternal, async (_e, url: string): Promise<void> => {
+    if (!isAllowedExternalUrl(url)) throw new Error(`openExternal: refusing non-allowlisted url: ${url}`);
+    await shell.openExternal(url);
   });
 
   // First-run one-click model pull (M7b): pull each requested model via the local Ollama API, streaming

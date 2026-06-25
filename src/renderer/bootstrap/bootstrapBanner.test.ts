@@ -14,14 +14,15 @@ const MISSING: BootstrapStatusMsg = {
   essentialBytes: 2_174_000_000,
 };
 
-function setup(over: { pull?: ReturnType<typeof vi.fn>; getStatus?: ReturnType<typeof vi.fn> } = {}) {
+function setup(over: { pull?: ReturnType<typeof vi.fn>; getStatus?: ReturnType<typeof vi.fn>; openExternal?: ReturnType<typeof vi.fn> } = {}) {
   document.body.innerHTML = '<div id="app"></div>';
   let push: ((s: BootstrapStatusMsg | null) => void) | null = null;
   const subscribe = (cb: (s: BootstrapStatusMsg | null) => void): (() => void) => { push = cb; return () => undefined; };
   const pull = over.pull ?? vi.fn(async () => undefined);
   const getStatus = over.getStatus ?? vi.fn(async () => null);
-  const unmount = mountBootstrapBanner({ subscribe, getStatus, pull });
-  return { emit: (s: BootstrapStatusMsg | null) => push?.(s), pull, getStatus, unmount };
+  const openExternal = over.openExternal ?? vi.fn();
+  const unmount = mountBootstrapBanner({ subscribe, getStatus, pull, openExternal });
+  return { emit: (s: BootstrapStatusMsg | null) => push?.(s), pull, getStatus, openExternal, unmount };
 }
 
 describe('mountBootstrapBanner — one-click first-run model download (M7b UI)', () => {
@@ -34,12 +35,21 @@ describe('mountBootstrapBanner — one-click first-run model download (M7b UI)',
     expect((q('#bootstrap-banner') as HTMLElement).hidden).toBe(true);
   });
 
-  it('when Ollama isn\'t running: shows an install hint and NO download button (can\'t pull yet)', () => {
+  it('when Ollama isn\'t running: shows an install hint + a "Get Ollama" link (not a download/pull button)', () => {
     const t = setup();
     t.emit({ ready: false, needsOllamaInstall: true, missing: [], essentialBytes: 0 });
     expect((q('#bootstrap-banner') as HTMLElement).hidden).toBe(false);
     expect(q('#bootstrap-banner')?.textContent).toMatch(/install/i);
-    expect(q('#bootstrap-download')).toBeNull();
+    expect(q('#bootstrap-download')).toBeNull(); // can't pull until Ollama runs
+    expect(q('#bootstrap-get-ollama')).toBeTruthy(); // but DO help them install it
+  });
+
+  it('the "Get Ollama" button opens the official download page (no shell-out auto-install)', () => {
+    const openExternal = vi.fn();
+    const t = setup({ openExternal });
+    t.emit({ ready: false, needsOllamaInstall: true, missing: [], essentialBytes: 0 });
+    click(q('#bootstrap-get-ollama'));
+    expect(openExternal).toHaveBeenCalledWith('https://ollama.com/download');
   });
 
   it('when reachable + models missing: shows the honest size + a Download button', () => {
