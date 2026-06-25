@@ -20,9 +20,11 @@ import { mountConfirmChip } from './confirm/confirmChip';
 import { getCompanion } from './events/bridge';
 import { runState } from './events/runState';
 import { mountLocalVoiceMode } from './voice/mountLocalVoiceMode';
+import { activateVoice } from './voice/voiceActivation';
 import { createFakeVoiceEngine } from './voice/fakeVoiceEngine';
 import { createVadVoiceEngine } from './voice/vadVoiceEngine';
 import type { NativeVoiceEngine } from './voice/voiceLocalAdapter';
+import type { VoiceModeState } from './voice/voiceModeState';
 import type { KokoroSpeaker } from './voice/kokoroVoiceEngine';
 import { createVoiceSelection, listVoicePacks } from './voice/voicePacks';
 import type { CharacterDriver } from './character/types';
@@ -100,12 +102,17 @@ export async function bootstrap(): Promise<void> {
   // The Mute button is the only call-era control that survives: it drives the SHARED mic-mute state the
   // on-device voice path reads. Start/End-call were the legacy Vapi cloud surface and are gone.
   const muteBtn = el<HTMLButtonElement>('mute-btn');
+  const voiceModeBtn = el<HTMLButtonElement>('voice-mode-btn');
 
   let micMuted = false;
   // Set by the local-voice block (below) when the on-device path is mounted, so the mic-mute toggle
   // reaches the engine's at-the-source mute gate (deaf cat — no ear-perk, no STT compute). undefined
   // when the on-device path isn't mounted (typed-only default).
   let localVoiceMute: ((muted: boolean) => void) | undefined;
+  // Set by the local-voice block when the on-device engine mounts: toggles Voice Mode (off → probe + consent
+  // + summon; on → unsummon). Undefined when no voice engine is built this session — the button then explains
+  // how to enable it rather than being a dead control.
+  let voiceToggle: (() => void) | undefined;
 
   const setMicMuted = (next: boolean, status?: string): void => {
     micMuted = next;
@@ -142,6 +149,11 @@ export async function bootstrap(): Promise<void> {
 
   muteBtn?.addEventListener('click', () => {
     setMicMuted(!micMuted);
+  });
+
+  voiceModeBtn?.addEventListener('click', () => {
+    if (voiceToggle) voiceToggle();
+    else setStatus('Voice isn’t enabled this session — relaunch with RORO_STT_VOICE=1 RORO_TTS_VOICE=1 npm start. (One-click voice install lands in a later update.)');
   });
 
   // Text-input path: feed a typed task straight to MAIN's orchestrator
@@ -260,7 +272,8 @@ export async function bootstrap(): Promise<void> {
       const transcribe = config.sttVoice
         ? (await import('./voice/whisperTranscribe')).createWhisperTranscribe((p) => {
             if (p.status === 'progress') setStatus(`Loading speech model… ${Math.round(p.progress)}%`);
-            else if (p.status === 'ready') setStatus('Local voice ready — speak; the cat transcribes on-device.');
+            // Consent-gated now: the mic is closed until the user clicks Voice Mode — don't say "speak".
+            else if (p.status === 'ready') setStatus('Speech model ready — click 🎙 Voice Mode to talk to Roro.');
           })
         : undefined;
       const speaker = voiceSel ? await buildKokoroSpeaker(driver, () => voiceSel.current()) : undefined;
@@ -268,6 +281,33 @@ export async function bootstrap(): Promise<void> {
     } else {
       engine = fakeEngine!;
     }
+    // Model ids — must match whisperTranscribe.ts / kokoroSynthesize.ts (and the staged public/models/ dirs).
+    const STT_MODEL_ID = 'onnx-community/whisper-base.en';
+    const TTS_MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX';
+    const want = { stt: config.sttVoice, tts: config.ttsVoice };
+
+    // The HONEST FSM indicator: the button label, the mute button's enabled-ness, and the status line all
+    // track the REAL Voice Mode state (never claim "listening" when the mic isn't open). Driven by
+    // createVoiceMode's onState on every transition.
+    const renderVoiceState = (s: VoiceModeState): void => {
+      const on = s.mode !== 'off';
+      if (voiceModeBtn) {
+        voiceModeBtn.textContent = on ? '■ Stop voice' : '🎙 Voice Mode';
+        voiceModeBtn.setAttribute('aria-pressed', String(on));
+      }
+      if (muteBtn) muteBtn.disabled = !on; // mute only matters while the mic is actually open
+      setStatus(
+        s.mode === 'hearing' ? 'Hearing you…'
+          : s.mode === 'working' ? 'Working on it…'
+            // Fake voice opens no real mic, so the mic-specific "speak" copy would lie — show the dev hint
+            // for both its off and listening states.
+            : fakeEngine
+              ? 'Fake voice mode — in DevTools call __roroVoice.utter("add a logout route").'
+              : s.mode === 'listening' ? "Voice Mode on — speak to Roro (the cat's ears perk ≤80ms)."
+                : 'Voice Mode off — click 🎙 Voice Mode to talk to Roro.',
+      );
+    };
+
     const localVoice = mountLocalVoiceMode({
       engine,
       detect: () => true,
@@ -282,25 +322,55 @@ export async function bootstrap(): Promise<void> {
       onActionEvent: (cb) => c?.onActionEvent?.(cb) ?? (() => undefined),
       driver: { poke: () => driver.poke?.() },
       captions,
+      onState: renderVoiceState,
       isMuted: () => micMuted,
     });
     localVoiceMute = (muted) => localVoice.setMuted(muted); // mic-mute toggle → engine's deaf-cat gate
     localVoice.setMuted(micMuted); // apply the current mute state at mount
-    if (muteBtn) muteBtn.disabled = false; // there is now a real mic to mute — light up the control
-    // Fail loud, not silent: a voice-startup failure (getUserMedia/VAD/model load) must surface, not
-    // vanish into an unhandled rejection. The typed path stays fully usable either way.
-    void localVoice.mode.summon().catch((e) => {
-      setStatus(`Voice failed to start: ${describeError(e)} — the typed path still works.`);
-    });
-    setStatus(
-      fakeEngine
-        ? 'Fake voice mode — in DevTools call __roroVoice.utter("add a logout route")'
-        : config.sttVoice
-          ? `Local voice (VAD+STT${config.ttsVoice ? '+TTS' : ''}) — speak; the cat's ears perk (≤80ms), then it transcribes${config.ttsVoice ? ' and replies' : ''} on-device.`
-          : config.ttsVoice
-            ? "Local voice (VAD+TTS) — the cat's ears perk (≤80ms) and it speaks its replies on-device."
-            : "Local voice (VAD) — speak and the cat's ears perk (≤80ms). No STT/TTS yet.",
-    );
+
+    // Voice Mode is OPT-IN + consent-gated (no auto-summon). The button toggles it: off → probe (mic + staged
+    // weights) → mic consent if undecided → open the mic; on → close it. Every refusal reports a reason.
+    // `activating` guards the async start window: the FSM stays 'off' until summon() applies, so without it a
+    // double-click would fire a second probe + consent prompt before the first resolved.
+    let activating = false;
+    voiceToggle = () => {
+      if (localVoice.mode.state.mode !== 'off') {
+        if (micMuted) setMicMuted(false); // each Voice Mode session starts live — mute is a within-session control
+        void localVoice.mode.unsummon();
+        return;
+      }
+      if (activating) { setStatus('Starting Voice Mode… one moment.'); return; } // acknowledge the impatient re-click
+      activating = true;
+      // Immediate, honest feedback: the mic-consent prompt + probe can take seconds, and the FSM stays 'off'
+      // (so the button label can't flip) until summon() applies — without this the button looks dead meanwhile.
+      setStatus('Starting Voice Mode…');
+      void activateVoice({
+        want,
+        micStatus: async () => (await c?.mic?.status()) ?? 'unknown',
+        requestMic: async () => (await c?.mic?.request()) ?? 'unknown',
+        weightsPresent: async (which) => {
+          const id = which === 'stt' ? STT_MODEL_ID : TTS_MODEL_ID;
+          try {
+            const res = await fetch(new URL(`models/${id}/config.json`, window.location.href).href, { method: 'HEAD' });
+            return res.ok;
+          } catch {
+            // A same-origin static HEAD shouldn't throw; if it does, treat as "not staged" → the probe shows
+            // the actionable stage-command blocker (fail-loud), never a silently dead button.
+            return false;
+          }
+        },
+        summon: () => localVoice.mode.summon(),
+        report: (m) => setStatus(m),
+      })
+        // Backstop: any UNEXPECTED rejection (mic IPC, etc.) must surface, not become a silent unhandled
+        // rejection that leaves the button looking dead. activateVoice already reports its own known failures.
+        .catch((e) => setStatus(`Voice start error: ${describeError(e)} — the typed path still works.`))
+        .finally(() => { activating = false; });
+    };
+    // The fake-voice path is a NO-MIC dev affordance (__roroVoice.utter): start it directly so utter() is live,
+    // since the consent-gated button is only for the REAL on-device mic. Real engines stay button-gated.
+    if (fakeEngine) void localVoice.mode.summon();
+    renderVoiceState(localVoice.mode.state); // paint the initial state (button label + hint)
     (window as unknown as { __roroVoice?: unknown }).__roroVoice = {
       state: () => localVoice.mode.state,
       ...(voiceSel

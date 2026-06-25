@@ -7,11 +7,13 @@
 // component's tsc is green in isolation.
 
 import type { ActionEvent } from '../../shared/events';
-import type { TurnInput } from '../../shared/ipc';
+import type { TurnInput, MicStatus } from '../../shared/ipc';
 
 /** The slice of window.companion this component consumes. */
 interface CompanionBridgeLike {
   onActionEvent(cb: (e: ActionEvent) => void): () => void;
+  /** macOS TCC mic gate: status() reads it (no prompt); request() triggers the consent prompt (needs a user gesture). */
+  mic?: { status(): Promise<MicStatus>; request(): Promise<MicStatus> };
   onRunEnd?(cb: (p: { runId: string }) => void): () => void;
   turnRun?(input: TurnInput): Promise<{ runId: string }>;
   /** Abort the most recent run when called with no id (orchestrator aborts the latest). */
