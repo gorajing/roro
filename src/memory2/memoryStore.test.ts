@@ -43,6 +43,17 @@ describe('memoryStore — unified API + cursor-based reconciliation', () => {
     } finally { await store.close(); }
   });
 
+  it('persists importance through remember -> recall (the M5 ranking-nudge channel)', async () => {
+    const store = await createMemoryStore({ dir, embed, dim: DIM });
+    try {
+      // The adapter stamps importanceFor(kind); here we prove the store carries it end-to-end so the blend
+      // (memoryScore weights importance) can actually use it — a missing channel would silently drop the nudge.
+      await store.remember({ tier: 'episode', ownerId: 'o1', text: 'added a logout route', importance: 6 });
+      const hits = await store.recall({ query: 'added a logout route', ownerId: 'o1', k: 5 });
+      expect(hits.find((h) => h.entry.text === 'added a logout route')?.entry.importance).toBe(6);
+    } finally { await store.close(); }
+  });
+
   it('is owner-scoped — no cross-owner leakage', async () => {
     const store = await createMemoryStore({ dir, embed, dim: DIM });
     try {
