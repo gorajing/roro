@@ -31,8 +31,11 @@ export function configureOnnxRuntimeWasm(): void {
   // Run inference in a worker so a multi-hundred-ms decode/synth never blocks the PixiJS render loop.
   env.backends.onnx.wasm.proxy = true;
 
-  // Weights download from HF then cache (Cache API); COEP credentialless permits the cross-origin no-cred
-  // GET. One network event ever, then offline. (Local staging of the weights is a later packaging concern.)
-  env.allowRemoteModels = true;
-  env.allowLocalModels = false;
+  // Weights are STAGED SAME-ORIGIN into public/models/ by stage-voice-assets.mjs (flag-gated on
+  // RORO_STT_VOICE / RORO_TTS_VOICE). So the renderer loads them LOCALLY — no HF fetch, offline by
+  // default, and CSP connect-src 'self' suffices. transformers.js requests {localModelPath}{MODEL_ID}/…;
+  // resolve the base against the document so it survives the packaged file:// build (as wasmPaths above).
+  env.allowRemoteModels = false;
+  env.allowLocalModels = true;
+  env.localModelPath = new URL('models/', window.location.href).href;
 }

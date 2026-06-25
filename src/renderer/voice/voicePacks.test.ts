@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   VOICE_PACKS,
@@ -31,6 +32,21 @@ describe('voicePacks catalog', () => {
       expect(['us', 'gb']).toContain(p.accent);
       expect(['f', 'm']).toContain(p.gender);
     }
+  });
+});
+
+// Drift guard: the build-time staging script (scripts/stage-voice-assets.mjs) hardcodes which voice .bin
+// matrices to download into public/models/. Because the renderer loads voices SAME-ORIGIN with
+// allowRemoteModels=false (M3), a catalog voice whose .bin was never staged would 404 + silence that voice
+// at runtime. This couples the two lists; the test fails loud the moment they drift apart.
+describe('voicePacks ↔ staging-script drift guard', () => {
+  it('stage-voice-assets.mjs stages EXACTLY the VOICE_PACKS ids (add a new voice to both, or neither)', () => {
+    const script = readFileSync('scripts/stage-voice-assets.mjs', 'utf8');
+    const m = script.match(/keepVoices:\s*\[([^\]]*)\]\.map/); // the `keepVoices: [ '…', … ].map(…)` literal
+    if (!m) throw new Error('keepVoices id array literal not found in stage-voice-assets.mjs (did its shape change?)');
+    const stagedIds = [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]).sort();
+    const catalogIds = VOICE_PACKS.map((p) => p.id).sort();
+    expect(stagedIds).toEqual(catalogIds);
   });
 });
 

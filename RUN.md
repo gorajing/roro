@@ -80,8 +80,14 @@ RORO_VOICE_PACK=bm_george npm start   # optional Kokoro voice-pack id (default a
 
 The committed transcript funnels through the **same** orchestrator as the typed path
 (turnRun -> recall -> decide -> execute -> narrate -> remember) — voice is a mouth, never a
-second brain. On-device model weights are fetched on first use today; offline weight-staging
-and the Voice Mode UI land next.
+second brain.
+
+**Model weights are staged locally, not fetched at runtime.** The first time you start with
+`RORO_STT_VOICE=1` / `RORO_TTS_VOICE=1`, the `prestart` hook downloads the on-device weights
+once from Hugging Face into `public/models/` (whisper ~81MB, Kokoro ~95MB; gitignored,
+regenerable) — a plain `npm start` downloads nothing. After that the renderer loads them
+**same-origin and fully offline** (`connect-src 'self'`; no cloud, no keys). Re-stage anytime
+with `npm run stage:voice-assets` (idempotent). The Voice Mode UI lands next (M4).
 
 ## 6. macOS permissions
 
