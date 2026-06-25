@@ -15,7 +15,7 @@ import { buildSafeStorageWrapper, type SafeStorageLike } from './safeStorageWrap
 import { resolveTracer } from './tracer';
 import { resolveOllamaEmbedDim } from '../brain/ollama';
 import type { Cipher } from './cipher';
-import type { RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch } from '../shared/memory';
+import type { RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch, RecallInput } from '../shared/memory';
 
 declare const process: { env: Record<string, string | undefined>; cwd(): string; platform: string };
 
@@ -116,7 +116,7 @@ export async function replaceFact(input: ReplaceFactInput): Promise<MemoryRow> {
 export async function reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null> {
   return (await getAdapter()).reinforceFact(input);
 }
-export async function recall(input: { query: string; k?: number; ownerId: string; sessionId?: string }): Promise<MemoryMatch[]> {
+export async function recall(input: RecallInput): Promise<MemoryMatch[]> {
   return (await getAdapter()).recall(input);
 }
 export async function getProfile(ownerId: string): Promise<MemoryRow[]> {

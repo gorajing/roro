@@ -60,7 +60,7 @@ export interface MemoryStore {
   /** Episodic HYBRID recall: blends cosine relevance + recency + importance (excludes facts), owner-scoped.
    *  The recency channel ensures temporal/meta queries ("what did we just do?") surface recent work even
    *  when cosine misses — the bug a real turn exposed. Returns ranked entries with explainable parts. */
-  recall(opts: { query: string; ownerId: string; k?: number; weights?: BlendWeights }): Promise<ScoredEntry[]>;
+  recall(opts: { query: string; ownerId: string; k?: number; weights?: BlendWeights; repoId?: string }): Promise<ScoredEntry[]>;
   /** Most-recent episodes for an owner (the temporal/"what did we just do" path). */
   recent(opts: { ownerId: string; k?: number }): Promise<Entry[]>;
   /** Active profile facts for an owner ("KNOWN ABOUT THIS USER"), ordered by EFFECTIVE (time-decayed)
@@ -266,7 +266,7 @@ export async function createMemoryStore(opts: {
       });
     },
 
-    async recall({ query, ownerId, k = 5, weights }): Promise<ScoredEntry[]> {
+    async recall({ query, ownerId, k = 5, weights, repoId }): Promise<ScoredEntry[]> {
       // Cosine channel — but a query-time embed outage must NOT suppress recent memories, so degrade to
       // recency-only on failure (the docs' "never return zero when recent rows exist").
       let vec: Awaited<ReturnType<IndexStore['vectorSearch']>> = [];
@@ -281,7 +281,7 @@ export async function createMemoryStore(opts: {
         ...vec.map((m) => ({ entry: m.entry, cosine: m.similarity })),
         ...rec.map((entry) => ({ entry })), // recency-only candidates (no cosine)
       ];
-      const blended = blendCandidates(candidates, weights ?? DEFAULT_WEIGHTS);
+      const blended = blendCandidates(candidates, weights ?? DEFAULT_WEIGHTS, Date.now(), repoId);
 
       // Guarantee the most-recent episodes survive competition (the RECENT-ACTIONS channel): temporal
       // queries ("what did we just do?") must surface recent work even amid many strong cosine matches.

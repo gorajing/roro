@@ -1,10 +1,10 @@
 // src/main/memoryContext.ts — compose recall into a LABELED memory string for DecideInput.memory.
 // Facts (the durable "knows-you" segment) come first so truncation never drops them before episodes.
-import type { MemoryRow, MemoryMatch } from '../shared/memory';
+import type { MemoryRow, MemoryMatch, RecallInput } from '../shared/memory';
 
 export interface RecallDeps {
   getProfile(ownerId: string): Promise<MemoryRow[]>;
-  recall(input: { query: string; k?: number; ownerId: string; sessionId?: string }): Promise<MemoryMatch[]>;
+  recall(input: RecallInput): Promise<MemoryMatch[]>;
 }
 
 export function composeMemoryContext(facts: MemoryRow[], episodes: MemoryMatch[]): string | undefined {
@@ -20,7 +20,7 @@ export function composeMemoryContext(facts: MemoryRow[], episodes: MemoryMatch[]
 
 export async function buildRecallContext(
   deps: RecallDeps,
-  opts: { ownerId: string; sessionId: string; query: string; k?: number; minSimilarity?: number },
+  opts: { ownerId: string; sessionId: string; query: string; k?: number; minSimilarity?: number; repoId?: string },
 ): Promise<{ context: string | undefined; factCount: number; episodeCount: number }> {
   const minSimilarity = opts.minSimilarity ?? 0.3;
   // Facts (the durable "knows-you" moat — a plain SQL filter) and episodes (vector recall, which
@@ -28,7 +28,7 @@ export async function buildRecallContext(
   // never drop the facts from the decide prompt, and vice-versa. allSettled, not all.
   const [factsResult, matchesResult] = await Promise.allSettled([
     deps.getProfile(opts.ownerId),
-    deps.recall({ query: opts.query, k: opts.k, ownerId: opts.ownerId, sessionId: opts.sessionId }),
+    deps.recall({ query: opts.query, k: opts.k, ownerId: opts.ownerId, sessionId: opts.sessionId, repoId: opts.repoId }),
   ]);
   if (factsResult.status === 'rejected') {
     console.error('[memory] getProfile failed:', (factsResult.reason as Error)?.message ?? factsResult.reason);

@@ -7,6 +7,9 @@ export interface RememberInput {
   kind: MemoryKind;
   text: string;
   payload?: unknown;
+  /** Absolute path of the repo this memory belongs to (M5). The adapter derives a stable repoId from it for
+   *  project-scoped recall; absent (answer/clarify or no-workdir turns) → an unscoped global memory. */
+  repo_path?: string;
 }
 
 /**
@@ -23,6 +26,19 @@ export interface ReplaceFactInput {
   /** The fact key whose prior active rows are superseded before this insert. */
   key: string;
   payload?: unknown;
+}
+
+/**
+ * Episodic recall query (owner-scoped). `repoId` (M5b) boosts same-project memories — optional, so an
+ * unscoped recall is unchanged. Shared by the recall deps / adapter / module / facade so this field set can
+ * never drift across copies (the bug that left the facade unaware of repoId until it was unified here).
+ */
+export interface RecallInput {
+  query: string;
+  k?: number;
+  ownerId: string;
+  sessionId?: string;
+  repoId?: string;
 }
 
 export interface MemoryRow {

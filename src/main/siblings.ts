@@ -28,7 +28,7 @@
 
 import type { Decision, DecideInput } from '../shared/brain';
 import type { FactExtractInput, FactCandidate } from '../brain/extractFact';
-import type { RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch } from '../shared/memory';
+import type { RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch, RecallInput } from '../shared/memory';
 
 // ---- Thin local interfaces (structural; the real modules satisfy a superset) ----
 
@@ -61,7 +61,7 @@ export interface MemoryModule {
   replaceFact(input: ReplaceFactInput): Promise<MemoryRow>;
   /** Corroborate the active fact for (owner_id, key): strengthen its confidence in place. null if none. */
   reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null>;
-  recall(input: { query: string; k?: number; ownerId: string; sessionId?: string }): Promise<MemoryMatch[]>;
+  recall(input: RecallInput): Promise<MemoryMatch[]>;
   getProfile(ownerId: string): Promise<MemoryRow[]>;
   supersede(id: string): Promise<void>;
 }
