@@ -16,6 +16,8 @@ import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorT
 import { cancelAllRuns } from './main/orchestrator';
 import { initOwnerId } from './main/identity';
 import { loadBrain } from './main/siblings';
+import { bootstrapFailureMessage, type OllamaProbe } from './main/bootstrapPlan';
+import { ollamaTags } from './brain/ollama';
 import { CH } from './shared/ipc';
 
 /**
@@ -31,8 +33,23 @@ async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
     const result = await brain.preflight();
     console.log(`[main] brain preflight OK — ${brain.describeBrain()}; models:`, result.required);
   } catch (err) {
-    const message = `Local brain unavailable: ${(err as Error).message}`;
-    console.error(`[main] brain preflight FAILED — ${message}`);
+    const baseMessage = `Local brain unavailable: ${(err as Error).message}`;
+    console.error(`[main] brain preflight FAILED — ${baseMessage}`);
+    // Turn the failure into ACTIONABLE first-run guidance (M7): for the local-Ollama provider, probe whether
+    // the daemon is up + which models it has, then disclose exactly what to install + the honest core-loop size
+    // (~2GB essentials, not the full ~8GB). A nebius failure is a cloud-key issue — skip the (pointless) probe.
+    let message = baseMessage;
+    if (process.env.BRAIN_PROVIDER !== 'nebius') {
+      let probe: OllamaProbe;
+      try {
+        probe = { kind: 'reachable', models: await ollamaTags() };
+      } catch (e) {
+        // A TIMEOUT means the daemon is up but wedged (reinstalling won't help — keep the accurate message);
+        // any other failure (connection refused) means it isn't running. ollamaFetchError tags timeouts.
+        probe = /timed out/i.test((e as Error)?.message ?? '') ? { kind: 'degraded' } : { kind: 'unreachable' };
+      }
+      message = bootstrapFailureMessage(baseMessage, 'ollama', probe);
+    }
     const send = (): void => {
       win.webContents.send(CH.actionEvent, { kind: 'message', runId: 'preflight', text: `⚠️ ${message}`, ts: Date.now() });
     };
