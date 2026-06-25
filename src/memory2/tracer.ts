@@ -33,7 +33,19 @@ export type TraceEvent =
   | { kind: 'supersede'; ownerId: string; id: string; sessionId?: string }
   // reason distinguishes corpus-bound auto-prune ('cap') from a user-initiated hard delete ('forget') so a
   // retention/forgetting eval doesn't conflate the two.
-  | { kind: 'prune'; ownerId?: string; count: number; ids: string[]; reason: 'cap' | 'forget' };
+  | { kind: 'prune'; ownerId?: string; count: number; ids: string[]; reason: 'cap' | 'forget' }
+  // Per-turn extraction outcome — makes "Memory: 0 known facts" diagnosable (was it the marker GATE, the
+  // model returning null, the store, or a failure?). IDs/keys/enums ONLY — never the transcript or fact
+  // VALUE text (privacy: the trace file must never leak the corpus encrypt-at-rest protects).
+  | {
+      kind: 'extract';
+      ownerId: string;
+      sessionId: string;
+      outcome: 'completed' | 'failed' | 'answered';
+      stage: 'gated' | 'noop' | 'stored' | 'reinforced' | 'failed';
+      factKey?: string;
+      reason?: string;
+    };
 
 export interface Tracer {
   /** Record a seam observation. One-way + best-effort: never throws, never returns data to the caller. */

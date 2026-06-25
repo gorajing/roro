@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { createMemory2Adapter, type Memory2Adapter } from './adapter';
 import { loadOrCreateCipher } from './keyManager';
 import { buildSafeStorageWrapper, type SafeStorageLike } from './safeStorageWrapper';
-import { resolveTracer } from './tracer';
+import { resolveTracer, type Tracer, type TraceEvent } from './tracer';
 import { resolveOllamaEmbedDim } from '../brain/ollama';
 import type { Cipher } from './cipher';
 import type { RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch, RecallInput } from '../shared/memory';
@@ -35,6 +35,22 @@ function embedModel(): string {
 // with the legacy PGlite store's files under the same configured DB root.
 function resolveDataDir(): string {
   return process.env.RORO_DB_DIR ? join(process.env.RORO_DB_DIR, 'memory2') : join(process.cwd(), '.roro-memory2');
+}
+
+// ONE memoized RORO_TRACE sink, shared by BOTH the store's tracer (getAdapter, below) and the extraction
+// observability sink — so a single writer appends to trace.jsonl instead of two independent ones. NOOP
+// (zero overhead) unless RORO_TRACE=1.
+let _tracer: Tracer | undefined;
+function sharedTracer(): Tracer {
+  return (_tracer ??= resolveTracer(resolveDataDir()));
+}
+
+// Extraction-observability sink (M-magic-moment): emit per-turn extract outcomes (gated/noop/stored/
+// reinforced/failed) through the shared sink, so the orchestrator's runFactExtraction makes "0 known
+// facts" diagnosable without a second tracing mechanism. Never throws (the JSONL tracer swallows write
+// errors — diagnostics must never disturb a turn).
+export function traceExtraction(event: TraceEvent): void {
+  sharedTracer().emit(event);
 }
 
 type BrainEmbed = (text: string) => Promise<number[]> | number[];
@@ -103,7 +119,7 @@ const getAdapter = lazySingleton<Memory2Adapter>(async () => {
     dim: embeddingDim(),
     embedModel: embedModel(),
     cipher: await loadCipher(dir), // encrypt-at-rest by default
-    tracer: resolveTracer(dir), // RORO_TRACE=1 → JSONL observation tap (no-op otherwise)
+    tracer: sharedTracer(), // RORO_TRACE=1 → the shared JSONL observation tap (no-op otherwise)
   });
 });
 

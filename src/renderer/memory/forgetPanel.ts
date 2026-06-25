@@ -37,6 +37,15 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
     list.append(li);
   }
 
+  function errorState(): void {
+    list.replaceChildren();
+    const li = document.createElement('li');
+    li.className = 'memory-error';
+    // textContent, never innerHTML (XSS invariant). Recovery is real: reopening re-runs refresh().
+    li.textContent = "Couldn't load what Roro knows. Try reopening this panel.";
+    list.append(li);
+  }
+
   function renderRow(fact: { id: string; text: string }): HTMLLIElement {
     const row = document.createElement('li');
     row.className = 'memory-row';
@@ -78,9 +87,16 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
   }
 
   async function refresh(): Promise<void> {
-    const facts = (await bridge()?.profile()) ?? [];
-    if (facts.length === 0) { emptyState(); return; }
-    list.replaceChildren(...facts.map(renderRow));
+    try {
+      const facts = (await bridge()?.profile()) ?? [];
+      if (facts.length === 0) { emptyState(); return; }
+      list.replaceChildren(...facts.map(renderRow));
+    } catch (e) {
+      // Fail loud (console) but surface a friendly, recoverable state — never an uncaught rejection
+      // + silent blank panel (e.g. when memory:profile throws because the OS keychain is unavailable).
+      errorState();
+      console.error('[forgetPanel] profile() failed:', e);
+    }
   }
 
   toggle.addEventListener('click', () => {

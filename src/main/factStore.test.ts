@@ -120,4 +120,25 @@ describe('extractAndStoreFact', () => {
     expect(active.filter((r) => factKeyOf(r) === 'pkg_manager')).toHaveLength(1);
     expect(active[0].text).toBe('uses pnpm'); // the later writer wins; the earlier is superseded
   });
+
+  // The return value is the discriminator the extraction TRACE records (gated/noop/stored/reinforced/
+  // failed) so "Memory: 0 known facts" can be localized to the gate vs model vs store.
+  describe('returns the outcome discriminator for the extraction trace', () => {
+    it("returns 'noop' when the candidate is null (nothing written)", async () => {
+      const { deps } = fakeDeps([]);
+      expect(await extractAndStoreFact(deps, null, CTX)).toBe('noop');
+    });
+    it("returns 'stored' when a new fact is inserted", async () => {
+      const { deps } = fakeDeps([]);
+      expect(await extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses pnpm' }, CTX)).toBe('stored');
+    });
+    it("returns 'stored' when the value changes (supersede + insert)", async () => {
+      const { deps } = fakeDeps([factRow('r-old', 'pkg_manager', 'uses npm')]);
+      expect(await extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses pnpm' }, CTX)).toBe('stored');
+    });
+    it("returns 'reinforced' when the same key already has the same value (no churn)", async () => {
+      const { deps } = fakeDeps([factRow('r-old', 'pkg_manager', 'uses pnpm')]);
+      expect(await extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses pnpm' }, CTX)).toBe('reinforced');
+    });
+  });
 });

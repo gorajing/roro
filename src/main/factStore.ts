@@ -34,12 +34,16 @@ let writeChain: Promise<void> = Promise.resolve();
  * changed value -> replaceFact (atomic supersede-all-for-key + insert). Writes are serialized so
  * the supersede-not-overwrite invariant holds under concurrent turns.
  */
+/** What the write did, for the extraction trace: 'noop' (null candidate), 'reinforced' (same value
+ *  corroborated in place), or 'stored' (new fact / value change superseded + inserted). */
+export type FactWriteOutcome = 'stored' | 'reinforced' | 'noop';
+
 export function extractAndStoreFact(
   deps: FactStoreDeps,
   candidate: FactCandidate | null,
   ctx: { ownerId: string; sessionId: string; turnTs: number },
-): Promise<void> {
-  if (!candidate) return Promise.resolve();
+): Promise<FactWriteOutcome> {
+  if (!candidate) return Promise.resolve('noop');
   const run = writeChain.then(() => storeFact(deps, candidate, ctx));
   // Keep the chain alive even if this write rejects, so one failure can't wedge the queue.
   writeChain = run.then(() => undefined, () => undefined);
@@ -50,7 +54,7 @@ async function storeFact(
   deps: FactStoreDeps,
   candidate: FactCandidate,
   ctx: { ownerId: string; sessionId: string; turnTs: number },
-): Promise<void> {
+): Promise<FactWriteOutcome> {
   const activeForKey = (await deps.getProfile(ctx.ownerId)).filter((r) => factKeyOf(r) === candidate.key);
   // Corroboration: the key already has EXACTLY one active row carrying this value (steady state). Don't
   // churn the fact (no supersede + insert of a new row) — instead REINFORCE it: re-confirmation
@@ -58,7 +62,7 @@ async function storeFact(
   // id durably (a soft-signal update), but never creates a superseded duplicate.
   if (activeForKey.length === 1 && factValueOf(activeForKey[0]) === candidate.value) {
     await deps.reinforceFact({ owner_id: ctx.ownerId, key: candidate.key });
-    return;
+    return 'reinforced';
   }
 
   const payload: FactPayload = {
@@ -76,4 +80,5 @@ async function storeFact(
     key: candidate.key,
     payload,
   });
+  return 'stored';
 }

@@ -21,7 +21,7 @@ import { newRunId } from '../shared/events';
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import type { MemoryKind } from '../shared/memory';
 import { getExecutor } from '../executor';
-import { loadBrain, loadMemory, loadVision } from './siblings';
+import { loadBrain, loadMemory, loadVision, type MemoryModule } from './siblings';
 import { getOwnerId } from './identity';
 import { buildRecallContext } from './memoryContext';
 import { extractAndStoreFact } from './factStore';
@@ -30,7 +30,7 @@ import { requestConfirm, resolveConfirm } from './confirmGate';
 import { isCleanTree } from './gitTree';
 import { resolveWorkdir, tryResolveWorkdir } from './workdir';
 import { repoId as deriveRepoId } from '../memory2/repoId';
-import type { FactExtractInput } from '../brain/extractFact';
+import { isPlausiblePreference, type FactExtractInput } from '../brain/extractFact';
 
 const RECALL_K = 5;
 // memory2 is the recall authority: it blend-ranks (relevance + recency + importance) and guarantees
@@ -645,16 +645,35 @@ async function rememberUserSaid(sessionId: string, transcript: string, repoPath?
  * store it (supersede-not-overwrite). Fire-and-forget; never blocks or fails a turn.
  */
 async function runFactExtraction(sessionId: string, input: FactExtractInput): Promise<void> {
+  let memory: MemoryModule | undefined;
+  // The trace base (ids + turn outcome; no transcript/value text). Assigned INSIDE the try because
+  // getOwnerId() can throw — keeping it caught preserves "fire-and-forget; never fails a turn" (both
+  // callers void-dispatch with no .catch, so an escaping throw would be an unhandled rejection).
+  let base: { kind: 'extract'; ownerId: string; sessionId: string; outcome: FactExtractInput['outcome'] } | undefined;
   try {
-    const [brain, memory] = await Promise.all([loadBrain(), loadMemory()]);
-    const candidate = await brain.extractFact(input);
-    await extractAndStoreFact(memory, candidate, {
-      ownerId: getOwnerId(),
-      sessionId,
-      turnTs: Date.now(),
-    });
+    const ownerId = getOwnerId();
+    base = { kind: 'extract', ownerId, sessionId, outcome: input.outcome };
+    memory = await loadMemory();
+    // Classify WHY a fact did/didn't get written, so "0 known facts" is diagnosable. The gate is a pure
+    // text match (isPlausiblePreference) — if it fails we never consult the model (and brain.extractFact
+    // would gate to null anyway), so record 'gated' and stop.
+    if (!isPlausiblePreference(input)) {
+      memory.traceExtraction({ ...base, stage: 'gated', reason: 'no_preference_marker' });
+      return;
+    }
+    const candidate = await (await loadBrain()).extractFact(input);
+    if (!candidate) {
+      // Gate passed but the 3B model still produced no fact — distinct from 'gated' for diagnosis.
+      memory.traceExtraction({ ...base, stage: 'noop', reason: 'model_null' });
+      return;
+    }
+    const stage = await extractAndStoreFact(memory, candidate, { ownerId, sessionId, turnTs: Date.now() });
+    memory.traceExtraction({ ...base, stage, factKey: candidate.key });
   } catch (err) {
+    // Fail loud verbatim (unchanged) AND record the failure for the trace (best-effort: base/memory may be
+    // unset if getOwnerId()/loadMemory() threw — the console.error still preserves fail-loud).
     console.error('[orchestrator] fact extraction failed:', (err as Error).message);
+    if (base) memory?.traceExtraction({ ...base, stage: 'failed', reason: (err as Error).message });
   }
 }
 
