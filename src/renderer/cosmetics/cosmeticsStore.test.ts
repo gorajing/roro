@@ -56,6 +56,21 @@ describe('mountCosmeticsStore — the WS5 willingness-to-pay fake-door', () => {
     expect(onIntent).toHaveBeenCalledTimes(1);
   });
 
+  it('a throwing onIntent leaves the item RETRYABLE (not silently captured) — the founder-aggregation footgun', async () => {
+    const onIntent = vi.fn().mockImplementationOnce(() => { throw new Error('aggregation down'); });
+    mountCosmeticsStore({ onIntent });
+    click(q('#cosmetics-toggle'));
+    const btn = q('.cosmetic-item[data-id="pet:miro"] .cosmetic-unlock') as HTMLButtonElement;
+    click(btn); // onIntent throws
+    await flush();
+    expect(btn.disabled).toBe(false); // still clickable
+    expect(btn.textContent).toBe('Unlock'); // not falsely acknowledged
+    click(btn); // retry — onIntent now succeeds
+    await flush();
+    expect(onIntent).toHaveBeenCalledTimes(2);
+    expect(btn.disabled).toBe(true); // captured on success
+  });
+
   it('unmount removes the toggle + panel', () => {
     const unmount = mountCosmeticsStore({ onIntent: vi.fn() });
     unmount();

@@ -73,9 +73,16 @@ export function mountCosmeticsStore(opts: CosmeticsStoreOpts): () => void {
     let captured = false;
     unlock.addEventListener('click', () => {
       if (captured) return; // record once per item
-      captured = true;
       // STOP AT INTENT: record the click + acknowledge. There is NO payment path — this is a fake-door.
-      opts.onIntent(item.intent);
+      // onIntent is founder-pluggable (it may be wired to aggregation), so guard it: only mark captured +
+      // acknowledge on SUCCESS, leaving the button retryable (fail-loud) if onIntent throws.
+      try {
+        opts.onIntent(item.intent);
+      } catch (e) {
+        console.error('[cosmetics] intent capture failed — leaving it retryable:', e);
+        return;
+      }
+      captured = true;
       unlock.textContent = "Coming soon — you're on the list";
       unlock.classList.add('captured');
       unlock.disabled = true;

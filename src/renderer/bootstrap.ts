@@ -110,7 +110,8 @@ export async function bootstrap(): Promise<void> {
       onIntent: (item) => {
         try {
           const key = 'roro.ws5.intent';
-          const log = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown[];
+          const parsed = JSON.parse(localStorage.getItem(key) ?? '[]');
+          const log = Array.isArray(parsed) ? parsed : []; // coerce — a corrupt/non-array value can't break logging
           log.push({ ...item, at: new Date().toISOString() });
           localStorage.setItem(key, JSON.stringify(log));
         } catch { /* best-effort local log; console below is the primary signal */ }
