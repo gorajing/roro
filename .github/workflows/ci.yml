@@ -1,0 +1,41 @@
+# CI — the enforced green-signal gate (M6a). Roro had no CI: tsc/lint/tests were green only when someone
+# remembered to run them locally. This runs the SAME three checks on every PR + push to main, so a
+# regression can't merge silently. Tests run serialized (vitest.config fileParallelism:false) to avoid the
+# PGlite-under-contention flakiness; the opt-in live-brain tests skip without OLLAMA_AVAILABLE.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same ref cancels the in-flight run (don't waste minutes on superseded commits).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck · lint · test
+    runs-on: ubuntu-latest # the checks are pure Node (tsc/eslint/vitest); the app is macOS but the tests aren't
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Plain `npm ci` (no ELECTRON_SKIP_BINARY_DOWNLOAD) so CI matches the local env where green is proven —
+      # some main-process modules import 'electron', and skipping the binary could fail only in CI.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
