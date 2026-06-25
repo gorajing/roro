@@ -19,6 +19,7 @@ import { mountFloatingAsk } from './ask/floatingAsk';
 import { mountConfirmChip } from './confirm/confirmChip';
 import { mountForgetPanel } from './memory/forgetPanel';
 import { mountCosmeticsStore } from './cosmetics/cosmeticsStore';
+import { mountBootstrapBanner } from './bootstrap/bootstrapBanner';
 import { getCompanion } from './events/bridge';
 import { runState } from './events/runState';
 import { mountLocalVoiceMode } from './voice/mountLocalVoiceMode';
@@ -95,6 +96,16 @@ export async function bootstrap(): Promise<void> {
 
   // Phase C1: the destructive-confirm chip (a spoken/typed word can't approve `rm -rf`).
   mountConfirmChip();
+
+  // M7b: first-run one-click model download. MAIN pushes readiness (which essentials are missing); this banner
+  // offers a Download button + streams the pull progress. Top-level (#app) so it's visible at first run.
+  mountBootstrapBanner({
+    subscribe: (cb) => getCompanion()?.onBootstrapStatus?.((s) => cb(s)) ?? (() => undefined),
+    pull: (models, onProgress) => {
+      const unsub = getCompanion()?.onPullProgress?.(onProgress) ?? (() => undefined);
+      return (getCompanion()?.pullModels?.(models) ?? Promise.resolve()).finally(unsub);
+    },
+  });
 
   // M8: the transparency + Forget panel — see + delete the facts Roro knows about you (the trust
   // counterweight). Mount the toggle in #controls so it sits with the other header controls and is hidden

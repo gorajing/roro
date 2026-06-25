@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bootstrapPlan, describeBootstrap, formatBytes, bootstrapFailureMessage, DEFAULT_MODEL_SPECS } from './bootstrapPlan';
+import { bootstrapPlan, describeBootstrap, formatBytes, bootstrapFailureMessage, bootstrapStatusFor, DEFAULT_MODEL_SPECS } from './bootstrapPlan';
 
 // First-run bootstrap (M7): given whether the local Ollama daemon is reachable + which models it already has,
 // compute what must be pulled and the HONEST download size — splitting the ESSENTIAL core-loop models
@@ -109,5 +109,27 @@ describe('bootstrapFailureMessage — choose the startup-failure caption', () =>
 
   it('reachable with essentials present (preflight failed for another reason) → falls back to base', () => {
     expect(bootstrapFailureMessage(base, 'ollama', { kind: 'reachable', models: ['qwen2.5:3b', 'nomic-embed-text'] })).toBe(base);
+  });
+});
+
+describe('bootstrapStatusFor — the structured first-run status pushed to the renderer (M7b)', () => {
+  it('reachable + missing → not ready, lists the missing essentials + bytes', () => {
+    const s = bootstrapStatusFor({ kind: 'reachable', models: [] });
+    expect(s?.ready).toBe(false);
+    expect(s?.needsOllamaInstall).toBe(false);
+    expect(s?.missing.map((m) => m.name).sort()).toEqual(['nomic-embed-text', 'qwen2.5:3b']);
+    expect(s?.essentialBytes).toBeGreaterThan(0);
+  });
+
+  it('unreachable → needsOllamaInstall (a download can\'t help until Ollama runs)', () => {
+    expect(bootstrapStatusFor({ kind: 'unreachable' })?.needsOllamaInstall).toBe(true);
+  });
+
+  it('degraded (wedged daemon) → null — no structured status (a download won\'t fix a timeout)', () => {
+    expect(bootstrapStatusFor({ kind: 'degraded' })).toBeNull();
+  });
+
+  it('reachable + all essentials present → ready (the banner stays hidden)', () => {
+    expect(bootstrapStatusFor({ kind: 'reachable', models: ['qwen2.5:3b', 'nomic-embed-text'] })?.ready).toBe(true);
   });
 });

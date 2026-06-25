@@ -7,7 +7,7 @@
 // component's tsc is green in isolation.
 
 import type { ActionEvent } from '../../shared/events';
-import type { TurnInput, MicStatus } from '../../shared/ipc';
+import type { TurnInput, MicStatus, BootstrapStatusMsg, ModelPullProgressMsg } from '../../shared/ipc';
 
 /** The slice of window.companion this component consumes. */
 interface CompanionBridgeLike {
@@ -30,6 +30,10 @@ interface CompanionBridgeLike {
   confirmResolve?(runId: string, approved: boolean): Promise<void>;
   /** Subscribe to normalized cursor-gaze targets pushed from MAIN. */
   onCursor?(cb: (t: { x: number; y: number }) => void): () => void;
+  /** First-run bootstrap (M7b): MAIN pushes readiness; the renderer offers a one-click model pull + sees progress. */
+  onBootstrapStatus?(cb: (s: BootstrapStatusMsg) => void): () => void;
+  pullModels?(models: string[]): Promise<void>;
+  onPullProgress?(cb: (p: ModelPullProgressMsg) => void): () => void;
 }
 
 /** The slice of window.brain this component consumes. */

@@ -534,3 +534,43 @@ body.floating-window #floating-stop.armed {
   border-color: rgba(255, 255, 255, 0.2);
   cursor: default;
 }
+
+/* M7b: first-run download banner — a top notice; [hidden] override so the id's display can't defeat it. */
+#bootstrap-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  max-width: 92%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 200, 90, 0.5);
+  background: rgba(50, 40, 15, 0.95);
+  color: #fff;
+  padding: 8px 14px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+#bootstrap-banner[hidden] {
+  display: none;
+}
+#bootstrap-download {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 4px 14px;
+  cursor: pointer;
+  color: #fff;
+  border: 1px solid rgba(90, 200, 120, 0.6);
+  background: rgba(40, 150, 70, 0.9);
+  white-space: nowrap;
+}
+#bootstrap-download:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

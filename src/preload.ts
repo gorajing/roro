@@ -8,7 +8,7 @@
 // subscription returns an unsubscribe fn so the renderer can avoid listener leaks.
 import { contextBridge, ipcRenderer } from 'electron';
 import { CH } from './shared/ipc';
-import type { MicStatus, TurnInput } from './shared/ipc';
+import type { MicStatus, TurnInput, BootstrapStatusMsg, ModelPullProgressMsg } from './shared/ipc';
 import type { ActionEvent } from './shared/events';
 import type { Decision, DecideInput } from './shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch } from './shared/memory';
@@ -68,6 +68,12 @@ const companion = {
     ipcRenderer.invoke(CH.confirmResolve, { runId, approved }),
   onCursor: (cb: (t: { x: number; y: number }) => void): (() => void) =>
     subscribe<{ x: number; y: number }>(CH.cursorMove, cb),
+  // First-run bootstrap (M7b): MAIN pushes readiness; the renderer offers a one-click pull + sees progress.
+  onBootstrapStatus: (cb: (s: BootstrapStatusMsg) => void): (() => void) =>
+    subscribe<BootstrapStatusMsg>(CH.bootstrapStatus, cb),
+  pullModels: (models: string[]): Promise<void> => ipcRenderer.invoke(CH.modelPull, models),
+  onPullProgress: (cb: (p: ModelPullProgressMsg) => void): (() => void) =>
+    subscribe<ModelPullProgressMsg>(CH.modelPullProgress, cb),
 };
 
 const brain = {

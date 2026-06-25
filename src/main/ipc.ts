@@ -19,7 +19,8 @@
 //   CH.visionAsk          -> vision.askScreen()                (sibling: src/vision)
 import { BrowserWindow, ipcMain } from 'electron';
 import { CH } from '../shared/ipc';
-import type { MicStatus, TurnInput } from '../shared/ipc';
+import type { MicStatus, TurnInput, ModelPullProgressMsg } from '../shared/ipc';
+import { pullModel } from '../brain/ollama';
 import type { Decision, DecideInput } from '../shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch } from '../shared/memory';
 import { assertRendererMemoryKind } from '../shared/memory';
@@ -131,6 +132,21 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(CH.memoryForget, async (_e, id: string): Promise<void> => {
     const memory = await loadMemory();
     await memory.forgetFact(getOwnerId(), id);
+  });
+
+  // First-run one-click model pull (M7b): pull each requested model via the local Ollama API, streaming
+  // progress to the requesting renderer. On failure, push an error tick AND reject the invoke (fail-loud).
+  ipcMain.handle(CH.modelPull, async (e, models: string[]): Promise<void> => {
+    const tick = (p: ModelPullProgressMsg): void => { e.sender.send(CH.modelPullProgress, p); };
+    try {
+      for (const model of models) {
+        await pullModel(model, (p) => tick({ model, status: p.status, percent: p.percent }));
+      }
+      tick({ model: '', status: 'success', done: true });
+    } catch (err) {
+      tick({ model: '', status: 'error', error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
   });
 
   // ---- Vision (sibling: src/vision) ----

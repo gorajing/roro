@@ -16,7 +16,8 @@ import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorT
 import { cancelAllRuns } from './main/orchestrator';
 import { initOwnerId } from './main/identity';
 import { loadBrain } from './main/siblings';
-import { bootstrapFailureMessage, type OllamaProbe } from './main/bootstrapPlan';
+import { bootstrapFailureMessage, bootstrapStatusFor, type OllamaProbe } from './main/bootstrapPlan';
+import type { BootstrapStatusMsg } from './shared/ipc';
 import { ollamaTags } from './brain/ollama';
 import { CH } from './shared/ipc';
 
@@ -39,6 +40,7 @@ async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
     // the daemon is up + which models it has, then disclose exactly what to install + the honest core-loop size
     // (~2GB essentials, not the full ~8GB). A nebius failure is a cloud-key issue — skip the (pointless) probe.
     let message = baseMessage;
+    let status: BootstrapStatusMsg | null = null;
     if (process.env.BRAIN_PROVIDER !== 'nebius') {
       let probe: OllamaProbe;
       try {
@@ -49,9 +51,11 @@ async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
         probe = /timed out/i.test((e as Error)?.message ?? '') ? { kind: 'degraded' } : { kind: 'unreachable' };
       }
       message = bootstrapFailureMessage(baseMessage, 'ollama', probe);
+      status = bootstrapStatusFor(probe); // structured status → the renderer's one-click download banner (M7b)
     }
     const send = (): void => {
       win.webContents.send(CH.actionEvent, { kind: 'message', runId: 'preflight', text: `⚠️ ${message}`, ts: Date.now() });
+      if (status) win.webContents.send(CH.bootstrapStatus, status);
     };
     if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
     else send();
