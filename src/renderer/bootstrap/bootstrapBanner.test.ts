@@ -14,13 +14,14 @@ const MISSING: BootstrapStatusMsg = {
   essentialBytes: 2_174_000_000,
 };
 
-function setup(over: { pull?: ReturnType<typeof vi.fn> } = {}) {
+function setup(over: { pull?: ReturnType<typeof vi.fn>; getStatus?: ReturnType<typeof vi.fn> } = {}) {
   document.body.innerHTML = '<div id="app"></div>';
   let push: ((s: BootstrapStatusMsg | null) => void) | null = null;
   const subscribe = (cb: (s: BootstrapStatusMsg | null) => void): (() => void) => { push = cb; return () => undefined; };
   const pull = over.pull ?? vi.fn(async () => undefined);
-  const unmount = mountBootstrapBanner({ subscribe, pull });
-  return { emit: (s: BootstrapStatusMsg | null) => push?.(s), pull, unmount };
+  const getStatus = over.getStatus ?? vi.fn(async () => null);
+  const unmount = mountBootstrapBanner({ subscribe, getStatus, pull });
+  return { emit: (s: BootstrapStatusMsg | null) => push?.(s), pull, getStatus, unmount };
 }
 
 describe('mountBootstrapBanner — one-click first-run model download (M7b UI)', () => {
@@ -82,6 +83,15 @@ describe('mountBootstrapBanner — one-click first-run model download (M7b UI)',
     await flush();
     expect(q('#bootstrap-banner')?.textContent).toMatch(/connection reset|failed/i);
     expect((q('#bootstrap-download') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('RECOVERS a status pushed before subscribe by fetching it on mount (the startup-race fix)', async () => {
+    // Simulate the race: the push was missed (emit never called); getStatus() returns the missed status.
+    const t = setup({ getStatus: vi.fn(async () => MISSING) });
+    await flush();
+    expect(t.getStatus).toHaveBeenCalled();
+    expect((q('#bootstrap-banner') as HTMLElement).hidden).toBe(false);
+    expect(q('#bootstrap-download')).toBeTruthy(); // the banner appears despite the dropped push
   });
 
   it('unmount detaches the subscription + removes the banner', () => {

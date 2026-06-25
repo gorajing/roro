@@ -11,6 +11,9 @@ import type { BootstrapStatusMsg, ModelPullProgressMsg } from '../../shared/ipc'
 export interface BootstrapBannerDeps {
   /** Subscribe to MAIN's readiness pushes (null = no status yet). Returns an unsubscribe. */
   subscribe: (cb: (status: BootstrapStatusMsg | null) => void) => () => void;
+  /** Fetch the CURRENT readiness on demand — recovers a push that fired before we subscribed (the startup
+   *  race: MAIN sends on did-finish-load, but the renderer subscribes after the async character load). */
+  getStatus: () => Promise<BootstrapStatusMsg | null>;
   /** Pull the given models, streaming progress. Resolves when all are done; rejects on failure. */
   pull: (models: string[], onProgress: (p: ModelPullProgressMsg) => void) => Promise<void>;
   host?: HTMLElement;
@@ -72,8 +75,8 @@ export function mountBootstrapBanner(deps: BootstrapBannerDeps): () => void {
     banner.append(btn);
   }
 
-  const unsub = deps.subscribe((status) => {
-    if (pulling) return; // don't clobber an in-flight download with a re-pushed status
+  function apply(status: BootstrapStatusMsg | null): void {
+    if (pulling) return; // don't clobber an in-flight download with a re-pushed/re-fetched status
     if (!status || status.ready) { banner.hidden = true; clearButton(); return; }
     if (status.needsOllamaInstall) {
       clearButton();
@@ -82,7 +85,11 @@ export function mountBootstrapBanner(deps: BootstrapBannerDeps): () => void {
     }
     if (status.missing.length > 0) { renderMissing(status); return; }
     banner.hidden = true;
-  });
+  }
+
+  const unsub = deps.subscribe(apply);
+  // Recover a status pushed before this subscription existed (the startup race) — fetch the current one once.
+  void deps.getStatus().then(apply).catch(() => undefined);
 
   return () => { unsub(); banner.remove(); };
 }

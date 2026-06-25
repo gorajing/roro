@@ -39,6 +39,8 @@ export const CH = {
   visionAsk: 'vision:ask', memoryRemember: 'memory:remember', memoryRecall: 'memory:recall',
   // Transparency + Forget (M8): list the facts roro knows about the owner, and hard-delete one.
   memoryProfile: 'memory:profile', memoryForget: 'memory:forget',
-  // First-run bootstrap (M7b): MAIN pushes readiness; renderer invokes a one-click pull; MAIN streams progress.
-  bootstrapStatus: 'bootstrap:status', modelPull: 'model:pull', modelPullProgress: 'model:pullProgress',
+  // First-run bootstrap (M7b): MAIN pushes readiness (and serves it on demand to recover a missed push);
+  // renderer invokes a one-click pull; MAIN streams progress.
+  bootstrapStatus: 'bootstrap:status', bootstrapStatusGet: 'bootstrap:statusGet',
+  modelPull: 'model:pull', modelPullProgress: 'model:pullProgress',
 } as const;

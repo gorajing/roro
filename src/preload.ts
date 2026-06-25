@@ -71,6 +71,7 @@ const companion = {
   // First-run bootstrap (M7b): MAIN pushes readiness; the renderer offers a one-click pull + sees progress.
   onBootstrapStatus: (cb: (s: BootstrapStatusMsg) => void): (() => void) =>
     subscribe<BootstrapStatusMsg>(CH.bootstrapStatus, cb),
+  getBootstrapStatus: (): Promise<BootstrapStatusMsg | null> => ipcRenderer.invoke(CH.bootstrapStatusGet),
   pullModels: (models: string[]): Promise<void> => ipcRenderer.invoke(CH.modelPull, models),
   onPullProgress: (cb: (p: ModelPullProgressMsg) => void): (() => void) =>
     subscribe<ModelPullProgressMsg>(CH.modelPullProgress, cb),

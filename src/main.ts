@@ -5,7 +5,7 @@ import './shared/env-migrate'; // back-compat: COMPANION_* -> RORO_* BEFORE any 
 //
 // Ordering matters: session permission handlers + the mic TCC prompt run INSIDE whenReady,
 // BEFORE the window is created, so the renderer's getUserMedia is never raced/denied.
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
 import started from 'electron-squirrel-startup';
 
@@ -28,11 +28,17 @@ import { CH } from './shared/ipc';
  * dead and couples startup to Ollama being up). On failure we log loudly AND push a diagnostic caption
  * to the renderer once it's loaded, so the user sees WHY turns won't work (e.g. run `ollama serve`).
  */
+// The last computed first-run readiness — served on demand via CH.bootstrapStatusGet so the renderer can
+// RECOVER a push it missed (it subscribes only after its async character load; the push fires on
+// did-finish-load, which can land first). Registered in whenReady.
+let lastBootstrapStatus: BootstrapStatusMsg | null = null;
+
 async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
   try {
     const brain = await loadBrain();
     const result = await brain.preflight();
     console.log(`[main] brain preflight OK — ${brain.describeBrain()}; models:`, result.required);
+    lastBootstrapStatus = { ready: true, needsOllamaInstall: false, missing: [], essentialBytes: 0 };
   } catch (err) {
     const baseMessage = `Local brain unavailable: ${(err as Error).message}`;
     console.error(`[main] brain preflight FAILED — ${baseMessage}`);
@@ -53,6 +59,7 @@ async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
       message = bootstrapFailureMessage(baseMessage, 'ollama', probe);
       status = bootstrapStatusFor(probe); // structured status → the renderer's one-click download banner (M7b)
     }
+    lastBootstrapStatus = status; // serve it on demand (race recovery), in addition to the push below
     const send = (): void => {
       win.webContents.send(CH.actionEvent, { kind: 'message', runId: 'preflight', text: `⚠️ ${message}`, ts: Date.now() });
       if (status) win.webContents.send(CH.bootstrapStatus, status);
@@ -76,6 +83,8 @@ if (process.env.RORO_DEBUG_PORT) {
 
 // IPC handlers are stateless and safe to register before windows exist.
 registerIpcHandlers();
+// Serve the last bootstrap status on demand (M7b) so a renderer that subscribed late can recover it.
+ipcMain.handle(CH.bootstrapStatusGet, (): BootstrapStatusMsg | null => lastBootstrapStatus);
 
 app.whenReady().then(async () => {
   // 0. Device-stable owner_id — the memory spine. Must exist before any turn runs. The local

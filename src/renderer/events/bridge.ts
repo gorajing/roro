@@ -32,6 +32,8 @@ interface CompanionBridgeLike {
   onCursor?(cb: (t: { x: number; y: number }) => void): () => void;
   /** First-run bootstrap (M7b): MAIN pushes readiness; the renderer offers a one-click model pull + sees progress. */
   onBootstrapStatus?(cb: (s: BootstrapStatusMsg) => void): () => void;
+  /** Fetch the current readiness on demand — recovers a push missed before subscribing (the startup race). */
+  getBootstrapStatus?(): Promise<BootstrapStatusMsg | null>;
   pullModels?(models: string[]): Promise<void>;
   onPullProgress?(cb: (p: ModelPullProgressMsg) => void): () => void;
 }
