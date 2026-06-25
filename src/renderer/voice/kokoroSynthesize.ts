@@ -18,9 +18,11 @@ const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX';
 const STYLE_DIM = 256;
 const SAMPLE_RATE = 24000;
 const MAX_TOKENS = 509;
-// af_heart (the A-graded en-us default). Voice style matrices are fetched cross-origin from HF (credentialless
-// permits the no-cred GET) and cached in memory; one per voice id (Phase 5 voice packs swap the id).
-const VOICES_BASE = `https://huggingface.co/${MODEL_ID}/resolve/main/voices/`;
+// af_heart (the A-graded en-us default). Voice style matrices are STAGED SAME-ORIGIN
+// (public/models/<MODEL_ID>/voices/ by stage-voice-assets.mjs), loaded by getVoiceStyle() and cached in
+// memory; one per voice id (Phase 5 voice packs swap the id). Resolve against the document so it survives
+// the packaged file:// build (matches onnxRuntimeEnv.ts's localModelPath).
+const VOICES_BASE = new URL(`models/${MODEL_ID}/voices/`, window.location.href).href;
 
 // transformers.js's from_pretrained/forward types for this model are loose; narrow to what we use.
 type KokoroModel = (inputs: { input_ids: unknown; style: Tensor; speed: Tensor }) => Promise<{ waveform: { data: Float32Array } }>;

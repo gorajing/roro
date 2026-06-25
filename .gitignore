@@ -112,3 +112,7 @@ public/vad/
 
 # transformers.js (whisper) ORT wasm — staged, regenerable (distinct ORT build from public/vad/)
 public/ort/
+
+# On-device model weights (whisper STT + Kokoro TTS + voice .bin matrices) — downloaded from HF by
+# stage-voice-assets.mjs (flag-gated, ~175MB), served same-origin, regenerable. Never committed.
+public/models/
