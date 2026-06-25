@@ -26,18 +26,28 @@ relief of not having to re-explain yourself.
 Every public-readiness assessor independently flagged the **same** #1 risk, and it has a nasty property: **it is
 invisible in `npm start` and only appears in a packaged build in a stranger's hands.**
 
-The magic moment (recalled memory) depends on `safeStorage` reaching the macOS Keychain. An **unsigned / ad-hoc**
-build *cannot* do this → encrypted memory silently fails to persist → Roro becomes "just another local LLM wrapper that
-forgets you."
+The magic moment (recalled memory) depends on `safeStorage` reaching the macOS Keychain.
 
-**A Developer-ID-signed + notarized build resolves BOTH blockers at once** — Gatekeeper-clean install *and* encrypted
-memory persistence. So **one signed build either proves or disproves the entire launch thesis in an afternoon.** That is
-the cheapest possible test of the riskiest assumption — so we do it **first**.
+> ✅ **ROOT CAUSE FOUND + FIXED (proven on-device, not assumed).** The original diagnosis ("ad-hoc *cannot* reach the
+> Keychain") was **wrong**. A *valid* ad-hoc signature works fine. The real cause: forge's fuse-flip + the `extendInfo`
+> `Info.plist` rewrite left the packaged app with an **INVALID signature** → macOS Keychain returned `errSecAuthFailed`
+> → `safeStorage` false → memory failed. (Ironically, the `NSMicrophoneUsageDescription` `extendInfo` added for signing
+> in PR #61 is what exposed it.) **Fix:** a `postPackage` ad-hoc re-seal as the last step (`fix/packaged-memory-adhoc-reseal`).
+> Verified: a clean `npm run package` now yields `codesign --verify` VALID + `safeStorage.isEncryptionAvailable()=true` +
+> the keychain item is created — **with NO Apple cert.**
 
-> ⚠️ Phase 0 is a **hypothesis**, not a certainty. We've proven `safeStorage` works under the dev identity (`npm start`)
-> and the macOS keychain mechanism says a *stable* Developer-ID identity should fix the packaged case — but "should" is
-> not "did." Validating it is the whole point of Phase 0. If it fails signed, **stop and fix the memory architecture
-> before any polish** (do not paper over with a plaintext fallback — that breaks the encrypt-by-default invariant).
+So the keystone is **answered, and it was free.** Encrypted memory persists in a packaged build **today**, no cert
+required. The **two roles of the Developer-ID cert are now clear and separate:**
+
+1. **Gatekeeper-clean install** on a stranger's downloaded build (notarization) — still required for public distribution.
+2. **Cross-update memory durability** — an ad-hoc `cdhash` changes every build, so its keychain ACL only matches *that*
+   build (memory survives quit/relaunch, but an **update** orphans the prior corpus). A Developer-ID's **stable team
+   identity** is what makes the keychain item survive updates. So the cert is for *distribution + longevity*, **not** for
+   making memory work at all.
+
+> Phase 0's safeStorage half is **done**. What remains for Phase 0 is the *human* confirmation (a non-founder uses a
+> build and feels it remember) + the Developer-ID build for the Gatekeeper/longevity half. Encrypt-by-default is intact —
+> `keyManager` still fails loud; we did **not** add a plaintext fallback.
 
 ---
 
@@ -67,20 +77,20 @@ Roro is public-ready when **all** of these are observed (not code-read):
 
 ## The path (riskiest truth validated first, not last)
 
-### Phase 0 — Prove the magic moment survives a signed build (the keystone)
-**Goal:** answer the one question the whole launch rests on, before any polish, gated only on the Apple cert.
-- Founder provisions the paid Apple Developer Program + a **Developer ID Application** certificate. Set
-  `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID`. *(The free "Apple Development" cert is explicitly rejected by the
-  `assertSigningIdentity` preflight — it produces an ad-hoc signature where `safeStorage` fails.)*
-- Run `npm run make` with the three creds set. The signing pipeline (`src/build/macSigning.ts` +
-  `build/entitlements.mac.plist` + the notarytool path) is **already wired** — no new code.
-- On a **second clean Mac**: install the `.dmg`, launch, confirm no Gatekeeper warning.
-- Store a fact → **fully quit** → relaunch → confirm the fact is recalled. (Collapses the two scariest blockers —
-  signing + `safeStorage` — into one observed outcome.)
-- **If `safeStorage` is still unavailable signed: STOP.** Decide the fallback before proceeding.
+### Phase 0 — Prove the magic moment survives a packaged build (the keystone)
+**Status: the safeStorage half is DONE.** The packaged-build memory failure was a forge invalid-signature bug, fixed by
+the postPackage ad-hoc re-seal (`fix/packaged-memory-adhoc-reseal`). A clean `npm run package` is now `codesign --verify`
+VALID + `safeStorage.isEncryptionAvailable()=true` + creates its keychain item — **no cert.** What remains:
+- **Human confirmation (the real Phase-0 exit):** a non-founder runs a build, has a short session, **fully quits**,
+  relaunches the **same build**, and observes the fact recalled. (Within-build quit/relaunch works under ad-hoc; this is
+  doable today without the cert.)
+- **The Developer-ID + notarized build** (founder provisions the cert; `APPLE_ID`/`APPLE_PASSWORD`/`APPLE_TEAM_ID`; the
+  `macSigningConfig` + `entitlements.mac.plist` + notarytool pipeline is wired). This is for **(a)** a Gatekeeper-clean
+  install on a clean second Mac and **(b)** memory durability **across updates** (stable team identity vs. per-build
+  ad-hoc cdhash) — *not* for making memory work at all.
 
-**Exit:** a non-founder installs the signed `.dmg` on a clean Mac, no warning, and observes a fact recalled across a full
-quit. The magic moment works outside `npm start`.
+**Exit:** a non-founder observes a fact recalled across a full quit/relaunch of a packaged build (proves the moment works
+outside `npm start`); and the Developer-ID notarized build installs Gatekeeper-clean on a clean Mac.
 
 ### Phase 1 — Make the packaged app runnable without a terminal (the onboarding spine)
 **Goal:** take a stranger from launch → a successful coding turn, no shell. *(All memory-architecture-independent —

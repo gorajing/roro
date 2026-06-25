@@ -49,7 +49,13 @@ export interface MacSigning {
 export function macSigningConfig(env: Record<string, string | undefined>): MacSigning {
   const present = presentCreds(env);
 
-  if (present.length === 0) return {}; // unsigned: dev + current CI `make` keep working
+  // NO Apple creds: no Developer-ID osxSign/notarize config. The packaged build is still made VALID by a
+  // final AD-HOC re-seal in forge.config's postPackage hook — required because forge's fuse flip + extendInfo
+  // Info.plist rewrite otherwise leave the seal STALE, and macOS Keychain rejects an invalidly-signed app
+  // (errSecAuthFailed → safeStorage false → encrypted memory can't persist). No cert needed. CAVEAT: an ad-hoc
+  // cdhash changes every build, so memory persists only WITHIN one build (quit/relaunch) — across rebuilds the
+  // keychain ACL no longer matches; the Developer-ID build (stable team identity) is what survives updates.
+  if (present.length === 0) return {};
 
   if (present.length < APPLE_CRED_VARS.length) {
     const missing = APPLE_CRED_VARS.filter((name) => !present.includes(name));

@@ -25,7 +25,7 @@ const FULL = {
 };
 
 describe('macSigningConfig', () => {
-  it('returns no signing config when NO Apple creds are present (dev/unsigned make still works)', () => {
+  it('returns no Developer-ID config when NO Apple creds are present (the postPackage hook ad-hoc re-seals)', () => {
     const cfg = macSigningConfig({});
     expect(cfg.osxSign).toBeUndefined();
     expect(cfg.osxNotarize).toBeUndefined();

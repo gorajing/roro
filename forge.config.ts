@@ -8,6 +8,7 @@ import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
 
 import { macSigningConfig, MAC_NATIVE_UNPACK_GLOB, assertSigningIdentity } from './src/build/macSigning';
 
@@ -43,6 +44,22 @@ const config: ForgeConfig = {
           return ''; // `security` unavailable/errored -> treat as no identities; the clear error still applies
         }
       });
+    },
+    // After packaging, AD-HOC re-seal darwin builds that are NOT Developer-ID-signed. ROOT CAUSE this fixes:
+    // forge's fuse flip + the extendInfo Info.plist rewrite leave the signature STALE/invalid, and macOS
+    // Keychain REJECTS an invalidly-signed app (errSecAuthFailed) → safeStorage.isEncryptionAvailable() is
+    // false → encrypted memory silently can't persist (proven on-device). A final VALID ad-hoc seal (no Apple
+    // cert, no keychain prompt) fixes it. The Developer-ID path (creds present → osxSign) signs + notarizes
+    // validly already, so we SKIP it — an ad-hoc re-sign would destroy the Developer ID signature. Runs LAST.
+    // CAVEAT: ad-hoc cdhash changes per build, so the keychain ACL only matches the SAME build — memory
+    // survives quit/relaunch but NOT a rebuild/update (every `npm run package` orphans the prior test corpus).
+    // That cross-update stability is exactly what the Developer-ID (stable team identity) build provides.
+    postPackage: async (_forgeConfig, options) => {
+      if (options.platform !== 'darwin') return;
+      if (macSigningConfig(process.env).osxSign) return; // Developer ID build — leave its signature intact
+      for (const dir of options.outputPaths) {
+        execFileSync('codesign', ['--force', '--deep', '--sign', '-', join(dir, 'Roro.app')], { stdio: 'inherit' });
+      }
     },
   },
   makers: [
