@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bootstrapPlan, describeBootstrap, formatBytes, DEFAULT_MODEL_SPECS } from './bootstrapPlan';
+import { bootstrapPlan, describeBootstrap, formatBytes, bootstrapFailureMessage, DEFAULT_MODEL_SPECS } from './bootstrapPlan';
 
 // First-run bootstrap (M7): given whether the local Ollama daemon is reachable + which models it already has,
 // compute what must be pulled and the HONEST download size — splitting the ESSENTIAL core-loop models
@@ -83,5 +83,31 @@ describe('describeBootstrap — the honest first-run disclosure', () => {
   it('is empty when ready (no disclosure to make)', () => {
     const msg = describeBootstrap(bootstrapPlan({ ollamaReachable: true, installedModels: ['qwen2.5:3b', 'nomic-embed-text'] }));
     expect(msg).toBe('');
+  });
+});
+
+describe('bootstrapFailureMessage — choose the startup-failure caption', () => {
+  const base = 'Local brain unavailable: Ollama timed out at http://127.0.0.1:11434 — restart it: ollama serve';
+
+  it('a nebius failure keeps the accurate base message (a cloud-key issue, not bootstrap)', () => {
+    expect(bootstrapFailureMessage(base, 'nebius', { kind: 'reachable', models: [] })).toBe(base);
+  });
+
+  it('a DEGRADED (timed-out, wedged-but-RUNNING) daemon keeps the base message — never says "install Ollama"', () => {
+    const msg = bootstrapFailureMessage(base, 'ollama', { kind: 'degraded' });
+    expect(msg).toBe(base); // the regression: a wedged daemon must NOT be told to reinstall
+    expect(msg).not.toMatch(/install/i);
+  });
+
+  it('an UNREACHABLE daemon (not running) gets the install-Ollama guidance', () => {
+    expect(bootstrapFailureMessage(base, 'ollama', { kind: 'unreachable' })).toMatch(/install/i);
+  });
+
+  it('reachable but missing essentials → the pull guidance', () => {
+    expect(bootstrapFailureMessage(base, 'ollama', { kind: 'reachable', models: [] })).toMatch(/qwen2\.5:3b/);
+  });
+
+  it('reachable with essentials present (preflight failed for another reason) → falls back to base', () => {
+    expect(bootstrapFailureMessage(base, 'ollama', { kind: 'reachable', models: ['qwen2.5:3b', 'nomic-embed-text'] })).toBe(base);
   });
 });

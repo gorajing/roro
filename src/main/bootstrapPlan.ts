@@ -45,6 +45,31 @@ export interface BootstrapPlan {
   ready: boolean;
 }
 
+/**
+ * The outcome of probing the local Ollama daemon (ollamaTags). `degraded` (a TIMEOUT) means the daemon is up
+ * but wedged/slow — distinct from `unreachable` (connection refused — not running): reinstalling won't fix a
+ * wedged daemon, so the two earn DIFFERENT guidance.
+ */
+export type OllamaProbe =
+  | { kind: 'reachable'; models: string[] }
+  | { kind: 'unreachable' }
+  | { kind: 'degraded' };
+
+/**
+ * Choose the renderer caption after a brain-preflight FAILURE. Only a local-Ollama unreachable/missing-model
+ * failure earns bootstrap guidance; a nebius failure (cloud key) or a DEGRADED/timeout (the daemon is up, just
+ * wedged — "install Ollama" would be wrong) keeps the accurate preflight `baseMessage`. Pure + testable.
+ */
+export function bootstrapFailureMessage(baseMessage: string, provider: string, probe: OllamaProbe): string {
+  if (provider === 'nebius' || probe.kind === 'degraded') return baseMessage;
+  const plan = bootstrapPlan(
+    probe.kind === 'reachable'
+      ? { ollamaReachable: true, installedModels: probe.models }
+      : { ollamaReachable: false, installedModels: [] },
+  );
+  return describeBootstrap(plan) || baseMessage; // empty guidance (ready / non-model failure) → keep baseMessage
+}
+
 /** Human-readable size for the pre-pull disclosure: GB (1 decimal) for large, MB (rounded) for small. */
 export function formatBytes(bytes: number): string {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
