@@ -10,7 +10,7 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 const h = vi.hoisted(() => ({
-  memory: { remember: vi.fn(), recall: vi.fn(), getProfile: vi.fn(), supersede: vi.fn() },
+  memory: { remember: vi.fn(), recall: vi.fn(), getProfile: vi.fn(), supersede: vi.fn(), traceExtraction: vi.fn() },
   brain: { decide: vi.fn(), describeScreen: vi.fn(), embed: vi.fn(), extractFact: vi.fn() },
   vision: { captureScreen: vi.fn(), askScreen: vi.fn() },
   run: vi.fn(),

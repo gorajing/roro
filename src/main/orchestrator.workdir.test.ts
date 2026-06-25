@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // invoked when no repo is set, and IS invoked against the right repo when one is.
 
 const h = vi.hoisted(() => ({
-  memory: { remember: vi.fn(), recall: vi.fn(), getProfile: vi.fn(), supersede: vi.fn() },
+  memory: { remember: vi.fn(), recall: vi.fn(), getProfile: vi.fn(), supersede: vi.fn(), traceExtraction: vi.fn() },
   brain: { decide: vi.fn(), describeScreen: vi.fn(), embed: vi.fn(), extractFact: vi.fn() },
   vision: { captureScreen: vi.fn(), askScreen: vi.fn() },
   run: vi.fn(),

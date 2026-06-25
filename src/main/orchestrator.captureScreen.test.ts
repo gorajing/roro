@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // (before this turn's transcript is stored), reusing it for the post-vision re-decide — a second
 // recall would self-match the just-persisted transcript as top "RELATED PAST CONTEXT".
 const h = vi.hoisted(() => ({
-  memory: { remember: vi.fn(), recall: vi.fn(), getProfile: vi.fn(), supersede: vi.fn() },
+  memory: { remember: vi.fn(), recall: vi.fn(), getProfile: vi.fn(), supersede: vi.fn(), traceExtraction: vi.fn() },
   brain: { decide: vi.fn(), describeScreen: vi.fn(), embed: vi.fn(), extractFact: vi.fn() },
   vision: { captureScreen: vi.fn(), askScreen: vi.fn() },
 }));
