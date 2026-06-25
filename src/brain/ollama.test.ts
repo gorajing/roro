@@ -9,7 +9,39 @@ import {
   assertEmbedDimMatch,
   ollamaChat,
   ollamaTags,
+  parsePullProgress,
 } from './ollama';
+
+describe('parsePullProgress — /api/pull NDJSON progress (M7b auto-pull)', () => {
+  it('parses a status-only line', () => {
+    expect(parsePullProgress('{"status":"pulling manifest"}')).toEqual({ status: 'pulling manifest' });
+  });
+
+  it('parses a downloading line with total+completed and computes percent', () => {
+    expect(parsePullProgress('{"status":"downloading","digest":"sha256:x","total":1000,"completed":250}'))
+      .toEqual({ status: 'downloading', total: 1000, completed: 250, percent: 25 });
+  });
+
+  it('parses the terminal success line', () => {
+    expect(parsePullProgress('{"status":"success"}')).toEqual({ status: 'success' });
+  });
+
+  it('returns null for blank / non-JSON / status-less lines (skipped, not crashed)', () => {
+    expect(parsePullProgress('')).toBeNull();
+    expect(parsePullProgress('   ')).toBeNull();
+    expect(parsePullProgress('not json')).toBeNull();
+    expect(parsePullProgress('{"no":"status"}')).toBeNull();
+  });
+
+  it('FAILS LOUD on an error line (a pull failure must surface, not look like progress)', () => {
+    expect(() => parsePullProgress('{"error":"model \'nope\' not found"}')).toThrow(/not found/);
+  });
+
+  it('ignores a zero/absent total and caps percent at 100', () => {
+    expect(parsePullProgress('{"status":"x","total":0,"completed":5}')).toEqual({ status: 'x' });
+    expect(parsePullProgress('{"status":"x","total":100,"completed":150}')?.percent).toBe(100);
+  });
+});
 
 describe('ollama pure helpers', () => {
   it('buildChatBody sets format:json + options.temperature only when provided', () => {
