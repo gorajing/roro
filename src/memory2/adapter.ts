@@ -13,6 +13,7 @@
 //   specific episodic kind, and facts are surfaced separately via getProfile.
 
 import { createMemoryStore, type MemoryStore } from './memoryStore';
+import { importanceFor } from './importance';
 import type { Cipher } from './cipher';
 import type { Tracer } from './tracer';
 import type { Entry, Tier } from './types';
@@ -91,6 +92,9 @@ export async function createMemory2Adapter(opts: Memory2AdapterOpts): Promise<Me
         sessionId: input.session_id,
         text: input.text,
         payload: input.payload,
+        // Deterministic importance by kind (M5): nudges the recall blend so the user's own words rank above
+        // the cat's paraphrase. Derived here so EVERY remember() is stamped without each caller passing it.
+        importance: importanceFor(input.kind),
       });
       return entryToRow(e);
     },
