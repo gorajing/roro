@@ -1,6 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import { macSigningConfig, MAC_ENTITLEMENTS_PATH, MAC_NATIVE_UNPACK_GLOB } from './macSigning';
+import {
+  macSigningConfig,
+  MAC_ENTITLEMENTS_PATH,
+  MAC_NATIVE_UNPACK_GLOB,
+  assertSigningIdentity,
+} from './macSigning';
 
 // minimatch 3.x (the exact matcher @electron/asar uses to apply the unpack glob) is CommonJS with no
 // bundled types — require + annotate so this regression test matches files the way the packer will.
@@ -74,5 +79,49 @@ describe('MAC_NATIVE_UNPACK_GLOB (sharp/libvips crash regression)', () => {
 
   it('does not over-match ordinary bundled JS', () => {
     expect(minimatch('node_modules/@img/sharp/lib/index.js', MAC_NATIVE_UNPACK_GLOB)).toBe(false);
+  });
+});
+
+describe('assertSigningIdentity (clear preflight instead of a cryptic codesign dump)', () => {
+  const FULL = {
+    APPLE_ID: 'dev@example.com',
+    APPLE_PASSWORD: 'app-specific-pw',
+    APPLE_TEAM_ID: 'ABCDE12345',
+  };
+  // What `security find-identity -v -p codesigning` prints when only the free local-dev cert exists —
+  // the EXACT situation that produced the "code has no resources but signature indicates..." failure.
+  const ONLY_APPLE_DEV =
+    '  1) 606C...66B "Apple Development: dev@example.com (9D9FQ9D5DT)"\n     1 valid identities found';
+  const HAS_DEVELOPER_ID =
+    '  1) ABC1...23F "Developer ID Application: Dev Name (ABCDE12345)"\n     1 valid identities found';
+
+  it('does NOT touch the keychain when signing is not requested (unsigned dev/CI build)', () => {
+    const list = vi.fn(() => '');
+    expect(() => assertSigningIdentity({}, list)).not.toThrow();
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it('does NOT touch the keychain when creds are only partial (macSigningConfig owns that error)', () => {
+    const list = vi.fn(() => '');
+    expect(() => assertSigningIdentity({ APPLE_ID: 'dev@example.com' }, list)).not.toThrow();
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it('passes when a Developer ID Application identity is present', () => {
+    expect(() => assertSigningIdentity(FULL, () => HAS_DEVELOPER_ID)).not.toThrow();
+  });
+
+  it('throws a CLEAR, actionable error when only an Apple Development cert exists', () => {
+    expect(() => assertSigningIdentity(FULL, () => ONLY_APPLE_DEV)).toThrowError(
+      /Developer ID Application/,
+    );
+    // the message must point at both escape hatches: how to check, and how to build unsigned
+    expect(() => assertSigningIdentity(FULL, () => ONLY_APPLE_DEV)).toThrowError(
+      /security find-identity[\s\S]*unset|unset[\s\S]*security find-identity/,
+    );
+  });
+
+  it('throws when the keychain has no code-signing identities at all', () => {
+    expect(() => assertSigningIdentity(FULL, () => '')).toThrowError(/Developer ID Application/);
   });
 });

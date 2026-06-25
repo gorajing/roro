@@ -27,6 +27,12 @@ export const MAC_NATIVE_UNPACK_GLOB = '**/{.**,**}/**/*.dylib';
 /** The three env vars that together enable signing+notarization. */
 const APPLE_CRED_VARS = ['APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID'] as const;
 
+/** Which of the Apple cred vars are non-empty (an unset CI secret exports as "", which counts as absent).
+ *  Shared by the config + the preflight so their "is signing requested?" gating can never drift apart. */
+function presentCreds(env: Record<string, string | undefined>): readonly string[] {
+  return APPLE_CRED_VARS.filter((name) => (env[name] ?? '').trim() !== '');
+}
+
 export interface MacSigning {
   osxSign?: {
     optionsForFile: (filePath: string) => { hardenedRuntime: boolean; entitlements: string };
@@ -41,8 +47,7 @@ export interface MacSigning {
 
 /** Build the osxSign/osxNotarize slice of packagerConfig from the environment. Pure + fail-loud. */
 export function macSigningConfig(env: Record<string, string | undefined>): MacSigning {
-  // An unset CI secret is exported as the empty string, not undefined — treat "" as absent.
-  const present = APPLE_CRED_VARS.filter((name) => (env[name] ?? '').trim() !== '');
+  const present = presentCreds(env);
 
   if (present.length === 0) return {}; // unsigned: dev + current CI `make` keep working
 
@@ -72,4 +77,35 @@ export function macSigningConfig(env: Record<string, string | undefined>): MacSi
       teamId: env.APPLE_TEAM_ID!.trim(),
     },
   };
+}
+
+/**
+ * Fail EARLY and CLEARLY when signing is requested but the keychain can't satisfy it. Without this,
+ * `electron-forge make` with the env vars set but no Developer ID cert dies deep inside codesign with
+ * "code has no resources but signature indicates they must be present" + a 30-line dump — which gives a
+ * first-timer no idea the real cause is a missing/ wrong-type certificate.
+ *
+ * Only runs when full signing is requested (all 3 creds present); partial creds are macSigningConfig's
+ * error, and the unsigned path never reaches the keychain. `listCodesignIdentities` is injected (the
+ * output of `security find-identity -v -p codesigning`) so this stays pure + testable off a real Mac.
+ */
+export function assertSigningIdentity(
+  env: Record<string, string | undefined>,
+  listCodesignIdentities: () => string,
+): void {
+  if (presentCreds(env).length < APPLE_CRED_VARS.length) return; // not (fully) requested — nothing to check
+
+  // osx-sign signs with a "Developer ID Application" identity for outside-the-store distribution. An
+  // "Apple Development" cert (the free/local-dev type) is NOT enough and yields an ad-hoc signature. Match
+  // with the trailing colon to mirror osx-sign's own identity predicate exactly (security find-identity
+  // always prints "Developer ID Application: Name (TEAM)").
+  if (!listCodesignIdentities().includes('Developer ID Application:')) {
+    throw new Error(
+      'macOS signing is configured (APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID are set), but no ' +
+        '"Developer ID Application" certificate was found in your keychain. Roro signs with a Developer ID ' +
+        'cert for distribution — an "Apple Development" cert is not enough. Check with ' +
+        '`security find-identity -v -p codesigning`, create a Developer ID Application certificate (needs ' +
+        'the paid Apple Developer Program), or `unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID` to build unsigned.',
+    );
+  }
 }

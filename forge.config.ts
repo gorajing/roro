@@ -7,8 +7,9 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
+import { execFileSync } from 'node:child_process';
 
-import { macSigningConfig, MAC_NATIVE_UNPACK_GLOB } from './src/build/macSigning';
+import { macSigningConfig, MAC_NATIVE_UNPACK_GLOB, assertSigningIdentity } from './src/build/macSigning';
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -27,6 +28,23 @@ const config: ForgeConfig = {
     ...macSigningConfig(process.env),
   },
   rebuildConfig: {},
+  hooks: {
+    // Before packaging a darwin target, if signing is requested (the Apple env vars are set) verify a
+    // Developer ID cert actually exists — otherwise fail NOW with one clear line instead of letting
+    // codesign die later with a cryptic "code has no resources..." dump. Only runs on package/make
+    // (not `electron-forge start`), and only shells out to `security` when signing is actually requested.
+    prePackage: async (_forgeConfig, platform) => {
+      if (platform !== 'darwin') return;
+      assertSigningIdentity(process.env, () => {
+        try {
+          // Static args, no shell — execFileSync passes them straight to `security` (no injection surface).
+          return execFileSync('security', ['find-identity', '-v', '-p', 'codesigning'], { encoding: 'utf8' });
+        } catch {
+          return ''; // `security` unavailable/errored -> treat as no identities; the clear error still applies
+        }
+      });
+    },
+  },
   makers: [
     new MakerSquirrel({}),
     new MakerZIP({}, ['darwin']),
