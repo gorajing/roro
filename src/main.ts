@@ -16,6 +16,8 @@ import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorT
 import { cancelAllRuns } from './main/orchestrator';
 import { initOwnerId } from './main/identity';
 import { loadBrain } from './main/siblings';
+import { bootstrapPlan, describeBootstrap } from './main/bootstrapPlan';
+import { ollamaTags } from './brain/ollama';
 import { CH } from './shared/ipc';
 
 /**
@@ -31,8 +33,22 @@ async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
     const result = await brain.preflight();
     console.log(`[main] brain preflight OK — ${brain.describeBrain()}; models:`, result.required);
   } catch (err) {
-    const message = `Local brain unavailable: ${(err as Error).message}`;
-    console.error(`[main] brain preflight FAILED — ${message}`);
+    const baseMessage = `Local brain unavailable: ${(err as Error).message}`;
+    console.error(`[main] brain preflight FAILED — ${baseMessage}`);
+    // Turn the failure into ACTIONABLE first-run guidance (M7): for the local-Ollama provider, detect whether
+    // the daemon is up + which models it has, and disclose exactly what to install + the honest core-loop size
+    // (~2GB essentials, not the full ~8GB). A nebius failure is a cloud-key issue, not a bootstrap one — skip it.
+    let message = baseMessage;
+    if (process.env.BRAIN_PROVIDER !== 'nebius') {
+      let plan;
+      try {
+        plan = bootstrapPlan({ ollamaReachable: true, installedModels: await ollamaTags() });
+      } catch {
+        plan = bootstrapPlan({ ollamaReachable: false, installedModels: [] });
+      }
+      const guidance = describeBootstrap(plan);
+      if (guidance) message = guidance;
+    }
     const send = (): void => {
       win.webContents.send(CH.actionEvent, { kind: 'message', runId: 'preflight', text: `⚠️ ${message}`, ts: Date.now() });
     };
