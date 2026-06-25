@@ -28,7 +28,8 @@ import { extractAndStoreFact } from './factStore';
 import { classifyDestructive } from './destructive';
 import { requestConfirm, resolveConfirm } from './confirmGate';
 import { isCleanTree } from './gitTree';
-import { resolveWorkdir } from './workdir';
+import { resolveWorkdir, tryResolveWorkdir } from './workdir';
+import { repoId as deriveRepoId } from '../memory2/repoId';
 import type { FactExtractInput } from '../brain/extractFact';
 
 const RECALL_K = 5;
@@ -230,17 +231,21 @@ async function recallContext(
   query: string,
   sessionId: string,
   runId: string,
+  currentRepoId?: string,
 ): Promise<string | undefined> {
   try {
     const memory = await loadMemory();
     // Owner-scoped recall: durable profile facts (getProfile) + episodic pgvector matches,
     // composed into a single LABELED memory string. Facts come first so they survive truncation.
+    // currentRepoId (M5b) boosts same-project episodes — "remembers you HERE" — without filtering out
+    // cross-repo memories (a global preference still recalls everywhere, just unboosted elsewhere).
     const { context, factCount, episodeCount } = await buildRecallContext(memory, {
       ownerId: getOwnerId(),
       sessionId,
       query,
       k: RECALL_K,
       minSimilarity: RECALL_MIN_SIMILARITY,
+      repoId: currentRepoId,
     });
     // Visible memory beat: recall emits no ActionEvent of its own, so surface it as a `status` event
     // (C1's one union addition) — a legible non-action beat, never assistant text — so the memory
@@ -418,13 +423,19 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
   lastTurnId = runId;
   inFlightTurns.add(runId);
 
+  // The project this turn belongs to (best-effort, NON-throwing — a no-workdir/answer turn still
+  // recalls + remembers, just unscoped). Used to boost same-repo recall AND to stamp this turn's writes.
+  const repoPath = tryResolveWorkdir(process.env, process.cwd());
+  const currentRepoId = repoPath ? deriveRepoId(repoPath) : undefined;
+
   // Recall BEFORE storing this turn's transcript so the query isn't matched
   // against itself.
-  const memory = await recallContext(transcript, sessionId, runId);
+  const memory = await recallContext(transcript, sessionId, runId, currentRepoId);
 
   // Persist what the USER said (not just the cat's paraphrase) so facts and
-  // preferences stated by the user are recallable verbatim in later turns.
-  await rememberUserSaid(sessionId, transcript);
+  // preferences stated by the user are recallable verbatim in later turns — repo-stamped so a preference
+  // stated while working in this project is recalled preferentially here.
+  await rememberUserSaid(sessionId, transcript, repoPath);
 
   // Visible (and truthful) brain beat: name the model doing the planning. Provider-aware so the
   // local Ollama default is labelled honestly (this used to hardcode "DeepSeek (Nebius)").
@@ -611,8 +622,9 @@ async function rememberNarration(sessionId: string, text: string): Promise<void>
   }
 }
 
-/** Persist the user's raw transcript so their stated facts/preferences recall verbatim. */
-async function rememberUserSaid(sessionId: string, transcript: string): Promise<void> {
+/** Persist the user's raw transcript so their stated facts/preferences recall verbatim. repoPath stamps the
+ *  project scope (M5b) so a preference stated while working here is recalled preferentially here. */
+async function rememberUserSaid(sessionId: string, transcript: string, repoPath?: string): Promise<void> {
   if (!transcript.trim()) return;
   try {
     const memory = await loadMemory();
@@ -621,6 +633,7 @@ async function rememberUserSaid(sessionId: string, transcript: string): Promise<
       session_id: sessionId,
       kind: 'observation',
       text: transcript,
+      repo_path: repoPath,
     });
   } catch (err) {
     console.error('[orchestrator] remember user transcript failed:', (err as Error).message);

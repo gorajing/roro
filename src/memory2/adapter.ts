@@ -14,10 +14,11 @@
 
 import { createMemoryStore, type MemoryStore } from './memoryStore';
 import { importanceFor } from './importance';
+import { repoId } from './repoId';
 import type { Cipher } from './cipher';
 import type { Tracer } from './tracer';
 import type { Entry, Tier } from './types';
-import type { MemoryKind, RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch } from '../shared/memory';
+import type { MemoryKind, RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch, RecallInput } from '../shared/memory';
 
 const KIND_TO_TIER: Record<Exclude<MemoryKind, 'fact'>, Tier> = {
   observation: 'episode',
@@ -57,7 +58,7 @@ export interface Memory2Adapter {
   remember(input: RememberInput): Promise<MemoryRow>;
   replaceFact(input: ReplaceFactInput): Promise<MemoryRow>;
   reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null>;
-  recall(input: { query: string; k?: number; ownerId: string; sessionId?: string }): Promise<MemoryMatch[]>;
+  recall(input: RecallInput): Promise<MemoryMatch[]>;
   getProfile(ownerId: string): Promise<MemoryRow[]>;
   supersede(id: string): Promise<void>;
   close(): Promise<void>;
@@ -95,6 +96,10 @@ export async function createMemory2Adapter(opts: Memory2AdapterOpts): Promise<Me
         // Deterministic importance by kind (M5): nudges the recall blend so the user's own words rank above
         // the cat's paraphrase. Derived here so EVERY remember() is stamped without each caller passing it.
         importance: importanceFor(input.kind),
+        // Project scope (M5b): stamp the repo path + a stable derived id so recall can boost same-repo
+        // memories. Absent repo_path → empty repoId → an unscoped (global) memory.
+        repoPath: input.repo_path,
+        repoId: repoId(input.repo_path ?? ''),
       });
       return entryToRow(e);
     },
@@ -119,7 +124,7 @@ export async function createMemory2Adapter(opts: Memory2AdapterOpts): Promise<Me
       requireText(input.query, 'recall query');
       requireText(input.ownerId, 'recall ownerId');
       const k = normalizeK(input.k);
-      const hits = await store.recall({ query: input.query, ownerId: input.ownerId, k });
+      const hits = await store.recall({ query: input.query, ownerId: input.ownerId, k, repoId: input.repoId });
       // similarity = RAW cosine (the old contract's meaning); recency-only rows have none -> 0. The hybrid
       // improvement lives in the result ORDER (blend-ranked), not in this field. NOTE for the wiring step:
       // the caller's cosine floor (memoryContext.ts) must be reconciled with the recency guarantee — a

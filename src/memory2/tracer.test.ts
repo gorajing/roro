@@ -6,7 +6,7 @@ import { createJsonlTracer, resolveTracer, NOOP_TRACER, type TraceEvent } from '
 
 const recall: TraceEvent = {
   kind: 'recall', ownerId: 'o1', query: 'what did we do', k: 3,
-  candidates: [{ id: 'a', score: 0.8, cosine: 0.7, parts: { relevance: 1, recency: 0.5, importance: 0 }, returned: true }],
+  candidates: [{ id: 'a', score: 0.8, cosine: 0.7, parts: { relevance: 1, recency: 0.5, importance: 0, repoMatch: 0 }, returned: true }],
 };
 
 describe('tracer — one-way observation tap (RORO_TRACE eval substrate)', () => {

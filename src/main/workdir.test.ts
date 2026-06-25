@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveWorkdir } from './workdir';
+import { resolveWorkdir, tryResolveWorkdir } from './workdir';
 
 // The coding agent edits files on disk, so "which repo?" is a SAFETY decision. The old default silently
 // fell back to process.cwd() — which, in a packaged app, is the app bundle / the user's home, and running
@@ -24,5 +24,27 @@ describe('resolveWorkdir — fail-loud repo selection', () => {
 
   it('a chosen RORO_WORKDIR takes precedence over the cwd opt-in', () => {
     expect(resolveWorkdir({ RORO_WORKDIR: '/repo', RORO_ALLOW_CWD: '1' }, '/cwd')).toBe('/repo');
+  });
+});
+
+// tryResolveWorkdir is the BEST-EFFORT variant for MEMORY SCOPING: a turn with no chosen repo (answer/clarify,
+// or a no-workdir setup) must still recall + remember — just without repo-scoping — so this returns undefined
+// instead of throwing. (Editing files still goes through the throwing resolveWorkdir; reading memory is not a
+// safety refusal.)
+describe('tryResolveWorkdir — best-effort repo for memory scoping (never throws)', () => {
+  it('returns RORO_WORKDIR when set', () => {
+    expect(tryResolveWorkdir({ RORO_WORKDIR: '/home/dev/myrepo' }, '/anything')).toBe('/home/dev/myrepo');
+  });
+
+  it('returns undefined (NOT a throw) when no repo is chosen', () => {
+    expect(tryResolveWorkdir({}, '/Applications/Roro.app')).toBeUndefined();
+  });
+
+  it('treats a blank RORO_WORKDIR as unset → undefined', () => {
+    expect(tryResolveWorkdir({ RORO_WORKDIR: '   ' }, '/cwd')).toBeUndefined();
+  });
+
+  it('returns cwd under the RORO_ALLOW_CWD=1 opt-in', () => {
+    expect(tryResolveWorkdir({ RORO_ALLOW_CWD: '1' }, '/cwd')).toBe('/cwd');
   });
 });

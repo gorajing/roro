@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createMemory2Adapter, type Memory2Adapter } from './adapter';
+import { repoId } from './repoId';
 import type { RememberInput, ReplaceFactInput } from '../shared/memory';
 
 const DIM = 16;
@@ -33,6 +34,28 @@ describe('memory2 adapter — the old MemoryModule contract over memory2', () =>
       expect(row.superseded).toBe(false);
       expect(typeof row.created_at).toBe('string');
       expect(row.id).toBeTruthy();
+    } finally { await a.close(); }
+  });
+
+  it('repo-scoped recall (M5b): a same-repo memory outranks an equal cross-repo one in the blend', async () => {
+    const a = await createMemory2Adapter({ dir, embed, dim: DIM });
+    try {
+      // All same first char → identical embedding → equal relevance, so the repo is the only differentiator.
+      // A (repoA) + B (repoB) are the OLD pair we compare; C,D (newer) occupy the top-2 recency-guarantee
+      // floor (memoryStore always front-loads the 2 newest), so A-vs-B is decided by the BLEND — where the
+      // repoMatch boost lives. Repo-scoping is deliberately SUBORDINATE to the "what did we just do?" floor.
+      await a.remember({ owner_id: 'o1', session_id: 's1', kind: 'observation', text: 'work note A', repo_path: '/repoA' });
+      await a.remember({ owner_id: 'o1', session_id: 's1', kind: 'observation', text: 'work note B', repo_path: '/repoB' });
+      await a.remember({ owner_id: 'o1', session_id: 's1', kind: 'observation', text: 'work note C', repo_path: '/repoB' });
+      await a.remember({ owner_id: 'o1', session_id: 's1', kind: 'observation', text: 'work note D', repo_path: '/repoB' });
+      const rank = (hits: { text: string }[], t: string): number => hits.findIndex((h) => h.text === t);
+
+      const unscoped = await a.recall({ query: 'work query', ownerId: 'o1', k: 4 });
+      expect(rank(unscoped, 'work note B')).toBeLessThan(rank(unscoped, 'work note A')); // B newer → B above A
+
+      const scoped = await a.recall({ query: 'work query', ownerId: 'o1', k: 4, repoId: repoId('/repoA') });
+      expect(rank(scoped, 'work note A')).toBeLessThan(rank(scoped, 'work note B')); // repoA boost flips A above B
+      expect(scoped).toHaveLength(4); // a BOOST, not a filter — cross-repo memories still recall
     } finally { await a.close(); }
   });
 

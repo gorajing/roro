@@ -15,10 +15,14 @@ export interface BlendWeights {
   relevance: number;
   recency: number;
   importance: number;
+  /** ADDITIVE boost for an entry from the CURRENT repo (project-scoped recall). Optional → 0 when omitted,
+   *  so a call with no currentRepoId leaves ranking byte-identical. Not part of the convex base. */
+  repoMatch?: number;
 }
 
-/** Recency weighted enough to surface recent work, without drowning semantic relevance. */
-export const DEFAULT_WEIGHTS: BlendWeights = { relevance: 0.5, recency: 0.4, importance: 0.1 };
+/** Recency weighted enough to surface recent work, without drowning semantic relevance. The three base
+ *  weights form a convex combination (sum 1); repoMatch (0.15) is an additive same-repo boost on top. */
+export const DEFAULT_WEIGHTS: BlendWeights = { relevance: 0.5, recency: 0.4, importance: 0.1, repoMatch: 0.15 };
 
 export interface Candidate {
   entry: Entry;
@@ -32,7 +36,7 @@ export interface ScoredEntry {
    *  Carried through so callers (e.g. the old-contract adapter's MemoryMatch.similarity) can report true
    *  cosine, distinct from the blended `score`. */
   cosine?: number;
-  parts: { relevance: number; recency: number; importance: number };
+  parts: { relevance: number; recency: number; importance: number; repoMatch: number };
 }
 
 /** Min-max normalize to [0,1]; a degenerate set (all equal) maps to 1 if there's signal, else 0. */
@@ -55,7 +59,12 @@ function normalizeRelevance(cosines: Array<number | undefined>): number[] {
   );
 }
 
-export function blendCandidates(candidates: Candidate[], weights: BlendWeights = DEFAULT_WEIGHTS, now: number = Date.now()): ScoredEntry[] {
+export function blendCandidates(
+  candidates: Candidate[],
+  weights: BlendWeights = DEFAULT_WEIGHTS,
+  now: number = Date.now(),
+  currentRepoId?: string,
+): ScoredEntry[] {
   if (candidates.length === 0) return [];
 
   // Dedup by id, keeping the strongest cosine (a row can arrive from both the vector + recency channels).
@@ -72,11 +81,19 @@ export function blendCandidates(candidates: Candidate[], weights: BlendWeights =
   // deterministic tiebreak (below). Importance stays min-maxed over the candidate set.
   const rec = rows.map((r) => effectiveRecency(r.entry, now));
   const imp = normalize(rows.map((r) => r.entry.importance ?? 0));
+  // repoMatch is a 0/1 flag, NOT min-max normalized: a same-repo entry is "in this project", full stop.
+  // An entry with no repoId never matches (global memory isn't falsely scoped into the current repo).
+  const wRepo = weights.repoMatch ?? 0;
+  const repoMatch = rows.map((r) => (currentRepoId && r.entry.repoId === currentRepoId ? 1 : 0));
 
   return rows
     .map((r, i) => {
-      const parts = { relevance: rel[i], recency: rec[i], importance: imp[i] };
-      const score = weights.relevance * parts.relevance + weights.recency * parts.recency + weights.importance * parts.importance;
+      const parts = { relevance: rel[i], recency: rec[i], importance: imp[i], repoMatch: repoMatch[i] };
+      const score =
+        weights.relevance * parts.relevance +
+        weights.recency * parts.recency +
+        weights.importance * parts.importance +
+        wRepo * parts.repoMatch;
       return { entry: r.entry, score, cosine: r.cosine, parts };
     })
     .sort((a, b) => b.score - a.score || (b.entry.seq ?? 0) - (a.entry.seq ?? 0)); // seq breaks score ties (newer first)

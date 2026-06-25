@@ -89,8 +89,46 @@ describe('blendCandidates — recency + cosine + importance blend (the recall-qu
     expect(rel.c).toBe(0); // no cosine -> 0, outside the relevance scale
   });
 
-  it('exposes DEFAULT_WEIGHTS summing to 1', () => {
+  it('the three BASE weights (relevance + recency + importance) sum to 1', () => {
     const sum = DEFAULT_WEIGHTS.relevance + DEFAULT_WEIGHTS.recency + DEFAULT_WEIGHTS.importance;
-    expect(sum).toBeCloseTo(1, 5);
+    expect(sum).toBeCloseTo(1, 5); // repoMatch is an ADDITIVE project-scope boost on top, not part of this convex base
+  });
+});
+
+describe('blendCandidates — repo-scoped recall (M5b: "remembers you HERE")', () => {
+  it('boosts a same-repo entry over an otherwise-equal cross-repo entry', () => {
+    // Equal cosine + equal recency + equal importance → repoMatch is the ONLY differentiator.
+    const ranked = blendCandidates(
+      [
+        { entry: e({ id: 'here', seq: 1, repoId: 'repoA' }), cosine: 0.5 },
+        { entry: e({ id: 'elsewhere', seq: 1, repoId: 'repoB' }), cosine: 0.5 },
+      ],
+      DEFAULT_WEIGHTS,
+      Date.parse('2026-06-22T00:00:00.000Z'),
+      'repoA',
+    );
+    expect(ranked[0].entry.id).toBe('here');
+    expect(ranked[0].parts.repoMatch).toBe(1);
+    expect(ranked.find((r) => r.entry.id === 'elsewhere')?.parts.repoMatch).toBe(0);
+  });
+
+  it('is BACKWARD-COMPATIBLE: with no current repo, repoMatch is 0 for all and ranking is unchanged', () => {
+    const base = [
+      { entry: e({ id: 'a', seq: 2, repoId: 'repoA' }), cosine: 0.9 },
+      { entry: e({ id: 'b', seq: 1, repoId: 'repoB' }), cosine: 0.1 },
+    ];
+    const ranked = blendCandidates(base, { relevance: 1, recency: 0, importance: 0 }); // no currentRepoId arg
+    expect(ranked.map((r) => r.entry.id)).toEqual(['a', 'b']);
+    expect(ranked.every((r) => r.parts.repoMatch === 0)).toBe(true);
+  });
+
+  it('an entry with NO repoId never matches (global memory is not falsely boosted into a repo)', () => {
+    const ranked = blendCandidates(
+      [{ entry: e({ id: 'global', seq: 1 }) }],
+      DEFAULT_WEIGHTS,
+      Date.parse('2026-06-22T00:00:00.000Z'),
+      'repoA',
+    );
+    expect(ranked[0].parts.repoMatch).toBe(0);
   });
 });

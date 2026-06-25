@@ -12,6 +12,7 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
+import type { ScoredEntry } from './memoryScore';
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -23,7 +24,9 @@ export type TraceEvent =
       k: number;
       // The FULL deduped candidate pool (not just the returned top-k), each with its score components and
       // whether it was returned — so an offline eval can replay alternate weights + diagnose near-misses.
-      candidates: Array<{ id: string; score: number; cosine?: number; parts: { relevance: number; recency: number; importance: number }; returned: boolean }>;
+      // parts mirrors the blend's components via ScoredEntry['parts'] (single source of truth) so the eval
+      // substrate always sees EVERY factor the live blend uses — incl. repoMatch — and can never drift from it.
+      candidates: Array<{ id: string; score: number; cosine?: number; parts: ScoredEntry['parts']; returned: boolean }>;
     }
   | { kind: 'remember'; ownerId: string; id: string; tier: string; sessionId?: string }
   | { kind: 'fact'; ownerId: string; factKey: string; op: 'replace' | 'reinforce'; id: string; confidence?: number; supersededIds?: string[]; sessionId?: string }
