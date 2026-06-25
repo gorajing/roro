@@ -37,6 +37,25 @@ describe('memory2 adapter — the old MemoryModule contract over memory2', () =>
     } finally { await a.close(); }
   });
 
+  it('forgetFact (M8): hard-deletes a fact so it leaves the profile — the Forget panel', async () => {
+    const a = await createMemory2Adapter({ dir, embed, dim: DIM });
+    try {
+      const row = await a.replaceFact(fact('o1', 'editor', 'prefers vim'));
+      expect((await a.getProfile('o1')).map((r) => r.text)).toContain('prefers vim');
+      await a.forgetFact('o1', row.id);
+      expect((await a.getProfile('o1')).map((r) => r.text)).not.toContain('prefers vim'); // gone, not just hidden
+    } finally { await a.close(); }
+  });
+
+  it('forgetFact is owner-scoped — cannot delete another owner\'s fact', async () => {
+    const a = await createMemory2Adapter({ dir, embed, dim: DIM });
+    try {
+      const mine = await a.replaceFact(fact('o1', 'editor', 'prefers vim'));
+      await a.forgetFact('o2', mine.id); // wrong owner — must be a no-op, not a cross-owner delete
+      expect((await a.getProfile('o1')).map((r) => r.text)).toContain('prefers vim'); // still there
+    } finally { await a.close(); }
+  });
+
   it('repo-scoped recall (M5b): a same-repo memory outranks an equal cross-repo one in the blend', async () => {
     const a = await createMemory2Adapter({ dir, embed, dim: DIM });
     try {

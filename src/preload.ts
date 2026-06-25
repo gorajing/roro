@@ -94,6 +94,9 @@ const memory = {
     k?: number;
     sessionId?: string;
   }): Promise<MemoryMatch[]> => ipcRenderer.invoke(CH.memoryRecall, input),
+  // Transparency + Forget (M8): see the facts roro knows, and hard-delete one (owner-scoped MAIN-side).
+  profile: (): Promise<MemoryRow[]> => ipcRenderer.invoke(CH.memoryProfile),
+  forget: (id: string): Promise<void> => ipcRenderer.invoke(CH.memoryForget, id),
 };
 
 const vision = {

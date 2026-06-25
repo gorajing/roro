@@ -125,3 +125,6 @@ export async function getProfile(ownerId: string): Promise<MemoryRow[]> {
 export async function supersede(id: string): Promise<void> {
   return (await getAdapter()).supersede(id);
 }
+export async function forgetFact(ownerId: string, id: string): Promise<void> {
+  return (await getAdapter()).forgetFact(ownerId, id);
+}

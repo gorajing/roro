@@ -64,6 +64,8 @@ export interface MemoryModule {
   recall(input: RecallInput): Promise<MemoryMatch[]>;
   getProfile(ownerId: string): Promise<MemoryRow[]>;
   supersede(id: string): Promise<void>;
+  /** HARD-delete one of the owner's active facts (the Forget panel — M8). */
+  forgetFact(ownerId: string, id: string): Promise<void>;
 }
 
 export interface CaptureResult {

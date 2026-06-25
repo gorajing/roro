@@ -61,6 +61,9 @@ export interface Memory2Adapter {
   recall(input: RecallInput): Promise<MemoryMatch[]>;
   getProfile(ownerId: string): Promise<MemoryRow[]>;
   supersede(id: string): Promise<void>;
+  /** HARD-delete one of the owner's active facts (the Forget panel — M8). Owner-scoped + active-only: a no-op
+   *  if `id` isn't among this owner's current profile facts (so it can't delete an arbitrary or other-owner id). */
+  forgetFact(ownerId: string, id: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -138,6 +141,15 @@ export async function createMemory2Adapter(opts: Memory2AdapterOpts): Promise<Me
 
     supersede(id: string): Promise<void> {
       return store.supersede(id);
+    },
+
+    async forgetFact(ownerId: string, id: string): Promise<void> {
+      // Verify the id is one of THIS owner's active facts before the hard delete — store.deleteEntry removes
+      // by tier+id without an owner check, so this is the owner-scope + active-only guard (never delete an
+      // id the owner doesn't actively have; getProfile is owner-scoped).
+      const owned = (await store.getProfile(ownerId)).some((e) => e.id === id);
+      if (!owned) return;
+      await store.forget({ tier: 'fact', id, ownerId });
     },
 
     close(): Promise<void> {

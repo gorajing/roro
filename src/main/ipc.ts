@@ -120,6 +120,18 @@ export function registerIpcHandlers(): void {
       return memory.recall({ ...input, ownerId: getOwnerId() });
     },
   );
+  // Transparency: the facts roro knows about THIS owner (owner injected MAIN-side).
+  ipcMain.handle(CH.memoryProfile, async (): Promise<MemoryRow[]> => {
+    const memory = await loadMemory();
+    return memory.getProfile(getOwnerId());
+  });
+  // Forget: hard-delete one of the owner's facts by id. forgetFact is owner-scoped + active-only, so a
+  // renderer-supplied id can only ever delete one of THIS owner's currently-visible facts (never an
+  // arbitrary or other-owner row).
+  ipcMain.handle(CH.memoryForget, async (_e, id: string): Promise<void> => {
+    const memory = await loadMemory();
+    await memory.forgetFact(getOwnerId(), id);
+  });
 
   // ---- Vision (sibling: src/vision) ----
   // THROWS BlackFrameError up to the renderer (which must catch + show onboarding).

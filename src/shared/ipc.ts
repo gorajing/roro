@@ -15,4 +15,6 @@ export const CH = {
   brainDecide: 'brain:decide', brainReasoning: 'brain:reasoning', brainContent: 'brain:content',
   brainDescribeScreen: 'brain:describeScreen', brainEmbed: 'brain:embed',
   visionAsk: 'vision:ask', memoryRemember: 'memory:remember', memoryRecall: 'memory:recall',
+  // Transparency + Forget (M8): list the facts roro knows about the owner, and hard-delete one.
+  memoryProfile: 'memory:profile', memoryForget: 'memory:forget',
 } as const;
