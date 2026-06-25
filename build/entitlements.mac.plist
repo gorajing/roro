@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Chromium/V8 JIT-compiles JS at runtime. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <!-- V8 + on-device WASM (transformers.js, PGlite, VAD) write+execute memory the hardened runtime
+       would otherwise forbid. -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <!-- sharp bundles third-party native libvips dylibs (loaded via dlopen). Library validation would
+       reject them under the hardened runtime; disabling it lets our re-signed native modules load. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- Roro's on-device voice (STT) captures the microphone. Paired with NSMicrophoneUsageDescription
+       in the Info.plist (forge.config.ts extendInfo) — both are required or a signed build crashes on
+       first mic access. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+</dict>
+</plist>
