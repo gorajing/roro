@@ -26,7 +26,7 @@ import { openEntry, type Cipher } from './cipher';
 import { effectiveConfidence } from './forgetting';
 import { assertEncryptionMode } from './encryptionMode';
 import { NOOP_TRACER, type Tracer, type TraceEvent } from './tracer';
-import type { Entry } from './types';
+import type { Entry, Tier } from './types';
 import type { IndexStore } from './indexStore';
 
 const SCHEMA_VERSION = 1;
@@ -81,6 +81,9 @@ export interface MemoryStore {
   reinforceFact(input: { ownerId: string; factKey: string }): Promise<Entry | null>;
   /** Mark an entry superseded (hidden from getProfile/recall) — supersede-not-overwrite. */
   supersede(id: string): Promise<void>;
+  /** HARD-delete a single entry (the user-initiated "forget"): remove its file + record a durable delete
+   *  tombstone so a reindex never resurrects it, and drop it from the index. Distinct from supersede (hide). */
+  forget(ref: { tier: Tier; id: string; ownerId: string }): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -409,6 +412,18 @@ export async function createMemoryStore(opts: {
         await index.upsert(sup);
         await index.setAppliedSeq(sup.seq ?? 0);
         safeEmit({ kind: 'supersede', ownerId: sup.ownerId, id, sessionId: sup.sessionId });
+      });
+    },
+
+    forget(ref: { tier: Tier; id: string; ownerId: string }): Promise<void> {
+      if (!ref.id?.trim() || !ref.ownerId?.trim()) return Promise.reject(new Error('memory2: forget requires a non-empty id + ownerId'));
+      // Mirror pruneEpisodes' single-row delete: durable tombstone op (file removed + delete recorded so a
+      // reindex can't resurrect it), drop from the index, advance the cursor past the delete op.
+      return serialize(async () => {
+        const seq = await writer.deleteEntry(ref);
+        await index.remove(ref.id);
+        if (seq > 0) await index.setAppliedSeq(seq);
+        safeEmit({ kind: 'prune', ownerId: ref.ownerId, count: 1, ids: [ref.id] });
       });
     },
 
