@@ -6,6 +6,8 @@
 // substantial RAM): readiness depends ONLY on the essentials; vision is offered but never blocks. The IO
 // (is Ollama reachable + ollamaTags) is resolved by the caller; this just decides what's missing + the size.
 
+import type { BootstrapStatusMsg } from '../shared/ipc';
+
 export interface ModelSpec {
   /** The exact ollama model id (with tag) to pull, e.g. 'qwen2.5:3b'. */
   name: string;
@@ -68,6 +70,25 @@ export function bootstrapFailureMessage(baseMessage: string, provider: string, p
       : { ollamaReachable: false, installedModels: [] },
   );
   return describeBootstrap(plan) || baseMessage; // empty guidance (ready / non-model failure) → keep baseMessage
+}
+
+/**
+ * The structured first-run status to push to the renderer (M7b), derived from an Ollama probe. Returns null
+ * for a DEGRADED (wedged/timeout) daemon — a download can't fix that, so the renderer shows no action.
+ */
+export function bootstrapStatusFor(probe: OllamaProbe): BootstrapStatusMsg | null {
+  if (probe.kind === 'degraded') return null;
+  const plan = bootstrapPlan(
+    probe.kind === 'reachable'
+      ? { ollamaReachable: true, installedModels: probe.models }
+      : { ollamaReachable: false, installedModels: [] },
+  );
+  return {
+    ready: plan.ready,
+    needsOllamaInstall: plan.needsOllamaInstall,
+    missing: plan.missingEssential.map((m) => ({ name: m.name, bytes: m.bytes })),
+    essentialBytes: plan.essentialBytes,
+  };
 }
 
 /** Human-readable size for the pre-pull disclosure: GB (1 decimal) for large, MB (rounded) for small. */

@@ -19,7 +19,9 @@
 //   CH.visionAsk          -> vision.askScreen()                (sibling: src/vision)
 import { BrowserWindow, ipcMain } from 'electron';
 import { CH } from '../shared/ipc';
-import type { MicStatus, TurnInput } from '../shared/ipc';
+import type { MicStatus, TurnInput, ModelPullProgressMsg } from '../shared/ipc';
+import { pullModel } from '../brain/ollama';
+import { DEFAULT_MODEL_SPECS } from './bootstrapPlan';
 import type { Decision, DecideInput } from '../shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch } from '../shared/memory';
 import { assertRendererMemoryKind } from '../shared/memory';
@@ -131,6 +133,31 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(CH.memoryForget, async (_e, id: string): Promise<void> => {
     const memory = await loadMemory();
     await memory.forgetFact(getOwnerId(), id);
+  });
+
+  // First-run one-click model pull (M7b): pull each requested model via the local Ollama API, streaming
+  // progress to the requesting renderer. On failure, push an error tick AND reject the invoke (fail-loud).
+  ipcMain.handle(CH.modelPull, async (e, models: string[]): Promise<void> => {
+    // Only pull KNOWN models — never let a renderer-supplied id drive an arbitrary network/disk pull.
+    const known = new Set(DEFAULT_MODEL_SPECS.map((m) => m.name));
+    const toPull = (Array.isArray(models) ? models : []).filter((m) => known.has(m));
+    // Guard against a window closed mid-pull: don't send to a destroyed sender, and abort the (timeout-less)
+    // pull so MAIN stops reading the multi-GB stream.
+    const tick = (p: ModelPullProgressMsg): void => { if (!e.sender.isDestroyed()) e.sender.send(CH.modelPullProgress, p); };
+    const ac = new AbortController();
+    const onGone = (): void => ac.abort();
+    e.sender.once('destroyed', onGone);
+    try {
+      for (const model of toPull) {
+        await pullModel(model, (p) => tick({ model, status: p.status, percent: p.percent }), ac.signal);
+      }
+      tick({ model: '', status: 'success', done: true });
+    } catch (err) {
+      tick({ model: '', status: 'error', error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    } finally {
+      if (!e.sender.isDestroyed()) e.sender.removeListener('destroyed', onGone);
+    }
   });
 
   // ---- Vision (sibling: src/vision) ----
