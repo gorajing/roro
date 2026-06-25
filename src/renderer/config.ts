@@ -36,6 +36,9 @@ export interface RoroConfig {
   /** The initial voice-pack id (Phase 5 cosmetic; RORO_VOICE_PACK). Empty/unknown → the free default
    *  af_heart. Switchable at runtime via __roroVoice.setVoice. Only meaningful when ttsVoice is on. */
   voicePack: string;
+  /** WS5 validation (M9): mount the cosmetics fake-door (captures willingness-to-pay intent, no payment).
+   *  OFF by default — the founder enables it to run the demand experiment. RORO_WS5_STORE=1. */
+  cosmeticsStore: boolean;
 }
 
 function viteEnv(_key: string): string | undefined {
@@ -72,5 +75,6 @@ export function loadConfig(): RoroConfig {
     sttVoice: readBool('sttVoice', 'VITE_RORO_STT_VOICE', false),
     ttsVoice: readBool('ttsVoice', 'VITE_RORO_TTS_VOICE', false),
     voicePack: read('voicePack', 'VITE_RORO_VOICE_PACK', ''),
+    cosmeticsStore: readBool('cosmeticsStore', 'VITE_RORO_WS5_STORE', false),
   };
 }

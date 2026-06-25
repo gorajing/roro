@@ -18,6 +18,7 @@ import { subscribeActionEvents } from './events/actionEvents';
 import { mountFloatingAsk } from './ask/floatingAsk';
 import { mountConfirmChip } from './confirm/confirmChip';
 import { mountForgetPanel } from './memory/forgetPanel';
+import { mountCosmeticsStore } from './cosmetics/cosmeticsStore';
 import { getCompanion } from './events/bridge';
 import { runState } from './events/runState';
 import { mountLocalVoiceMode } from './voice/mountLocalVoiceMode';
@@ -99,6 +100,24 @@ export async function bootstrap(): Promise<void> {
   // counterweight). Mount the toggle in #controls so it sits with the other header controls and is hidden
   // alongside them in floating mode; the panel itself positions as an overlay.
   mountForgetPanel(document.getElementById('controls') ?? undefined);
+
+  // M9 (WS5): the cosmetics fake-door — OFF by default; the founder enables it (RORO_WS5_STORE=1) to run the
+  // willingness-to-pay experiment. Intent is captured locally (console + a localStorage log the founder can
+  // inspect); wire onIntent to real aggregation to run it live. NO payment path exists — it stops at intent.
+  if (config.cosmeticsStore) {
+    mountCosmeticsStore({
+      host: document.getElementById('controls') ?? undefined,
+      onIntent: (item) => {
+        try {
+          const key = 'roro.ws5.intent';
+          const log = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown[];
+          log.push({ ...item, at: new Date().toISOString() });
+          localStorage.setItem(key, JSON.stringify(log));
+        } catch { /* best-effort local log; console below is the primary signal */ }
+        console.info('[WS5] cosmetic purchase intent:', item); // founder: forward to aggregation to run the experiment
+      },
+    });
+  }
 
   // Aliveness: the cat watches the cursor (gaze eased toward the pointer). Gaze
   // ONLY — cursor movement must NOT keep the cat awake; poke is reserved for real
