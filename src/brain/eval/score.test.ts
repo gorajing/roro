@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scoreDecision, scoreExtraction, summarize } from './score';
+import { scoreDecision, scoreExtraction, summarize, scoreFactValue } from './score';
 
 // The PURE scoring core of the brain eval (CI-runnable, no model). The live runner (runEval.ts) calls the
 // real 3B brain over golden fixtures and classifies each result with these; this is where the math lives.
@@ -27,6 +27,31 @@ describe('scoreExtraction — did the extractor honor the durable-fact / null-di
   });
   it('false_fact when null was expected but the model invented a fact', () => {
     expect(scoreExtraction('null', fact)).toBe('false_fact');
+  });
+});
+
+describe('scoreFactValue — the descriptive-value-quality axis (behavioral preferences)', () => {
+  const contract = { mustContainOneOf: ['test'], minWords: 2 };
+  it('missed_fact when the model returned null (incl. a boolean the runtime guard pre-empted to null)', () => {
+    expect(scoreFactValue(contract, null)).toBe('missed_fact');
+  });
+  it('ok for a descriptive, on-topic value (the fix target)', () => {
+    expect(scoreFactValue(contract, { key: 'k', value: 'writes a test alongside each feature' })).toBe('ok');
+  });
+  it('too_thin when the value has fewer than minWords words (a bare "true" that slipped the guard lands here)', () => {
+    expect(scoreFactValue({ mustContainOneOf: ['test'], minWords: 2 }, { key: 'k', value: 'true' })).toBe('too_thin');
+    expect(scoreFactValue({ mustContainOneOf: ['test'], minWords: 3 }, { key: 'k', value: 'test' })).toBe('too_thin');
+  });
+  it('off_topic when no required token is present', () => {
+    expect(scoreFactValue({ mustContainOneOf: ['lint'] }, { key: 'k', value: 'conventional commits' })).toBe('off_topic');
+  });
+  it('matches whole-word starts, not incidental substrings (the leniency fix)', () => {
+    // 'test' must NOT be satisfied by 'latest'; 'review' must NOT be satisfied by 'preview'/'approve'
+    expect(scoreFactValue({ mustContainOneOf: ['test'], minWords: 2 }, { key: 'k', value: 'the latest greatest build' })).toBe('off_topic');
+    expect(scoreFactValue({ mustContainOneOf: ['review'], minWords: 2 }, { key: 'k', value: 'preview then approve' })).toBe('off_topic');
+    // but inflections DO match: 'lint' matches 'linter', 'test' matches 'tests'
+    expect(scoreFactValue({ mustContainOneOf: ['lint'], minWords: 2 }, { key: 'k', value: 'runs the linter first' })).toBe('ok');
+    expect(scoreFactValue({ mustContainOneOf: ['test'], minWords: 2 }, { key: 'k', value: 'writes tests early' })).toBe('ok');
   });
 });
 

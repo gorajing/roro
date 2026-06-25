@@ -21,11 +21,21 @@ export const FACT_SYSTEM_PROMPT =
   `output null. A missed fact is harmless; a WRONG fact poisons the developer's profile.\n` +
   `Output ONLY one JSON object {"key": string, "value": string} (snake_case key, short human-readable ` +
   `value), OR the literal null. No prose, no markdown.\n` +
+  // The recalled memory line shows the VALUE verbatim, so a bare "true" surfaces as a useless "- true".
+  // Force a descriptive value, especially for behavioral habits (the 3B model otherwise boolean-izes them).
+  // NB: these examples are kept DISJOINT from the eval's behavioral fixtures (src/brain/eval) so the eval
+  // measures generalization, not memorization (enforced by fixtures.test.ts).
+  `The value is a short, self-contained description a human could read back — e.g. "uses pnpm", ` +
+  `"2-space indentation", "rebases branches before merging". It is NEVER a bare boolean or yes/no ` +
+  `("true", "false", "yes", "no") and NEVER just a flag: for a HABIT, describe WHAT the developer does ` +
+  `("documents public functions with JSDoc"), not THAT they do it ("true").\n` +
   // Examples are deliberately DISTINCT from the eval fixtures (src/brain/eval/fixtures.ts) so the eval
   // measures generalization, not memorization. They illustrate the pattern: durable preference -> fact;
   // one-off task / greeting / question / single action -> null.
   `EXAMPLES:\n` +
   `USER SAID: "I always use yarn in this project" -> {"key":"package_manager","value":"yarn"}\n` +
+  // One BEHAVIORAL example (habit -> descriptive value, not a boolean) — the failure mode observed live.
+  `USER SAID: "I always squash my commits before merging" -> {"key":"merge_style","value":"squashes commits before merging"}\n` +
   `USER SAID: "rename getUser to fetchUser" -> null\n` +
   `USER SAID: "hey there" -> null\n` +
   `USER SAID: "how do I reverse a list in python" -> null\n` +
@@ -104,9 +114,25 @@ export function parseFactResponse(raw: string): FactCandidate | null {
   const k = normalizeKey(key);
   const v = value.trim();
   if (!k || !v) return null;
+  if (isUselessValue(v)) return null; // bare boolean / yes-no / placeholder → null (renders as a noise line)
   return { key: k, value: v };
 }
 
 function normalizeKey(key: string): string {
   return key.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+// Bare boolean / yes-no / placeholder values are USELESS as a recalled memory line: recall renders the
+// VALUE verbatim ("- ${value}"), so value:"true" surfaces as the noise line "- true" (the 3B model
+// collapses behavioral habits to this — observed live). Reject them → null (the safe direction: a missed
+// fact is harmless, a wrong one poisons the profile). A CLOSED allowlist-of-garbage matched by WHOLE-STRING
+// equality on the trimmed+lowercased value — so "no" is rejected but "no semicolons" / "node 20" / "1 space"
+// are kept (no legitimate preference value is a single bare boolean/placeholder token). Keep this set
+// identical to USELESS_VALUES in src/brain/eval/score.ts so the eval's classification matches the runtime guard.
+const USELESS_VALUES = new Set([
+  'true', 'false', 'yes', 'no', 'y', 'n',
+  'n/a', 'na', 'none', 'null', 'nil', 'undefined', '0', '1',
+]);
+function isUselessValue(value: string): boolean {
+  return USELESS_VALUES.has(value.trim().toLowerCase());
 }
