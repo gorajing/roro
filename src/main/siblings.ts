@@ -29,6 +29,7 @@
 import type { Decision, DecideInput } from '../shared/brain';
 import type { FactExtractInput, FactCandidate } from '../brain/extractFact';
 import type { RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch, RecallInput } from '../shared/memory';
+import type { TraceEvent } from '../memory2/tracer';
 
 // ---- Thin local interfaces (structural; the real modules satisfy a superset) ----
 
@@ -66,6 +67,8 @@ export interface MemoryModule {
   supersede(id: string): Promise<void>;
   /** HARD-delete one of the owner's active facts (the Forget panel — M8). */
   forgetFact(ownerId: string, id: string): Promise<void>;
+  /** Record a per-turn extraction outcome to the RORO_TRACE sink. One-way, sync, NOOP unless RORO_TRACE=1. */
+  traceExtraction(event: TraceEvent): void;
 }
 
 export interface CaptureResult {

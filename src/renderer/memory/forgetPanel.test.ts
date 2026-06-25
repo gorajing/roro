@@ -77,6 +77,32 @@ describe('mountForgetPanel — see + forget what Roro knows', () => {
     expect(q('.memory-empty')?.textContent).toMatch(/doesn.t know|nothing/i);
   });
 
+  it('fails loud-but-friendly when profile() rejects — shows an error state, not an uncaught rejection', async () => {
+    const stub = setup();
+    stub.profile.mockRejectedValueOnce(new Error('IPC down')); // e.g. no keychain → memory:profile throws
+    mountForgetPanel();
+    click(q('#memory-toggle'));
+    await flush();
+    expect(q('.memory-error')?.textContent).toMatch(/couldn.t load|try reopening/i);
+    expect((q('#memory-panel') as HTMLElement).hidden).toBe(false); // the panel still opens
+    expect(q('.memory-row')).toBeNull(); // no rows, but not a silent blank either
+  });
+
+  it('recovers on reopen after a failed load — retries profile() and renders', async () => {
+    const stub = setup([{ id: 'a', text: 'prefers vim' }]);
+    stub.profile.mockRejectedValueOnce(new Error('IPC down')); // first open fails, then resolves
+    mountForgetPanel();
+    click(q('#memory-toggle')); // open → fails → error state
+    await flush();
+    expect(q('.memory-error')).toBeTruthy();
+    click(q('#memory-toggle')); // close
+    click(q('#memory-toggle')); // reopen → retry
+    await flush();
+    expect(q('.memory-error')).toBeNull();
+    expect(q('.memory-text')?.textContent).toBe('prefers vim');
+    expect(stub.profile).toHaveBeenCalledTimes(2);
+  });
+
   it('unmount removes the toggle + panel', () => {
     setup();
     const unmount = mountForgetPanel();
