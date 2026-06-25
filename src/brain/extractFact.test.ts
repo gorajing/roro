@@ -49,6 +49,20 @@ describe('parseFactResponse (null-when-unsure)', () => {
     expect(parseFactResponse('{"key":"pkg-manager","value":"uses pnpm"}')).toEqual({ key: 'pkg_manager', value: 'uses pnpm' });
     expect(parseFactResponse('{"key":" Package Manager ","value":"uses pnpm"}')).toEqual({ key: 'package_manager', value: 'uses pnpm' });
   });
+
+  // Recall renders the VALUE verbatim ("- ${value}"), so a bare boolean value surfaces as the noise line
+  // "- true". The 3B model collapses behavioral habits ("I always write a test...") to value:"true" — reject
+  // those (→ null, the safe direction) so garbage never reaches the profile. (Observed live; see crosslaunch.live.)
+  it('rejects a bare boolean / yes-no / placeholder value (would render as a useless "- true" memory line)', () => {
+    for (const v of ['true', 'false', 'yes', 'no', 'y', 'n', 'Yes', ' TRUE ', 'N/A', 'na', 'none', 'null', 'nil', 'undefined', '0', '1']) {
+      expect(parseFactResponse(`{"key":"test_driven_development","value":${JSON.stringify(v)}}`), v).toBeNull();
+    }
+  });
+  it('keeps legitimate values that merely CONTAIN a boolean token (whole-string match, never substring)', () => {
+    for (const v of ['no semicolons', 'node 20', '1 space', 'yes-always squash', '100-char line limit']) {
+      expect(parseFactResponse(`{"key":"k","value":${JSON.stringify(v)}}`), v).not.toBeNull();
+    }
+  });
 });
 
 describe('buildFactPrompt', () => {

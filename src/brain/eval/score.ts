@@ -23,6 +23,41 @@ export function scoreExtraction(
   return got === null ? 'ok' : 'false_fact'; // expected null
 }
 
+/** The descriptive-value contract for a behavioral-preference fixture (only meaningful for expect:'fact').
+ *  mustContainOneOf: the value must mention at least one of these (on-topic); minWords: a floor on length. */
+export interface ValueContract {
+  mustContainOneOf?: string[];
+  minWords?: number;
+}
+
+/** Whole-word-START match (NOT substring): the token must begin at a word boundary, but may continue — so
+ *  'lint' matches 'linter', 'test' matches 'tests', but 'test' does NOT match 'latest' and 'review' does NOT
+ *  match 'preview'. Avoids the substring-anywhere looseness (a short token like 'pr' matching 'prefers')
+ *  while still allowing natural inflections. Multi-word tokens ('change log') match as a boundary-started phrase. */
+function matchesToken(value: string, token: string): boolean {
+  const escaped = token.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}`, 'i').test(value);
+}
+
+/** A SECOND, additive axis (separate from scoreExtraction's detection): is the extracted VALUE actually a
+ *  usable recalled-memory line, or noise? null→missed_fact; below minWords→too_thin; off the topic→off_topic;
+ *  else ok. NOTE: a bare-boolean value (value:"true") never reaches this on the LIVE path — the runtime guard
+ *  (isUselessValue in extractFact.ts) converts it to null FIRST, so it scores 'missed_fact' (the user's true
+ *  outcome: no recalled memory). This axis therefore measures the user-facing usable-value rate. */
+export function scoreFactValue(
+  contract: ValueContract | undefined,
+  got: FactCandidate | null,
+): 'ok' | 'missed_fact' | 'too_thin' | 'off_topic' {
+  if (got === null) return 'missed_fact';
+  const value = got.value.trim();
+  const c = contract ?? {};
+  if (c.minWords !== undefined && value.split(/\s+/).filter(Boolean).length < c.minWords) return 'too_thin';
+  if (c.mustContainOneOf && c.mustContainOneOf.length > 0) {
+    if (!c.mustContainOneOf.some((t) => matchesToken(value, t))) return 'off_topic';
+  }
+  return 'ok';
+}
+
 export interface EvalSummary {
   total: number;
   ok: number;

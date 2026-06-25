@@ -16,5 +16,16 @@
     "byMode": {
       "ok": 10
     }
+  },
+  "behavioral": {
+    "total": 5,
+    "ok": 2,
+    "accuracy": 0.4,
+    "byMode": {
+      "missed_fact": 1,
+      "too_thin": 1,
+      "ok": 2,
+      "off_topic": 1
+    }
   }
 }

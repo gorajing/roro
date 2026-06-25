@@ -8,6 +8,7 @@
 
 import type { Command, DecideInput } from '../../shared/brain';
 import type { FactExtractInput } from '../extractFact';
+import type { ValueContract } from './score';
 
 export interface DecideCase {
   id: string;
@@ -20,6 +21,9 @@ export interface ExtractCase {
   id: string;
   input: FactExtractInput;
   expect: 'fact' | 'null';
+  /** For BEHAVIORAL 'fact' cases: the descriptive-value contract scoreFactValue checks (value quality,
+   *  separate from detection). Absent on the detection-only EXTRACT_CASES. */
+  valueContract?: ValueContract;
   note?: string;
 }
 
@@ -69,4 +73,19 @@ export const EXTRACT_CASES: ExtractCase[] = [
   { id: 'null-thanks', input: { transcript: 'thanks', narration: "You're welcome!", outcome: 'answered' }, expect: 'null' },
   { id: 'null-runtests', input: { transcript: 'run the tests', narration: 'Running them now.', outcome: 'completed' }, expect: 'null' },
   { id: 'null-time', input: { transcript: 'what time is it', narration: 'It is just past noon.', outcome: 'answered' }, expect: 'null' },
+];
+
+// BEHAVIORAL preferences (habits/processes) — the kind the 3B model collapsed to value:"true" (the live
+// finding). Kept SEPARATE from EXTRACT_CASES so the detection metric + baseline stay untouched; scored on
+// the value-quality axis (scoreFactValue) via each valueContract. Every transcript carries a PREFERENCE_MARKER
+// ('always'/'prefer') so isPlausiblePreference passes and it reaches the model (a miss isolates VALUE quality,
+// never a gate reason), and each is DISJOINT from the FACT_SYSTEM_PROMPT examples (fixtures.test.ts enforces it).
+export const BEHAVIORAL_EXTRACT_CASES: ExtractCase[] = [
+  // Contracts use whole-word-START matching (scoreFactValue) so tokens are robust: no bare 2-char tokens
+  // like 'pr' (which would match 'prefers'/'approve'); both 'changelog' and the two-word 'change log' accepted.
+  { id: 'beh-test-alongside', input: { transcript: 'I always write a test alongside each feature I build', narration: 'Got it.', outcome: 'answered' }, expect: 'fact', valueContract: { mustContainOneOf: ['test', 'feature'], minWords: 2 } },
+  { id: 'beh-lint-precommit', input: { transcript: 'I always run the linter before every commit', narration: 'Understood.', outcome: 'answered' }, expect: 'fact', valueContract: { mustContainOneOf: ['lint'], minWords: 2 } },
+  { id: 'beh-review-own', input: { transcript: 'I always review my own PRs before requesting review', narration: 'Noted.', outcome: 'answered' }, expect: 'fact', valueContract: { mustContainOneOf: ['review', 'prs'], minWords: 2 } },
+  { id: 'beh-changelog', input: { transcript: 'we always add a changelog entry for every change', narration: 'Will do.', outcome: 'answered' }, expect: 'fact', valueContract: { mustContainOneOf: ['changelog', 'change log'], minWords: 2 } },
+  { id: 'beh-small-prs', input: { transcript: 'I prefer to keep my pull requests small and focused', narration: 'Makes sense.', outcome: 'answered' }, expect: 'fact', valueContract: { mustContainOneOf: ['small', 'focused', 'pull request'], minWords: 2 } },
 ];
