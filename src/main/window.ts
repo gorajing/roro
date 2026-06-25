@@ -37,6 +37,8 @@ export function createWindow(): BrowserWindow {
     sttVoice: process.env.RORO_STT_VOICE === '1',
     ttsVoice: process.env.RORO_TTS_VOICE === '1',
     voicePack: process.env.RORO_VOICE_PACK ?? '',
+    // WS5 validation (M9): the cosmetics fake-door, OFF by default — RORO_WS5_STORE=1 to run the experiment.
+    cosmeticsStore: process.env.RORO_WS5_STORE === '1',
   };
 
   const mainWindow = new BrowserWindow({
