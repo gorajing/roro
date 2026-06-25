@@ -28,13 +28,18 @@
             <b>Local</b> · PGlite + pgvector
           </div>
           <div id="controls">
+            <!-- Opt-in, consent-gated Voice Mode toggle. Clicking runs the readiness probe (mic + staged
+                 weights) and either starts cleanly or says exactly what's missing (bootstrap.ts). -->
+            <button id="voice-mode-btn" type="button" aria-pressed="false">🎙 Voice Mode</button>
             <!-- Disabled until the on-device voice path actually mounts (there is no mic to mute on the
                  default typed-only launch); bootstrap.ts enables it when a voice engine is summoned. -->
             <button id="mute-btn" type="button" disabled>Mute</button>
           </div>
         </header>
 
-        <div id="status">Loading…</div>
+        <!-- Polite live region: every setStatus line (model-load, Voice Mode blockers, FSM transitions) is
+             announced to screen readers — the fail-loud "tell the user what's missing" promise must be audible. -->
+        <div id="status" role="status" aria-live="polite">Loading…</div>
 
         <section id="captions">
           <div id="caption-final" class="caption"></div>
