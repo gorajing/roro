@@ -17,6 +17,7 @@ import { CaptionPanel, ActionTimeline } from './character/captions';
 import { subscribeActionEvents } from './events/actionEvents';
 import { mountFloatingAsk } from './ask/floatingAsk';
 import { mountConfirmChip } from './confirm/confirmChip';
+import { mountForgetPanel } from './memory/forgetPanel';
 import { getCompanion } from './events/bridge';
 import { runState } from './events/runState';
 import { mountLocalVoiceMode } from './voice/mountLocalVoiceMode';
@@ -93,6 +94,11 @@ export async function bootstrap(): Promise<void> {
 
   // Phase C1: the destructive-confirm chip (a spoken/typed word can't approve `rm -rf`).
   mountConfirmChip();
+
+  // M8: the transparency + Forget panel — see + delete the facts Roro knows about you (the trust
+  // counterweight). Mount the toggle in #controls so it sits with the other header controls and is hidden
+  // alongside them in floating mode; the panel itself positions as an overlay.
+  mountForgetPanel(document.getElementById('controls') ?? undefined);
 
   // Aliveness: the cat watches the cursor (gaze eased toward the pointer). Gaze
   // ONLY — cursor movement must NOT keep the cat awake; poke is reserved for real
