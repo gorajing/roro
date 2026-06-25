@@ -339,7 +339,7 @@ export async function createMemoryStore(opts: {
         if (lastSeq > 0) await index.setAppliedSeq(lastSeq); // advance the cursor past the delete ops
         if (victims.length > 0) {
           console.warn(`[memory2] pruned ${victims.length} old/excess episode(s) (corpus bound)`);
-          safeEmit({ kind: 'prune', ownerId, count: victims.length, ids: victims.map((v) => v.id) });
+          safeEmit({ kind: 'prune', ownerId, count: victims.length, ids: victims.map((v) => v.id), reason: 'cap' });
         }
         return victims.length;
       });
@@ -417,13 +417,17 @@ export async function createMemoryStore(opts: {
 
     forget(ref: { tier: Tier; id: string; ownerId: string }): Promise<void> {
       if (!ref.id?.trim() || !ref.ownerId?.trim()) return Promise.reject(new Error('memory2: forget requires a non-empty id + ownerId'));
+      // Defense-in-depth: the id becomes a file path (entryFile join). Real ids are UUIDs; reject anything with
+      // path separators / '..' so an untrusted-id caller can't traverse out of the tier dir (the IPC path is
+      // already guarded by the adapter's getProfile check, but store.forget is a public capability).
+      if (!/^[\w-]+$/.test(ref.id)) return Promise.reject(new Error(`memory2: forget got an unsafe id: ${ref.id}`));
       // Mirror pruneEpisodes' single-row delete: durable tombstone op (file removed + delete recorded so a
       // reindex can't resurrect it), drop from the index, advance the cursor past the delete op.
       return serialize(async () => {
         const seq = await writer.deleteEntry(ref);
         await index.remove(ref.id);
         if (seq > 0) await index.setAppliedSeq(seq);
-        safeEmit({ kind: 'prune', ownerId: ref.ownerId, count: 1, ids: [ref.id] });
+        safeEmit({ kind: 'prune', ownerId: ref.ownerId, count: 1, ids: [ref.id], reason: 'forget' });
       });
     },
 

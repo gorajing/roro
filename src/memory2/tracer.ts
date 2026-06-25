@@ -31,7 +31,9 @@ export type TraceEvent =
   | { kind: 'remember'; ownerId: string; id: string; tier: string; sessionId?: string }
   | { kind: 'fact'; ownerId: string; factKey: string; op: 'replace' | 'reinforce'; id: string; confidence?: number; supersededIds?: string[]; sessionId?: string }
   | { kind: 'supersede'; ownerId: string; id: string; sessionId?: string }
-  | { kind: 'prune'; ownerId?: string; count: number; ids: string[] };
+  // reason distinguishes corpus-bound auto-prune ('cap') from a user-initiated hard delete ('forget') so a
+  // retention/forgetting eval doesn't conflate the two.
+  | { kind: 'prune'; ownerId?: string; count: number; ids: string[]; reason: 'cap' | 'forget' };
 
 export interface Tracer {
   /** Record a seam observation. One-way + best-effort: never throws, never returns data to the caller. */

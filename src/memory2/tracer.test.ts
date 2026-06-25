@@ -23,7 +23,7 @@ describe('tracer — one-way observation tap (RORO_TRACE eval substrate)', () =>
     const path = join(dir, 'trace.jsonl');
     const t = createJsonlTracer(path);
     t.emit(recall);
-    t.emit({ kind: 'prune', ownerId: 'o1', count: 2, ids: ['x', 'y'] });
+    t.emit({ kind: 'prune', ownerId: 'o1', count: 2, ids: ['x', 'y'], reason: 'cap' });
     const lines = readFileSync(path, 'utf8').trim().split('\n');
     expect(lines).toHaveLength(2);
     const first = JSON.parse(lines[0]);

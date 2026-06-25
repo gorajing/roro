@@ -54,6 +54,27 @@ describe('memoryStore — unified API + cursor-based reconciliation', () => {
     } finally { await store.close(); }
   });
 
+  it('forget hard-deletes a fact that STAYS gone across reindex (the Forget durability invariant)', async () => {
+    const store = await createMemoryStore({ dir, embed, dim: DIM });
+    try {
+      const f = await store.replaceFact({ ownerId: 'o1', factKey: 'editor', text: 'prefers vim' });
+      await store.replaceFact({ ownerId: 'o1', factKey: 'lang', text: 'prefers typescript' }); // sibling, different key
+      await store.forget({ tier: 'fact', id: f.id, ownerId: 'o1' });
+      expect((await store.getProfile('o1')).map((e) => e.text)).not.toContain('prefers vim');
+      await store.reindex(); // rebuild the index from files-as-truth — the tombstone must keep the fact gone
+      const after = (await store.getProfile('o1')).map((e) => e.text);
+      expect(after).not.toContain('prefers vim'); // NOT resurrected by the reindex
+      expect(after).toContain('prefers typescript'); // a sibling fact survives
+    } finally { await store.close(); }
+  });
+
+  it('forget rejects an unsafe (path-traversal) id before it can become a file path', async () => {
+    const store = await createMemoryStore({ dir, embed, dim: DIM });
+    try {
+      await expect(store.forget({ tier: 'fact', id: '../../etc/passwd', ownerId: 'o1' })).rejects.toThrow(/unsafe id/);
+    } finally { await store.close(); }
+  });
+
   it('is owner-scoped — no cross-owner leakage', async () => {
     const store = await createMemoryStore({ dir, embed, dim: DIM });
     try {
