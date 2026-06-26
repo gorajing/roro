@@ -151,16 +151,21 @@ would deliver, without starting a real coding agent or enabling the debug bridge
 the rendered DOM **and computed CSS visibility**, then writes `docs/verification/floating-ask.png`.
 It is opt-in (needs a display + a vite build) and not in CI. Checks: `#floating-ask` exists + starts
 `collapsed`; pill reads "Ask Roro…"; `#floating-stop` exists and is not `armed`; clicking the pill →
-`expanded` with the input actually visible; Escape → `collapsed`; smoke submit → `tasked` with trimmed
-pill copy; universal `runEnd` collapses answer/clarify turns with no `run.started`; `run.started` arms
-and visibly shows Stop; `run.failed` disarms Stop, shows actionable error copy, hides raw spawn text,
-and the error remains visible after `runEnd` collapse until the next summon clears it.
+`expanded` with the input actually visible; the memory profile bridge responds before teardown; Escape
+→ `collapsed`; smoke submit → `tasked` with trimmed pill copy; universal `runEnd` collapses
+answer/clarify turns with no `run.started`; `run.started` arms and visibly shows Stop; `run.failed`
+disarms Stop, shows actionable error copy, hides raw spawn text, and the error remains visible after
+`runEnd` collapse until the next summon clears it.
 
 `scripts/smoke-floating-live-turn.mjs` is the opt-in live counterpart. It launches the dev app in
 floating mode, leaves `RORO_FLOATING_SMOKE` and `RORO_DEBUG_BRIDGE` off, drives the visible Ask form,
-and verifies a real `window.companion.turnRun` answer turn emits `ActionEvent`s, reaches `runEnd`,
-does not start the coding executor, and collapses the floating Ask from the real push stream. By
-default it uses a tiny local fake Ollama server so the product-loop proof is deterministic; set
+and verifies real `window.companion.turnRun` answer and executor turns over the public push stream.
+The answer turn must emit `ActionEvent`s, reach `runEnd`, avoid the coding executor, and collapse the
+floating Ask. The executor turn must arm Stop from `run.started`, launch Codex with the expected
+`exec --json --skip-git-repo-check -s workspace-write -C <project>` shape, emit a completed
+`file_change` and `run.completed`, write inside the selected test project (disposable by default),
+disarm Stop, and collapse from `runEnd`. By default it uses tiny local fake Ollama and Codex
+servers/binaries so the product-loop proof is deterministic; set
 `RORO_FLOATING_LIVE_USE_REAL_OLLAMA=1` when you specifically want to validate the local model path.
 Keep it out of CI unless the runner has a reliable display.
 
