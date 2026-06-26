@@ -403,7 +403,8 @@ body.floating-window #floating-stop.armed {
   color: #fff;
 }
 
-/* M8: transparency + Forget panel. The toggle sits among the header controls; the panel is an overlay. */
+/* Small header control panels. Toggles sit in #controls; panels are lightweight overlays. */
+#project-settings-toggle,
 #memory-toggle {
   font: inherit;
   font-size: 12px;
@@ -415,6 +416,7 @@ body.floating-window #floating-stop.armed {
   border: 1px solid rgba(255, 255, 255, 0.25);
   background: rgba(30, 30, 40, 0.8);
 }
+#project-settings-panel,
 #memory-panel {
   position: absolute;
   top: 52px;
@@ -430,6 +432,49 @@ body.floating-window #floating-stop.armed {
   padding: 8px;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+#project-settings-panel h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: rgba(255, 255, 255, 0.65);
+}
+.project-settings-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  align-items: baseline;
+  padding: 4px;
+  font-size: 12px;
+}
+.project-settings-label,
+#project-settings-source {
+  color: rgba(255, 255, 255, 0.6);
+}
+#project-settings-source {
+  grid-column: 2;
+  font-size: 11px;
+}
+#project-settings-current {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+#project-settings-change {
+  margin-top: 8px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  color: #fff;
+  border: 1px solid rgba(124, 140, 255, 0.7);
+  background: rgba(124, 140, 255, 0.9);
+}
+#project-settings-change[aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: default;
 }
 #memory-list {
   list-style: none;

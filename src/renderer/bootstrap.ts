@@ -18,6 +18,7 @@ import { subscribeActionEvents } from './events/actionEvents';
 import { mountFloatingAsk } from './ask/floatingAsk';
 import { mountConfirmChip } from './confirm/confirmChip';
 import { mountForgetPanel } from './memory/forgetPanel';
+import { mountProjectSettings } from './settings/projectSettings';
 import { mountCosmeticsStore } from './cosmetics/cosmeticsStore';
 import { mountBootstrapBanner } from './bootstrap/bootstrapBanner';
 import { createBrainReadinessGate } from './bootstrap/brainReadiness';
@@ -123,6 +124,16 @@ export async function bootstrap(): Promise<void> {
     getConfig: () => getCompanion()?.getWorkdirConfig?.() ?? Promise.resolve({ source: 'unset' }),
     chooseWorkdir: () => getCompanion()?.chooseWorkdir?.() ?? Promise.resolve({ source: 'unset' }),
     onStatus: setStatus,
+  });
+
+  // Phase 1 polish: the first-run picker is not a one-way door. Settings reuses the same MAIN-owned
+  // folder picker and broadcasts the same workdir-configured event so banners and turn gates stay coherent.
+  mountProjectSettings({
+    getConfig: () => getCompanion()?.getWorkdirConfig?.() ?? Promise.resolve({ source: 'unset' }),
+    chooseWorkdir: () => getCompanion()?.chooseWorkdir?.() ?? Promise.resolve({ source: 'unset' }),
+    onStatus: setStatus,
+    isRunActive: () => runState.active,
+    host: document.getElementById('controls') ?? undefined,
   });
 
   // M8: the transparency + Forget panel — see + delete the facts Roro knows about you (the trust

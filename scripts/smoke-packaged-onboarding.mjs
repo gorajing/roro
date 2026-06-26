@@ -4,7 +4,8 @@
 // so the repo's developer .env cannot hide the first-run packaged-app path. It verifies:
 //   1. a fresh profile renders the app and shows the Choose Project banner,
 //   2. the preload bridge reports { source: 'unset' },
-//   3. a persisted userData/config.json is read on relaunch and hides the banner.
+//   3. a persisted userData/config.json is read on relaunch, hides the banner, and hydrates Settings,
+//   4. changing config.json to another repo is reflected on the next launch.
 //
 // Run after `npm run package`: npm run verify:packaged-onboarding
 
@@ -220,9 +221,38 @@ async function inspectApp({ home, cwd, userDataDir, label }) {
       workdirText: document.querySelector('#workdir-banner')?.textContent ?? '',
       workdirBannerVisible: visible('#workdir-banner'),
       workdirChooseVisible: visible('#workdir-choose'),
+      hasProjectSettings: !!document.querySelector('#project-settings-toggle'),
+      projectSettingsVisible: visible('#project-settings-toggle'),
       bridgeType: typeof window.companion?.getWorkdirConfig,
       bg: getComputedStyle(document.body).backgroundColor,
     }})()`);
+    const projectSettings = await evaluate(
+      `new Promise((resolve) => {
+        const visible = (selector) => {
+          const el = document.querySelector(selector);
+          if (!el) return false;
+          const style = getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          return !el.hidden && style.display !== 'none' && style.visibility !== 'hidden' &&
+            rect.width > 0 && rect.height > 0;
+        };
+        const toggle = document.querySelector('#project-settings-toggle');
+        if (!toggle) {
+          resolve({ exists: false });
+          return;
+        }
+        toggle.click();
+        setTimeout(() => resolve({
+          exists: true,
+          panelHidden: document.querySelector('#project-settings-panel')?.hidden ?? null,
+          panelVisible: visible('#project-settings-panel'),
+          current: document.querySelector('#project-settings-current')?.textContent ?? '',
+          source: document.querySelector('#project-settings-source')?.textContent ?? '',
+          changeVisible: visible('#project-settings-change'),
+        }), 250);
+      })`,
+      { awaitPromise: true },
+    );
     const bridge = await evaluate(
       `window.companion.getWorkdirConfig()
         .then((cfg) => ({ ok: true, cfg }))
@@ -230,7 +260,7 @@ async function inspectApp({ home, cwd, userDataDir, label }) {
       { awaitPromise: true },
     );
 
-    return { dom, bridge, logs: run.logs };
+    return { dom, bridge, projectSettings, logs: run.logs };
   } finally {
     cdp?.close();
     await killApp(run);
@@ -252,11 +282,14 @@ const home = join(root, 'home');
 const cwd = join(root, 'cwd');
 const userDataDir = join(root, 'userData');
 const scratchRepo = join(root, 'chosen-project');
+const scratchRepoTwo = join(root, 'next-project');
 await mkdir(home, { recursive: true });
 await mkdir(cwd, { recursive: true });
 await mkdir(userDataDir, { recursive: true });
 await mkdir(scratchRepo, { recursive: true });
+await mkdir(scratchRepoTwo, { recursive: true });
 spawnSync('git', ['init', scratchRepo], { stdio: 'ignore' });
+spawnSync('git', ['init', scratchRepoTwo], { stdio: 'ignore' });
 
 try {
   const fresh = await inspectApp({ home, cwd, userDataDir, label: 'fresh' });
@@ -273,6 +306,10 @@ try {
   check('#workdir-banner is visibly rendered', fresh.dom.workdirBannerVisible);
   check('#workdir-choose is visibly rendered', fresh.dom.workdirChooseVisible);
   check('#workdir-banner asks for a project', /choose a project/i.test(fresh.dom.workdirText));
+  check('#project-settings-toggle exists', fresh.dom.hasProjectSettings);
+  check('#project-settings-toggle is visibly rendered', fresh.dom.projectSettingsVisible);
+  check('fresh Settings panel opens', fresh.projectSettings.exists && fresh.projectSettings.panelHidden === false);
+  check('fresh Settings reports no project', /no project selected/i.test(fresh.projectSettings.current));
   check('getWorkdirConfig bridge exists', fresh.dom.bridgeType === 'function');
   check('fresh bridge resolves', fresh.bridge.ok);
   check('fresh bridge reports source=unset', fresh.bridge.cfg?.source === 'unset');
@@ -296,7 +333,22 @@ try {
   check('configured bridge returns persisted workdir', configured.bridge.cfg?.workdir === scratchRepo);
   check('#workdir-banner hides once config is present', configured.dom.workdirHidden === true);
   check('#workdir-banner is not visibly rendered once config is present', !configured.dom.workdirBannerVisible);
+  check('configured Settings panel opens', configured.projectSettings.exists && configured.projectSettings.panelVisible);
+  check('configured Settings shows the persisted project', configured.projectSettings.current === scratchRepo);
+  check('configured Settings source is saved project', /saved project/i.test(configured.projectSettings.source));
+  check('configured Settings can invoke Change Project', configured.projectSettings.changeVisible);
   check('configured startup avoids the safeStorage readiness probe', !configured.logs.join('\n').includes('memory-at-rest'));
+
+  await writeFile(configPath, JSON.stringify({ workdir: scratchRepoTwo }, null, 2), 'utf8');
+  check('config file can be changed to a second project', JSON.parse(await readFile(configPath, 'utf8')).workdir === scratchRepoTwo);
+
+  const reconfigured = await inspectApp({ home, cwd, userDataDir, label: 'reconfigured' });
+  console.log('[smoke] asserting changed userData/config.json profile...');
+  check('reconfigured bridge resolves', reconfigured.bridge.ok);
+  check('reconfigured bridge reports source=config', reconfigured.bridge.cfg?.source === 'config');
+  check('reconfigured bridge returns the second persisted workdir', reconfigured.bridge.cfg?.workdir === scratchRepoTwo);
+  check('reconfigured Settings shows the second persisted project', reconfigured.projectSettings.current === scratchRepoTwo);
+  check('#workdir-banner stays hidden after project change', reconfigured.dom.workdirHidden === true);
 } catch (err) {
   console.error(`[smoke] harness error: ${err.message}`);
   failures.push(`harness: ${err.message}`);
@@ -310,4 +362,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('\n[smoke] PASS — packaged no-env onboarding renders and persisted config hydrates.');
+console.log('\n[smoke] PASS — packaged no-env onboarding renders and persisted config hydrates Settings.');
