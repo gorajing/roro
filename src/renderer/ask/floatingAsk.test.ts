@@ -41,6 +41,7 @@ function setup(over: {
     pill: document.getElementById('ask-pill') as HTMLButtonElement,
     input: document.getElementById('ask-input') as HTMLInputElement,
     stop: document.getElementById('floating-stop') as HTMLButtonElement,
+    error: document.getElementById('floating-error') as HTMLElement,
     fireAction: (e: ActionEvent) => actionCb?.(e),
     fireRunEnd: () => runEndCb?.(),
     fireFocusAsk: () => focusAskCb?.(),
@@ -100,6 +101,27 @@ describe('floatingAsk shell (jsdom)', () => {
     h.fireRunEnd();
     expect(h.form.classList.contains('collapsed')).toBe(true);
     expect(h.stop.classList.contains('armed')).toBe(false);
+  });
+
+  it('keeps actionable failure copy visible after runEnd collapses the Ask', () => {
+    h.pill.click();
+    h.input.value = 'do it';
+    submit(h.form);
+    h.fireAction(started);
+    h.fireAction({ kind: 'run.failed', runId: 'r1', ok: false, error: 'spawn codex ENOENT', ts: 2 });
+    h.fireRunEnd();
+    expect(h.form.classList.contains('collapsed')).toBe(true);
+    expect(h.error.hidden).toBe(false);
+    expect(h.error.textContent).toContain('Codex CLI not found');
+    expect(h.error.textContent).toContain('RORO_CODEX_BIN');
+    expect(h.error.textContent).not.toContain('spawn codex ENOENT');
+  });
+
+  it('clears the previous failure when the user summons Ask again', () => {
+    h.fireAction({ kind: 'run.failed', runId: 'r1', ok: false, error: 'spawn codex ENOENT', ts: 2 });
+    expect(h.error.hidden).toBe(false);
+    h.pill.click();
+    expect(h.error.hidden).toBe(true);
   });
 
   it('Stop click cancels by the captured runId', () => {

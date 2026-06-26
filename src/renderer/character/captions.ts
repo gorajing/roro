@@ -10,6 +10,7 @@
 
 import type { CaptionSink } from './types';
 import type { ActionEvent } from '../../shared/events';
+import { actionableErrorCopy } from '../events/errorCopy';
 
 export class CaptionPanel implements CaptionSink {
   private partialEl: HTMLElement | null;
@@ -61,7 +62,7 @@ function summarizeEvent(e: ActionEvent): { label: string; detail: string; status
     case 'run.completed':
       return { label: 'run.completed', detail: e.finalText ?? '', status: 'completed' };
     case 'run.failed':
-      return { label: 'run.failed', detail: `Agent hit an error — ${e.error.slice(0, 200)}`, status: 'failed' };
+      return { label: 'run.failed', detail: `Agent hit an error — ${actionableErrorCopy(e.error)}`, status: 'failed' };
     default: {
       // Exhaustiveness guard: if a new ActionEvent kind is added, this errors.
       const _never: never = e;

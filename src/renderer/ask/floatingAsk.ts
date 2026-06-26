@@ -13,6 +13,7 @@ import { askReduce, INITIAL_ASK_STATE, type AskState, type AskEffect, type AskEv
 import { reduceRun, INITIAL_RUN_LIFECYCLE, type RunLifecycle } from '../events/runLifecycle';
 import { getCompanion } from '../events/bridge';
 import { ensureWorkdirReady, notifyWorkdirConfigured } from '../bootstrap/workdirSetup';
+import { actionableErrorCopy } from '../events/errorCopy';
 import type { ActionEvent } from '../../shared/events';
 
 export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: string; canStartTurn?: () => boolean }): () => void {
@@ -38,11 +39,25 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
   stop.id = 'floating-stop';
   stop.textContent = 'Stop';
 
-  host.append(form, stop);
+  const error = document.createElement('div');
+  error.id = 'floating-error';
+  error.hidden = true;
+
+  host.append(form, stop, error);
 
   let ask: AskState = INITIAL_ASK_STATE;
   let run: RunLifecycle = INITIAL_RUN_LIFECYCLE;
   let submitPending = false;
+
+  function showFailure(message: string): void {
+    error.textContent = message;
+    error.hidden = false;
+  }
+
+  function clearFailure(): void {
+    error.textContent = '';
+    error.hidden = true;
+  }
 
   function render(): void {
     form.classList.remove('collapsed', 'expanded', 'tasked');
@@ -53,6 +68,7 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
   function applyEffect(eff: AskEffect): void {
     switch (eff.type) {
       case 'focusInput':
+        clearFailure();
         input.focus();
         input.select();
         break;
@@ -66,6 +82,7 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
       case 'startTurn': {
         const companion = getCompanion();
         if (!companion?.turnRun) {
+          showFailure('Roro bridge unavailable. Reopen Roro and try again.');
           // No bridge -> the turn can't run and no runEnd will arrive; recover so the Ask never
           // sticks in 'tasked'. Defer so we don't re-enter the in-flight dispatch.
           queueMicrotask(() => dispatch({ type: 'runEnded' }));
@@ -74,11 +91,13 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
         void companion.turnRun({ transcript: eff.text, sessionId }).catch(() => {
           // turnRun returns {runId} even on a decide failure (it pushes run.failed + runEnd); a
           // reject is an IPC-level failure, so no runEnd will arrive — recover the surface here.
+          showFailure('Turn failed before the coding agent started. Reopen Roro and try again.');
           dispatch({ type: 'runEnded' });
         });
         break;
       }
       case 'showTasked':
+        clearFailure();
         pill.textContent = `tasked: ${eff.text}`;
         break;
       case 'collapse':
@@ -114,6 +133,7 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
 
     submitPending = true;
     try {
+      clearFailure();
       const getWorkdirConfig = companion.getWorkdirConfig;
       const chooseWorkdir = companion.chooseWorkdir;
       if (getWorkdirConfig && chooseWorkdir) {
@@ -157,8 +177,13 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
     unsubs.push(
       companion.onActionEvent((e: ActionEvent) => {
         run = reduceRun(run, e); // run.started -> running+armed+runId; completed/failed -> disarm
-        if (e.kind === 'run.started') dispatch({ type: 'runStarted' });
-        else render(); // reflect a disarm (completed/failed) without touching the Ask state
+        if (e.kind === 'run.started') {
+          clearFailure();
+          dispatch({ type: 'runStarted' });
+        } else {
+          if (e.kind === 'run.failed') showFailure(`Turn failed: ${actionableErrorCopy(e.error)}`);
+          render(); // reflect a disarm (completed/failed) without touching the Ask state
+        }
       }),
     );
   }
@@ -180,5 +205,6 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
     for (const u of unsubs) u();
     form.remove();
     stop.remove();
+    error.remove();
   };
 }
