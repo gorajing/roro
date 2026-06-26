@@ -108,6 +108,9 @@ out/
 
 # WS4 on-screen smoke output (generated screenshot — regenerated each run)
 docs/verification/*.png
+roro-workspace-*.png
+.playwright-mcp
+.playwright-mcp/
 public/vad/
 
 # transformers.js (whisper) ORT wasm — staged, regenerable (distinct ORT build from public/vad/)

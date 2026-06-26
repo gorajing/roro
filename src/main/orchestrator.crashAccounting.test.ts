@@ -15,7 +15,17 @@ const h = vi.hoisted(() => ({
 
 vi.mock('electron', () => ({
   BrowserWindow: {
-    getAllWindows: () => [{ isDestroyed: () => false, webContents: { send: (ch: unknown, ev: { kind?: string }) => sent.push({ ch, ev }) } }],
+    getAllWindows: () => [{
+      isDestroyed: () => false,
+      webContents: {
+        isDestroyed: () => false,
+        mainFrame: {
+          isDestroyed: () => false,
+          detached: false,
+          send: (ch: unknown, ev: { kind?: string }) => sent.push({ ch, ev }),
+        },
+      },
+    }],
   },
   Notification: class { static isSupported() { return false; } show(): void { /* no-op */ } },
 }));

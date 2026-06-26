@@ -83,10 +83,25 @@ function launchApp({ home, cwd, userDataDir, port, label }) {
   return run;
 }
 
-function killApp(run) {
+async function waitForChildExit(child, timeoutMs) {
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      child.off('close', onClose);
+      resolve(false);
+    }, timeoutMs);
+    const onClose = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    child.once('close', onClose);
+  });
+}
+
+async function killApp(run) {
   run.stopping = true;
   try {
-    process.kill(-run.child.pid);
+    process.kill(-run.child.pid, 'SIGTERM');
   } catch {
     try {
       run.child.kill();
@@ -94,6 +109,17 @@ function killApp(run) {
       // already gone
     }
   }
+  if (await waitForChildExit(run.child, 5000)) return;
+  try {
+    process.kill(-run.child.pid, 'SIGKILL');
+  } catch {
+    try {
+      run.child.kill('SIGKILL');
+    } catch {
+      // already gone
+    }
+  }
+  await waitForChildExit(run.child, 2000);
 }
 
 async function fetchJson(url) {
@@ -207,7 +233,7 @@ async function inspectApp({ home, cwd, userDataDir, label }) {
     return { dom, bridge, logs: run.logs };
   } finally {
     cdp?.close();
-    killApp(run);
+    await killApp(run);
   }
 }
 
@@ -276,7 +302,7 @@ try {
   failures.push(`harness: ${err.message}`);
 } finally {
   if (KEEP) console.log(`[smoke] kept disposable home at ${root}`);
-  else await rm(root, { recursive: true, force: true });
+  else await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
 if (failures.length) {

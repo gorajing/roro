@@ -11,9 +11,9 @@
 // an aborted signal into a run.failed('aborted')).
 //
 // STREAMING RULE (BUILD_GUIDE): ipcMain.handle is request/response only. ALL token/action
-// streams go over webContents.send push channels (CH.actionEvent, CH.runEnd, CH.brainReasoning,
+// streams go over guarded MAIN->renderer push channels (CH.actionEvent, CH.runEnd, CH.brainReasoning,
 // CH.brainContent). The invoke promise resolves only with the final {runId}.
-import { BrowserWindow, Notification } from 'electron';
+import { Notification } from 'electron';
 import { CH } from '../shared/ipc';
 import type { TurnInput } from '../shared/ipc';
 import type { ActionEvent, AgentKind } from '../shared/events';
@@ -31,6 +31,7 @@ import { isCleanTree } from './gitTree';
 import { resolveWorkdir, tryResolveWorkdir } from './workdir';
 import { repoId as deriveRepoId } from '../memory2/repoId';
 import { isPlausiblePreference, type FactExtractInput } from '../brain/extractFact';
+import { sendToFirstWindow } from './safeSend';
 
 const RECALL_K = 5;
 // memory2 is the recall authority: it blend-ranks (relevance + recency + importance) and guarantees
@@ -56,23 +57,19 @@ let lastTurnId: string | null = null;
  *  interleave: it guarantees a destructive run's clean-tree result is fresh at dispatch (no TOCTOU). */
 let dispatchLock = false;
 
-function getWindow(): BrowserWindow | null {
-  return BrowserWindow.getAllWindows()[0] ?? null;
-}
-
 function pushEvent(e: ActionEvent): void {
-  getWindow()?.webContents.send(CH.actionEvent, e);
+  sendToFirstWindow(CH.actionEvent, e);
 }
 
 function pushRunEnd(runId: string): void {
   preemptedTurns.delete(runId);
   inFlightTurns.delete(runId);
-  getWindow()?.webContents.send(CH.runEnd, { runId });
+  sendToFirstWindow(CH.runEnd, { runId });
 }
 
 /** Push the destructive-confirm request to the renderer (it shows a confirm chip). */
 function pushConfirmRequest(req: { runId: string; summary: string }): void {
-  getWindow()?.webContents.send(CH.confirmRequest, req);
+  sendToFirstWindow(CH.confirmRequest, req);
 }
 
 /** Emit a synthetic terminal failure (preempt / stop) + runEnd for a turn. */
@@ -129,11 +126,11 @@ async function guardedDispatch(runId: string, destructive: boolean, repo: string
 }
 
 function pushReasoning(delta: string): void {
-  getWindow()?.webContents.send(CH.brainReasoning, delta);
+  sendToFirstWindow(CH.brainReasoning, delta);
 }
 
 function pushContent(delta: string): void {
-  getWindow()?.webContents.send(CH.brainContent, delta);
+  sendToFirstWindow(CH.brainContent, delta);
 }
 
 /**

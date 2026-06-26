@@ -95,7 +95,7 @@ body.floating-window #overlay {
   letter-spacing: 0.3px;
 }
 
-/* Sponsor strip — names the prize tech permanently on screen (Nebius + Insforge). */
+/* Runtime strip — names the active local stack on screen. */
 #powered {
   min-width: 0;
   overflow: hidden;

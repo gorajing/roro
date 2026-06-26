@@ -12,8 +12,9 @@
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { writeFileSync, mkdirSync } from 'node:fs';
+import { createServer } from 'node:net';
 
-const PORT = process.env.RORO_DEBUG_PORT || '9223';
+const PORT = process.env.RORO_DEBUG_PORT || String(await freePort());
 const BOOT_TIMEOUT_MS = 180_000;
 const SHOT = 'docs/verification/floating-ask.png';
 
@@ -22,6 +23,51 @@ const failures = [];
 function check(name, cond) {
   if (cond) console.log(`  ✓ ${name}`);
   else { console.error(`  ✗ ${name}`); failures.push(name); }
+}
+
+async function freePort() {
+  return new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : null;
+      server.close(() => {
+        if (port) resolvePort(port);
+        else reject(new Error('could not allocate a debug port'));
+      });
+    });
+  });
+}
+
+async function waitForChildExit(child, timeoutMs) {
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      child.off('close', onClose);
+      resolve(false);
+    }, timeoutMs);
+    const onClose = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    child.once('close', onClose);
+  });
+}
+
+async function stopProcessGroup(child) {
+  try {
+    process.kill(-child.pid, 'SIGTERM');
+  } catch {
+    try { child.kill(); } catch { /* already gone */ }
+  }
+  if (await waitForChildExit(child, 5000)) return;
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {
+    try { child.kill('SIGKILL'); } catch { /* already gone */ }
+  }
+  await waitForChildExit(child, 2000);
 }
 
 /** Poll the CDP /json endpoint until the renderer page target appears (or boot times out). */
@@ -67,7 +113,7 @@ function cdpClient(url) {
 }
 
 const child = spawn('npm', ['start'], {
-  env: { ...process.env, RORO_DEBUG_PORT: PORT },
+  env: { ...process.env, RORO_DEBUG_PORT: PORT, RORO_FLOATING_WINDOW: '1' },
   stdio: 'inherit',
   detached: true,
 });
@@ -114,7 +160,7 @@ try {
   failures.push(`harness: ${err.message}`);
 } finally {
   cdp?.close();
-  try { process.kill(-child.pid); } catch { /* already gone */ }
+  await stopProcessGroup(child);
 }
 
 if (failures.length) {

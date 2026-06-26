@@ -12,6 +12,7 @@ import { cursorToGazeTarget } from '../shared/gaze';
 import { decideSummonAction } from './summon';
 import { withCrossOriginIsolation } from './crossOriginIsolation';
 import { isSafeNavigation } from './navigation';
+import { sendToWindow } from './safeSend';
 
 const SUMMON_ACCELERATOR = 'CommandOrControl+Shift+Space';
 const MUTE_ACCELERATOR = 'CommandOrControl+Shift+M';
@@ -110,14 +111,26 @@ const CURSOR_REACH_PX = 520;
  * the cat can "watch" the pointer. Returns a stop fn; also self-stops on close.
  */
 export function startCursorTracking(win: BrowserWindow): () => void {
+  let stopped = false;
+  const stop = (): void => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(timer);
+  };
   const timer = setInterval(() => {
-    if (win.isDestroyed() || !win.isVisible() || win.isMinimized()) return;
+    if (stopped) return;
+    if (win.isDestroyed()) return stop();
+    if (win.webContents.isDestroyed()) return stop();
+    if (!win.isVisible() || win.isMinimized()) return;
     const cursor = screen.getCursorScreenPoint();
     const target = cursorToGazeTarget(cursor, win.getBounds(), CURSOR_REACH_PX);
-    win.webContents.send(CH.cursorMove, target);
+    sendToWindow(win, CH.cursorMove, target);
   }, CURSOR_POLL_MS);
-  win.on('closed', () => clearInterval(timer));
-  return () => clearInterval(timer);
+  win.once('close', stop);
+  win.once('closed', stop);
+  win.webContents.once('destroyed', stop);
+  win.webContents.once('render-process-gone', stop);
+  return stop;
 }
 
 /**
@@ -141,7 +154,7 @@ export function registerSummonShortcut(): void {
       // typing would land in the previously focused app). Take focus, then open + focus the Ask.
       win.show();
       win.focus();
-      win.webContents.send(CH.focusAsk);
+      sendToWindow(win, CH.focusAsk);
     } else {
       win.show();
       win.focus();
@@ -155,7 +168,7 @@ export function registerSummonShortcut(): void {
 
   const muteOk = globalShortcut.register(MUTE_ACCELERATOR, () => {
     for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send(CH.micToggleMute);
+      sendToWindow(win, CH.micToggleMute);
     }
   });
   if (!muteOk) {
