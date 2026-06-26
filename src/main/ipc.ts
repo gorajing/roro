@@ -40,6 +40,7 @@ import { runTurn, runTask, cancelTask, resolveDestructiveConfirm } from './orche
 import { loadBrain, loadMemory, loadVision } from './siblings';
 import { getOwnerId } from './identity';
 import { hydrateWorkdirConfig, persistWorkdirChoice } from './configStore';
+import { sendToWebContents } from './safeSend';
 
 /** Coerce a renderer-supplied agent arg to a valid AgentKind (default codex). */
 function asAgentKind(v: unknown): AgentKind {
@@ -198,7 +199,7 @@ export function registerIpcHandlers(): void {
     const toPull = (Array.isArray(models) ? models : []).filter((m) => known.has(m));
     // Guard against a window closed mid-pull: don't send to a destroyed sender, and abort the (timeout-less)
     // pull so MAIN stops reading the multi-GB stream.
-    const tick = (p: ModelPullProgressMsg): void => { if (!e.sender.isDestroyed()) e.sender.send(CH.modelPullProgress, p); };
+    const tick = (p: ModelPullProgressMsg): void => { sendToWebContents(e.sender, CH.modelPullProgress, p); };
     const ac = new AbortController();
     const onGone = (): void => ac.abort();
     e.sender.once('destroyed', onGone);
@@ -209,7 +210,7 @@ export function registerIpcHandlers(): void {
       tick({ model: '', status: 'success', done: true });
       const refreshed = bootstrapStatusFor({ kind: 'reachable', models: await ollamaTags() });
       setBootstrapStatus(refreshed);
-      if (refreshed && !e.sender.isDestroyed()) e.sender.send(CH.bootstrapStatus, refreshed);
+      if (refreshed) sendToWebContents(e.sender, CH.bootstrapStatus, refreshed);
     } catch (err) {
       tick({ model: '', status: 'error', error: err instanceof Error ? err.message : String(err) });
       throw err;

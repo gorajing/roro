@@ -193,27 +193,83 @@ async function evaluate(cdp, expression, params = {}) {
     returnByValue: true,
     ...params,
   });
-  if (result.exceptionDetails) throw new Error(`eval failed: ${result.exceptionDetails.text}`);
+  if (result.exceptionDetails) {
+    const details = result.exceptionDetails.exception?.description ||
+      result.exceptionDetails.exception?.value ||
+      result.exceptionDetails.text ||
+      'unknown exception';
+    throw new Error(`eval failed: ${details}`);
+  }
   return result.result.value;
+}
+
+async function waitForRendererDom(cdp, child) {
+  const deadline = Date.now() + BOOT_TIMEOUT_MS;
+  let lastError = '';
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`app exited before renderer DOM was ready (code=${child.exitCode}, signal=${child.signalCode})`);
+    }
+    try {
+      const dom = await evaluate(cdp, `(() => {
+        const bodyText = document.body?.innerText || '';
+        return {
+          readyState: document.readyState,
+          href: location.href,
+          bodyText: bodyText.slice(0, 500),
+          hasBody: !!document.body,
+          hasTopbar: !!document.querySelector('#topbar'),
+          hasPromptForm: !!document.querySelector('#prompt-form'),
+          bootstrapStatusBridge: typeof window.companion?.getBootstrapStatus,
+        };
+      })()`);
+      if (dom.hasBody && dom.hasTopbar && dom.hasPromptForm && dom.bootstrapStatusBridge === 'function') return dom;
+      lastError =
+        `readyState=${dom.readyState}, hasBody=${dom.hasBody}, hasTopbar=${dom.hasTopbar}, ` +
+        `hasPromptForm=${dom.hasPromptForm}, bootstrapStatusBridge=${dom.bootstrapStatusBridge}`;
+    } catch (err) {
+      lastError = err.message;
+    }
+    await sleep(500);
+  }
+  throw new Error(`renderer DOM never became ready (${lastError})`);
 }
 
 async function waitForBootstrapStatus(cdp, child) {
   const deadline = Date.now() + BOOT_TIMEOUT_MS;
+  let lastError = '';
   while (Date.now() < deadline) {
     if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(`app exited before bootstrap status appeared (code=${child.exitCode}, signal=${child.signalCode})`);
     }
-    const status = await evaluate(
-      cdp,
-      `window.companion?.getBootstrapStatus?.()
-        .then((status) => ({ ok: true, status }))
-        .catch((err) => ({ ok: false, message: String(err?.message || err) }))`,
-      { awaitPromise: true },
-    );
-    if (status?.ok && status.status) return status.status;
+    try {
+      const result = await evaluate(
+        cdp,
+        `new Promise((resolve) => {
+          const companion = window.companion;
+          if (typeof companion?.getBootstrapStatus !== 'function') {
+            resolve({ ok: false, message: 'bootstrap status bridge not ready' });
+            return;
+          }
+          Promise.resolve()
+            .then(() => companion.getBootstrapStatus())
+            .then((status) => resolve({
+              ok: Boolean(status),
+              status,
+              message: status ? '' : 'status not set yet',
+            }))
+            .catch((err) => resolve({ ok: false, message: String(err?.message || err) }));
+        })`,
+        { awaitPromise: true },
+      );
+      if (result?.ok && result.status) return result.status;
+      lastError = result?.message || 'status unavailable';
+    } catch (err) {
+      lastError = err.message;
+    }
     await sleep(500);
   }
-  throw new Error('bootstrap status never appeared');
+  throw new Error(`bootstrap status never appeared (${lastError})`);
 }
 
 async function inspectRenderer(target, child) {
@@ -221,13 +277,8 @@ async function inspectRenderer(target, child) {
   try {
     await cdp.ready;
     await cdp.send('Runtime.enable');
-    const dom = await evaluate(cdp, `(() => ({
-      title: document.title,
-      href: location.href,
-      bodyText: document.body.innerText.slice(0, 500),
-      hasTopbar: !!document.querySelector('#topbar'),
-      hasPromptForm: !!document.querySelector('#prompt-form'),
-    }))()`);
+    await cdp.send('Page.enable');
+    const dom = await waitForRendererDom(cdp, child);
     const bootstrapStatus = await waitForBootstrapStatus(cdp, child);
     const brainGate = await evaluate(
       cdp,
