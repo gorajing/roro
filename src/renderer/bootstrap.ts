@@ -103,7 +103,12 @@ export async function bootstrap(): Promise<void> {
 
   // Phase B: the floating Ask input + Stop pill (the typed magic-moment surface on the cat body).
   // Lives outside #overlay; only visible in floating mode. Its lifecycle rides the push stream.
-  mountFloatingAsk({ driver, sessionId, canStartTurn: () => brainGate.ensureReady() });
+  mountFloatingAsk({
+    driver,
+    sessionId,
+    canStartTurn: () => brainGate.ensureReady(),
+    smokeLifecycle: config.floatingSmoke,
+  });
 
   // Phase C1: the destructive-confirm chip (a spoken/typed word can't approve `rm -rf`).
   mountConfirmChip();

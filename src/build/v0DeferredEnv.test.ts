@@ -1,0 +1,28 @@
+import { describe, expect, it } from 'vitest';
+
+type V0DeferredEnvModule = {
+  enabledV0DeferredEnv(env: Record<string, string | undefined>): string[];
+  stripV0DeferredEnv<T extends Record<string, string | undefined>>(env: T): T;
+};
+
+async function loadDeferredEnv(): Promise<V0DeferredEnvModule> {
+  return await import('../../scripts/v0-deferred-env.mjs') as V0DeferredEnvModule;
+}
+
+describe('v0 deferred env hygiene', () => {
+  it('treats the floating lifecycle smoke harness as forbidden in default release env', async () => {
+    const { enabledV0DeferredEnv } = await loadDeferredEnv();
+
+    expect(enabledV0DeferredEnv({ RORO_FLOATING_SMOKE: '1' })).toEqual(['RORO_FLOATING_SMOKE']);
+    expect(enabledV0DeferredEnv({ RORO_FLOATING_SMOKE: '0' })).toEqual([]);
+  });
+
+  it('strips the floating lifecycle smoke harness from packaged smoke envs', async () => {
+    const { stripV0DeferredEnv } = await loadDeferredEnv();
+    const env = { RORO_FLOATING_SMOKE: '1', RORO_DEBUG_BRIDGE: '1' };
+
+    expect(stripV0DeferredEnv(env)).toBe(env);
+
+    expect(env).toEqual({});
+  });
+});
