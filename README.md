@@ -178,10 +178,12 @@ npx vitest run --no-file-parallelism
 npm run verify:floating          # on-screen smoke for the floating Ask (needs a display)
 npm run release:doctor           # CI-safe release/signing doctor for the unsigned/ad-hoc path
 npm run package
+npm run verify:release-artifact  # after npm run package, verifies the packaged .app shape
+npm run make
+npm run verify:release-artifact:dmg # after npm run make, verifies the mounted DMG contains Roro.app
 npm run verify:packaged-memory   # packaged memory write -> quit -> relaunch -> recall smoke
 npm run verify:packaged-live-memory-turn  # packaged relaunch -> live Ollama turn uses recalled memory
 npm run verify:packaged-onboarding
-npm run verify:release-artifact
 npm run verify:signing-readiness # strict Developer-ID env/cert/tool doctor before npm run make
 npm run verify:release-artifact:signed # after Developer-ID npm run make
 ```
@@ -197,6 +199,7 @@ What is working:
 - packaged same-build memory persistence smoke: a real packaged app writes and recalls an observation across relaunch
 - packaged live-memory turn smoke: with local Ollama ready, a real packaged turn narrates a recalled value after relaunch
 - release/signing doctor: CI checks the unsigned path, and a strict local doctor fails loud before Developer-ID `make`
+- DMG release artifact: macOS CI builds a versioned `.dmg` and verifies it mounts with `Roro.app`
 - **local Ollama brain** (decide/vision/embeddings) — verified end-to-end against a
   live daemon
 - **local PGlite + pgvector memory** (owner-scoped, survives restarts)

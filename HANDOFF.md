@@ -94,7 +94,12 @@ Every turn flows through **one** path in `orchestrator.ts`:
   no-secret unsigned/ad-hoc mode and is wired into macOS CI.
 - **Signed-artifact verifier:** after Developer-ID `npm run make`, `npm run verify:release-artifact:signed` requires a
   non-ad-hoc Developer ID signature, hardened runtime metadata, a TeamIdentifier, local Gatekeeper acceptance, and a
-  valid stapled notarization ticket. It still does not replace the clean-Mac install.
+  valid stapled notarization ticket on the packaged app and the app mounted from the DMG; it also checks the DMG
+  container's Gatekeeper `open` assessment and stapled ticket. It still does not replace the clean-Mac install.
+- **DMG release artifact:** Forge now makes the macOS `.dmg`; `npm run verify:release-artifact:dmg` requires the
+  versioned DMG, verifies it with `hdiutil`, mounts it read-only, and confirms it contains a structurally complete
+  `Roro.app`. In Developer-ID builds, `postMake` notarizes/staples the DMG container too. This closes the
+  packaging-format gap, not the signed/notarized clean-Mac gate.
 
 ---
 
@@ -117,7 +122,8 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - **DECIDE clarify** — the first trust nudge is landed: referent-less requests (`fix it`, `make it better`, `update it`, `change the color`, `do that thing`) clarify before dispatch.
 - **Packaged-app config / onboarding spine landed in PR #69.** Phase-1 polish is now complete: icon, brain-readiness gate, and Project Settings/change-project entry.
 - **Ad-hoc cross-build memory** — the #67 fix makes a *single* build work, but ad-hoc `cdhash` changes per build → the keychain ACL doesn't survive a rebuild/update. **Developer-ID (stable team identity) is needed for update durability + a Gatekeeper-clean install.**
-- **Release packaging gap:** `PUBLIC.md` intentionally says `.dmg`, but current Forge config still uses the darwin ZIP maker. Add a DMG maker before claiming the stranger-download `.dmg` gate.
+- **Release artifact shape:** the versioned `.dmg` artifact is generated and verified locally/CI, while Developer-ID
+  notarization and clean-Mac Gatekeeper validation remain open until real Apple credentials are used.
 - **App icon is real now** — `assets/roro-icon.icns` is wired through Forge; voice + Live2D half-baked (**cut from v0**).
 
 ---
@@ -146,7 +152,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ## 8. What to do next (concrete first moves)
 1. **(Recommended, cheapest) Human-confirm Phase 0:** `npm run package`, `npm run verify:packaged-memory`, `npm run verify:packaged-live-memory-turn`, then run a short non-founder/clean-profile session, **fully quit**, relaunch the *same* build, and watch it remember. The smokes prove packaged persistence + live-brain recall use; the person proves the moment lands.
-2. **Produce the Developer-ID notarized build:** `APPLE_TEAM_ID=GNG2M47BD7` + `APPLE_ID` + app-specific `APPLE_PASSWORD` + `npm run verify:signing-readiness` + `npm run make` + `npm run verify:release-artifact:signed`, then validate install + memory recall on a clean second Mac.
+2. **Produce the Developer-ID notarized build:** export `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID`, and app-specific `APPLE_PASSWORD` in the same shell, then run `npm run verify:signing-readiness`, `npm run make`, `npm run verify:release-artifact:dmg`, and `npm run verify:release-artifact:signed`; validate install + memory recall on a clean second Mac.
 3. **Validate Phase 2 trust on real first turns:** the Memory panel can see/fix/verify/source/forget facts, referent-less requests clarify before dispatch, the README leads with the job/privacy promise, and screen reads show a bounded one-snapshot tell.
 
 ---
@@ -154,7 +160,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 ## 9. Founder decisions + open questions
 | Decision | Status / recommendation |
 |---|---|
-| **Apple Developer Program + Developer ID cert** | ✅ **DONE** — paid-enrolled; `Developer ID Application: Jin Young Choi (GNG2M47BD7)` in the keychain (intermediate CA present). For Gatekeeper-clean notarized build + cross-update durability, **not** for memory to work. Build it: `APPLE_TEAM_ID=GNG2M47BD7` + `APPLE_ID` (paid email) + `APPLE_PASSWORD` (app-specific pw from account.apple.com → Sign-In and Security) + `npm run verify:signing-readiness` + `npm run make` + `npm run verify:release-artifact:signed`. |
+| **Apple Developer Program + Developer ID cert** | ✅ **DONE** — paid-enrolled; `Developer ID Application: Jin Young Choi (GNG2M47BD7)` in the keychain (intermediate CA present). For Gatekeeper-clean notarized build + cross-update durability, **not** for memory to work. Build it by exporting `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID` (paid email), and `APPLE_PASSWORD` (app-specific pw from account.apple.com → Sign-In and Security), then run `npm run verify:signing-readiness`, `npm run make`, `npm run verify:release-artifact:dmg`, and `npm run verify:release-artifact:signed` in that shell. |
 | **Bundle id + icon** | ✅ Done: bundle id is `com.jinchoi.roro`; icon is the existing pixel cat at `assets/roro-icon.icns`. |
 | **Debut channel** | Small trusted cohort first (measure week-2 reopen), not a broad post. |
 | **40% behavioral ceiling: model swap?** | **No** as strategy — fix is the correction loop. Keep the brain swappable. |
@@ -170,7 +176,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - **Commit footer:** `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` + `Claude-Session: <url>`. **PR footer:** `🤖 Generated with [Claude Code]` + the session URL.
 - **Don't commit `.env`** (gitignored). The **frozen `gorajing/companion` repo** must not be touched.
 - **Verify before claiming done** — "the types check" is not done; "I observed it working" is.
-- **Key commands:** `npm test`, `npm run lint`, `npx tsc --noEmit -p tsconfig.json`, `npm run release:doctor` (CI-safe release/signing doctor), `npm run package` (.app), `npm run verify:packaged-memory` (packaged write/relaunch/recall), `npm run verify:packaged-live-memory-turn` (packaged relaunch + live Ollama turn uses recalled memory), `npm run verify:signing-readiness` (strict Developer-ID env/cert/tool doctor), `npm run make` (+ distributables + signing), `npm run verify:release-artifact:signed` (post-make signed/notarized artifact verifier), `npm start` (dev — memory works here), `OLLAMA_AVAILABLE=1 npx vitest run crosslaunch.live` (live magic-moment smoke), `npm run eval:brain` (scorecard), `EVAL_SET=behavioral npm run eval:brain`.
+- **Key commands:** `npm test`, `npm run lint`, `npx tsc --noEmit -p tsconfig.json`, `npm run release:doctor` (CI-safe release/signing doctor), `npm run package` (.app), `npm run verify:packaged-memory` (packaged write/relaunch/recall), `npm run verify:packaged-live-memory-turn` (packaged relaunch + live Ollama turn uses recalled memory), `npm run verify:signing-readiness` (strict Developer-ID env/cert/tool doctor), `npm run make` (+ distributables + signing), `npm run verify:release-artifact:dmg` (post-make DMG verifier), `npm run verify:release-artifact:signed` (post-make signed/notarized artifact verifier), `npm start` (dev — memory works here), `OLLAMA_AVAILABLE=1 npx vitest run crosslaunch.live` (live magic-moment smoke), `npm run eval:brain` (scorecard), `EVAL_SET=behavioral npm run eval:brain`.
 - **State lives in:** memory + owner.json + packaged config → `app.getPath('userData')` (override `RORO_DB_DIR`). The agent's working repo resolves from explicit `RORO_WORKDIR`, then persisted `userData/config.json`, then the explicit `RORO_ALLOW_CWD=1` dev fallback.
 
 ---
@@ -180,4 +186,4 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ---
 
-*Reflects the repo after the Phase-2 trust slices plus packaged memory/live-turn smokes and the Developer-ID signing-readiness/signed-artifact gates. The one thing to internalize: the engine works, the packaged workdir onboarding spine is real, packaged memory now has automated write/relaunch/recall and live-brain recall-use regressions, remembered facts are user-correctable, and referent-less requests now ask before acting; the work ahead is making it **reachable and trustworthy for a stranger** — and validating, cheaply and early, every assumption the plan rests on.*
+*Reflects the repo after the Phase-2 trust slices plus packaged memory/live-turn smokes, DMG release artifact, and the Developer-ID signing-readiness/signed-artifact gates. The one thing to internalize: the engine works, the packaged workdir onboarding spine is real, packaged memory now has automated write/relaunch/recall and live-brain recall-use regressions, remembered facts are user-correctable, and referent-less requests now ask before acting; the work ahead is making it **reachable and trustworthy for a stranger** — and validating, cheaply and early, every assumption the plan rests on.*
