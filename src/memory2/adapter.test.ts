@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createMemory2Adapter, type Memory2Adapter } from './adapter';
+import { createMemory2Adapter } from './adapter';
 import { repoId } from './repoId';
 import type { RememberInput, ReplaceFactInput } from '../shared/memory';
 
@@ -17,7 +17,13 @@ const embed = async (t: string): Promise<number[]> => {
 const remember = (owner: string, kind: RememberInput['kind'], text: string): RememberInput =>
   ({ owner_id: owner, session_id: 's1', kind, text });
 const fact = (owner: string, key: string, text: string): ReplaceFactInput =>
-  ({ owner_id: owner, session_id: 's1', key, text, payload: { key, value: text } });
+  ({
+    owner_id: owner,
+    session_id: 's1',
+    key,
+    text,
+    payload: { key, value: text, source: { session_id: 's1', turn_ts: 1718900000000 } },
+  });
 
 describe('memory2 adapter — the old MemoryModule contract over memory2', () => {
   let dir: string;
@@ -53,6 +59,91 @@ describe('memory2 adapter — the old MemoryModule contract over memory2', () =>
       const mine = await a.replaceFact(fact('o1', 'editor', 'prefers vim'));
       await a.forgetFact('o2', mine.id); // wrong owner — must be a no-op, not a cross-owner delete
       expect((await a.getProfile('o1')).map((r) => r.text)).toContain('prefers vim'); // still there
+    } finally { await a.close(); }
+  });
+
+  it('profileFacts returns renderer-safe active fact views', async () => {
+    const a = await createMemory2Adapter({ dir, embed, dim: DIM });
+    try {
+      await a.replaceFact(fact('o1', 'editor', 'prefers vim'));
+      await a.replaceFact(fact('o2', 'editor', 'prefers nano'));
+
+      const profile = await a.profileFacts('o1');
+
+      expect(profile).toHaveLength(1);
+      expect(profile[0]).toMatchObject({
+        key: 'editor',
+        value: 'prefers vim',
+        text: 'prefers vim',
+        source: { session_id: 's1', turn_ts: 1718900000000 },
+      });
+      expect(profile[0]).not.toHaveProperty('owner_id');
+      expect(profile[0]).not.toHaveProperty('payload');
+    } finally { await a.close(); }
+  });
+
+  it('fixFact replaces by active owner-scoped id and persists across reopen', async () => {
+    const first = await createMemory2Adapter({ dir, embed, dim: DIM });
+    const old = await first.replaceFact(fact('o1', 'editor', 'prefers vim'));
+    const fixed = await first.fixFact('o1', old.id, 'prefers zed');
+    expect(fixed).toMatchObject({ key: 'editor', value: 'prefers zed', text: 'prefers zed' });
+    expect((await first.profileFacts('o1')).map((f) => f.text)).toEqual(['prefers zed']);
+    await first.close();
+
+    const second = await createMemory2Adapter({ dir, embed, dim: DIM });
+    try {
+      expect((await second.profileFacts('o1')).map((f) => f.text)).toEqual(['prefers zed']);
+    } finally { await second.close(); }
+  });
+
+  it('fixFact rejects blank values and wrong-owner ids without mutating', async () => {
+    const a = await createMemory2Adapter({ dir, embed, dim: DIM });
+    try {
+      const row = await a.replaceFact(fact('o1', 'editor', 'prefers vim'));
+
+      await expect(a.fixFact('o1', row.id, '   ')).rejects.toThrow(/non-empty/i);
+      await expect(a.fixFact('o2', row.id, 'prefers zed')).rejects.toThrow(/no longer available/i);
+
+      expect((await a.profileFacts('o1')).map((f) => f.text)).toEqual(['prefers vim']);
+    } finally { await a.close(); }
+  });
+
+  it('fixFact embed failure leaves the old active fact intact', async () => {
+    const flaky = async (t: string): Promise<number[]> => {
+      if (t === 'FAIL') throw new Error('embed down');
+      return embed(t);
+    };
+    const a = await createMemory2Adapter({ dir, embed: flaky, dim: DIM });
+    try {
+      const row = await a.replaceFact(fact('o1', 'editor', 'prefers vim'));
+
+      await expect(a.fixFact('o1', row.id, 'FAIL')).rejects.toThrow('embed down');
+
+      expect((await a.profileFacts('o1')).map((f) => f.text)).toEqual(['prefers vim']);
+    } finally { await a.close(); }
+  });
+
+  it('verifyFact reinforces by active owner-scoped id', async () => {
+    const a = await createMemory2Adapter({ dir, embed, dim: DIM });
+    try {
+      const row = await a.replaceFact(fact('o1', 'editor', 'prefers vim'));
+
+      const verified = await a.verifyFact('o1', row.id);
+
+      expect(verified).toMatchObject({ id: row.id, key: 'editor', text: 'prefers vim' });
+      expect(verified.confidence).toBeGreaterThan(row.confidence ?? 0);
+    } finally { await a.close(); }
+  });
+
+  it('factSource returns safe provenance for an active owner-scoped fact', async () => {
+    const a = await createMemory2Adapter({ dir, embed, dim: DIM });
+    try {
+      const row = await a.replaceFact(fact('o1', 'editor', 'prefers vim'));
+
+      await expect(a.factSource('o1', row.id)).resolves.toEqual({
+        id: row.id,
+        source: { session_id: 's1', turn_ts: 1718900000000 },
+      });
     } finally { await a.close(); }
   });
 

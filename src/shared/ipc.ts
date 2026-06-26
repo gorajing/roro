@@ -46,8 +46,10 @@ export const CH = {
   brainDecide: 'brain:decide', brainReasoning: 'brain:reasoning', brainContent: 'brain:content',
   brainDescribeScreen: 'brain:describeScreen', brainEmbed: 'brain:embed',
   visionAsk: 'vision:ask', memoryRemember: 'memory:remember', memoryRecall: 'memory:recall',
-  // Transparency + Forget (M8): list the facts roro knows about the owner, and hard-delete one.
-  memoryProfile: 'memory:profile', memoryForget: 'memory:forget',
+  // Memory trust loop: list/fix/verify/source-check/forget owner-scoped active facts.
+  memoryProfile: 'memory:profile', memoryFixFact: 'memory:fixFact',
+  memoryVerifyFact: 'memory:verifyFact', memoryFactSource: 'memory:factSource',
+  memoryForget: 'memory:forget',
   // First-run bootstrap (M7b): MAIN pushes readiness (and serves it on demand to recover a missed push);
   // renderer invokes a one-click pull; MAIN streams progress.
   bootstrapStatus: 'bootstrap:status', bootstrapStatusGet: 'bootstrap:statusGet',

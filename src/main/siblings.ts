@@ -28,7 +28,15 @@
 
 import type { Decision, DecideInput } from '../shared/brain';
 import type { FactExtractInput, FactCandidate } from '../brain/extractFact';
-import type { RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch, RecallInput } from '../shared/memory';
+import type {
+  RememberInput,
+  ReplaceFactInput,
+  MemoryRow,
+  MemoryMatch,
+  RecallInput,
+  ProfileFactSourceView,
+  ProfileFactView,
+} from '../shared/memory';
 import type { TraceEvent } from '../memory2/tracer';
 
 // ---- Thin local interfaces (structural; the real modules satisfy a superset) ----
@@ -64,6 +72,14 @@ export interface MemoryModule {
   reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null>;
   recall(input: RecallInput): Promise<MemoryMatch[]>;
   getProfile(ownerId: string): Promise<MemoryRow[]>;
+  /** Renderer-safe active profile facts for the Memory panel. */
+  profileFacts(ownerId: string): Promise<ProfileFactView[]>;
+  /** MAIN-owned memory correction loop; owner/key are resolved from the active profile. */
+  fixFact(ownerId: string, id: string, value: string): Promise<ProfileFactView>;
+  /** MAIN-owned corroboration loop; owner/key are resolved from the active profile. */
+  verifyFact(ownerId: string, id: string): Promise<ProfileFactView>;
+  /** Safe local source metadata only; no transcript payload. */
+  factSource(ownerId: string, id: string): Promise<ProfileFactSourceView>;
   supersede(id: string): Promise<void>;
   /** HARD-delete one of the owner's active facts (the Forget panel — M8). */
   forgetFact(ownerId: string, id: string): Promise<void>;

@@ -1,106 +1,305 @@
-// src/renderer/memory/forgetPanel.ts — the transparency + Forget panel (M8b).
+// src/renderer/memory/forgetPanel.ts — the Memory trust panel (Phase 2).
 //
-// See the facts Roro knows about you, and forget any of them. A thin DOM shell over window.memory.profile()
-// / .forget(id) (both owner-scoped MAIN-side). Forget is a DELIBERATE 2-step (Forget → confirm) because the
-// delete is irreversible (a hard tombstone, not a hide). Fact text is rendered with textContent ONLY — never
-// innerHTML — since it's whatever the user said and must never be interpreted as markup (XSS). Not unit-tested
-// beyond the jsdom behavioral test (no real layout in CI).
+// See the facts Roro remembers, fix a wrong value, corroborate a true one, inspect safe local source
+// metadata, or forget a fact. The renderer supplies only row ids and replacement text; MAIN resolves
+// owner/key from the active profile. Fact and source text use textContent ONLY because they are user-authored.
+
+import type { ProfileFactSourceView, ProfileFactView } from '../../shared/memory';
 
 interface MemoryBridge {
-  profile(): Promise<Array<{ id: string; text: string }>>;
+  profile(): Promise<ProfileFactView[]>;
+  fixFact(id: string, value: string): Promise<ProfileFactView>;
+  verifyFact(id: string): Promise<ProfileFactView>;
+  factSource(id: string): Promise<ProfileFactSourceView>;
   forget(id: string): Promise<void>;
 }
 
-function bridge(): MemoryBridge | undefined {
-  return (window as unknown as { memory?: MemoryBridge }).memory;
+function bridge(): MemoryBridge {
+  const memory = (window as unknown as { memory?: MemoryBridge }).memory;
+  if (!memory) throw new Error('window.memory is unavailable');
+  return memory;
+}
+
+function button(className: string, label: string): HTMLButtonElement {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = className;
+  el.textContent = label;
+  return el;
+}
+
+function sourceSummary(source: ProfileFactSourceView['source']): string {
+  if (!source) return "Source details aren't available for this memory yet.";
+  const date = new Date(source.turn_ts);
+  if (Number.isNaN(date.getTime())) return 'Saved from a local Roro turn.';
+  return `Saved from a local Roro turn on ${date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })}.`;
 }
 
 export function mountForgetPanel(host: HTMLElement = document.getElementById('app') ?? document.body): () => void {
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.id = 'memory-toggle';
-  toggle.textContent = '🧠 What Roro knows';
+  toggle.textContent = 'What Roro remembers';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-controls', 'memory-panel');
 
   const panel = document.createElement('div');
   panel.id = 'memory-panel';
   panel.hidden = true;
+  panel.setAttribute('role', 'region');
+  panel.setAttribute('aria-labelledby', 'memory-heading');
+
+  const heading = document.createElement('h2');
+  heading.id = 'memory-heading';
+  heading.textContent = "Roro's memory";
+
+  const intro = document.createElement('p');
+  intro.className = 'memory-intro';
+  intro.textContent = 'Local to this Mac. Check what is right, fix what is wrong, or forget it.';
+
   const list = document.createElement('ul');
   list.id = 'memory-list';
-  panel.append(list);
+  panel.append(heading, intro, list);
   host.append(toggle, panel);
 
-  function emptyState(): void {
+  function singleState(className: string, message: string): void {
     list.replaceChildren();
     const li = document.createElement('li');
-    li.className = 'memory-empty';
-    li.textContent = "Roro doesn't know any facts about you yet.";
+    li.className = className;
+    li.textContent = message;
     list.append(li);
+  }
+
+  function loadingState(): void {
+    singleState('memory-empty', "Checking Roro's memory...");
+  }
+
+  function emptyState(): void {
+    singleState('memory-empty', "Roro hasn't saved any facts about you yet.");
   }
 
   function errorState(): void {
-    list.replaceChildren();
-    const li = document.createElement('li');
-    li.className = 'memory-error';
     // textContent, never innerHTML (XSS invariant). Recovery is real: reopening re-runs refresh().
-    li.textContent = "Couldn't load what Roro knows. Try reopening this panel.";
-    list.append(li);
+    singleState('memory-error', "Roro couldn't open his memory. Close this panel and try again.");
   }
 
-  function renderRow(fact: { id: string; text: string }): HTMLLIElement {
+  function renderSourceDetail(view: ProfileFactSourceView): HTMLElement {
+    const detail = document.createElement('div');
+    detail.className = 'memory-source-detail';
+
+    const summary = document.createElement('p');
+    summary.textContent = sourceSummary(view.source);
+    detail.append(summary);
+
+    if (view.source?.session_id) {
+      const session = document.createElement('p');
+      session.className = 'memory-source-session';
+      session.textContent = `Session: ${view.source.session_id}`;
+      detail.append(session);
+    }
+
+    const privacy = document.createElement('p');
+    privacy.className = 'memory-source-privacy';
+    privacy.textContent = 'No transcript is shown here.';
+    detail.append(privacy);
+    return detail;
+  }
+
+  function renderRow(initialFact: ProfileFactView): HTMLLIElement {
     const row = document.createElement('li');
     row.className = 'memory-row';
-    row.dataset.id = fact.id;
-    const text = document.createElement('span');
-    text.className = 'memory-text';
-    text.textContent = fact.text; // textContent, NOT innerHTML — fact text is user-authored, never markup
-    const forget = document.createElement('button');
-    forget.type = 'button';
-    forget.className = 'memory-forget';
-    forget.textContent = 'Forget';
+    row.dataset.id = initialFact.id;
+    let fact = initialFact;
+    let sourceView: ProfileFactSourceView | null = null;
+    let sourceVisible = false;
 
-    // Deliberate 2-step delete: first click arms a confirm, second performs the (irreversible) forget.
-    let armed = false;
-    forget.addEventListener('click', () => {
-      if (!armed) {
-        armed = true;
-        forget.textContent = 'Forget — sure?';
-        forget.classList.add('armed');
-        return;
-      }
-      forget.disabled = true; // prevent a double-confirm while the delete is in flight
-      void (async () => {
-        try {
-          await bridge()?.forget(fact.id);
-          row.remove(); // drop the row on success
-          if (!list.querySelector('.memory-row')) emptyState();
-        } catch (e) {
-          // Fail loud, not silent: re-enable the button + say it failed so the user can retry, rather than
-          // leaving a dead "sure?" button that did nothing.
-          forget.disabled = false;
-          forget.textContent = 'Forget — failed, retry';
-          console.error('[forgetPanel] forget failed:', e);
+    function status(message: string, className = 'memory-row-note'): HTMLElement {
+      const note = document.createElement('p');
+      note.className = className;
+      note.textContent = message;
+      return note;
+    }
+
+    function replaceWithDefault(note?: string): void {
+      row.dataset.id = fact.id;
+      row.replaceChildren();
+
+      const text = document.createElement('span');
+      text.className = 'memory-text';
+      text.textContent = fact.text; // textContent, NOT innerHTML: fact text is user-authored
+
+      const actions = document.createElement('div');
+      actions.className = 'memory-actions';
+
+      const verify = button('memory-verify', 'Looks right');
+      verify.setAttribute('aria-label', 'Confirm this memory is still true.');
+      const fix = button('memory-fix', 'Fix');
+      const source = button('memory-source', sourceVisible ? 'Hide source' : 'Source');
+      const forget = button('memory-forget', 'Forget');
+      actions.append(verify, fix, source, forget);
+
+      row.append(text, actions);
+      if (note) row.append(status(note));
+      if (sourceVisible && sourceView) row.append(renderSourceDetail(sourceView));
+
+      verify.addEventListener('click', () => {
+        verify.disabled = true;
+        verify.textContent = 'Checking...';
+        void (async () => {
+          try {
+            fact = await bridge().verifyFact(fact.id);
+            sourceView = null;
+            sourceVisible = false;
+            replaceWithDefault('Checked just now.');
+          } catch (e) {
+            verify.disabled = false;
+            verify.textContent = 'Looks right';
+            const prior = row.querySelector('.memory-row-note');
+            prior?.remove();
+            row.append(status("Couldn't check it. Retry.", 'memory-row-note memory-row-error'));
+            console.error('[memoryPanel] verify failed:', e);
+          }
+        })();
+      });
+
+      fix.addEventListener('click', () => {
+        sourceVisible = false;
+        replaceWithEdit();
+      });
+
+      source.addEventListener('click', () => {
+        if (sourceVisible) {
+          sourceVisible = false;
+          replaceWithDefault(note);
+          return;
         }
-      })();
-    });
-    row.append(text, forget);
+        source.disabled = true;
+        source.textContent = 'Checking...';
+        void (async () => {
+          try {
+            sourceView = await bridge().factSource(fact.id);
+            sourceVisible = true;
+            replaceWithDefault(note);
+          } catch (e) {
+            source.disabled = false;
+            source.textContent = 'Source';
+            const prior = row.querySelector('.memory-row-note');
+            prior?.remove();
+            row.append(status("Couldn't load the source. Retry.", 'memory-row-note memory-row-error'));
+            console.error('[memoryPanel] source failed:', e);
+          }
+        })();
+      });
+
+      let armed = false;
+      forget.addEventListener('click', () => {
+        if (!armed) {
+          armed = true;
+          forget.textContent = 'Forget forever?';
+          forget.classList.add('armed');
+          return;
+        }
+        forget.disabled = true;
+        forget.textContent = 'Forgetting...';
+        void (async () => {
+          try {
+            await bridge().forget(fact.id);
+            row.remove();
+            if (!list.querySelector('.memory-row')) emptyState();
+          } catch (e) {
+            forget.disabled = false;
+            forget.textContent = "Couldn't forget. Retry.";
+            console.error('[memoryPanel] forget failed:', e);
+          }
+        })();
+      });
+    }
+
+    function replaceWithEdit(): void {
+      row.replaceChildren();
+
+      const label = document.createElement('label');
+      label.className = 'memory-edit-label';
+      label.textContent = 'What should Roro remember instead?';
+
+      const input = document.createElement('input');
+      input.className = 'memory-edit-input';
+      input.type = 'text';
+      input.value = fact.value || fact.text;
+      label.append(input);
+
+      const helper = document.createElement('p');
+      helper.className = 'memory-row-note';
+      helper.textContent = 'Write one short fact.';
+
+      const actions = document.createElement('div');
+      actions.className = 'memory-actions';
+      const save = button('memory-save', 'Save');
+      const cancel = button('memory-cancel', 'Cancel');
+      actions.append(save, cancel);
+      row.append(label, helper, actions);
+
+      const original = (fact.value || fact.text).trim();
+      const syncSave = (): void => {
+        const next = input.value.trim();
+        save.disabled = next.length === 0 || next === original;
+      };
+      syncSave();
+      input.addEventListener('input', syncSave);
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') replaceWithDefault();
+      });
+      cancel.addEventListener('click', () => replaceWithDefault());
+      save.addEventListener('click', () => {
+        save.disabled = true;
+        cancel.disabled = true;
+        save.textContent = 'Saving...';
+        void (async () => {
+          try {
+            fact = await bridge().fixFact(fact.id, input.value);
+            sourceView = null;
+            sourceVisible = false;
+            replaceWithDefault('Saved.');
+          } catch (e) {
+            save.disabled = false;
+            cancel.disabled = false;
+            save.textContent = 'Save';
+            helper.className = 'memory-row-note memory-row-error';
+            helper.textContent = "Couldn't save. Old memory is unchanged. Retry.";
+            syncSave();
+            console.error('[memoryPanel] fix failed:', e);
+          }
+        })();
+      });
+      input.focus();
+      input.select();
+    }
+
+    replaceWithDefault();
     return row;
   }
 
   async function refresh(): Promise<void> {
+    loadingState();
     try {
-      const facts = (await bridge()?.profile()) ?? [];
+      const facts = await bridge().profile();
       if (facts.length === 0) { emptyState(); return; }
       list.replaceChildren(...facts.map(renderRow));
     } catch (e) {
-      // Fail loud (console) but surface a friendly, recoverable state — never an uncaught rejection
-      // + silent blank panel (e.g. when memory:profile throws because the OS keychain is unavailable).
+      // Fail loud (console) but surface a friendly, recoverable state, never a silent blank panel.
       errorState();
-      console.error('[forgetPanel] profile() failed:', e);
+      console.error('[memoryPanel] profile() failed:', e);
     }
   }
 
   toggle.addEventListener('click', () => {
     panel.hidden = !panel.hidden;
+    toggle.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
     if (!panel.hidden) void refresh(); // refetch each time it's opened so it reflects the latest memory
   });
 

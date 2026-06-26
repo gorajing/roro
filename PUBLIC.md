@@ -117,8 +117,9 @@ one-click download → types a task the executor runs to completion. Dock shows 
 ### Phase 2 — Trust the first impression (correctness + honest framing)
 **Goal:** make the moment *land* and feel trustworthy, not lucky. *(Correction loop is memory-dependent — do it after
 Phase 0 confirms memory persists signed.)*
-- **Expose the correction loop** (the moat): `reinforceFact` / `replaceFact` / `supersede` over the preload bridge + IPC;
-  extend the Forget panel so a recalled fact can be **corrected/verified**, not only deleted. Privacy *with* agency.
+- ✅ **Expose the correction loop** (the moat): the Memory panel now calls MAIN-owned `profile`, `fixFact`, `verifyFact`,
+  `factSource`, and `forget`, so a remembered fact can be **corrected/verified/source-checked**, not only deleted.
+  Privacy *with* agency.
 - See [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md) for the build contract: correction lives in the existing
   Memory panel, MAIN owns owner-scope validation and fact-key lookup, and the renderer never supplies trusted fact keys.
 - Never recall a `- true` / bare-boolean line (the guard prevents storage; ensure recall never surfaces noise).
@@ -187,4 +188,5 @@ validation, provable in an afternoon.
 **Produce the first Developer-ID signed + notarized build**, then test it on a clean second Mac:
 `APPLE_TEAM_ID=GNG2M47BD7 APPLE_ID=<paid Apple ID> APPLE_PASSWORD=<app-specific password> npm run make`.
 Nothing else on the path can be *truly validated* until this build exists. In parallel, build Phase 2 from
-[`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md).
+[`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md): correction is landed; clarify, README framing, and the screen
+capture tell remain.

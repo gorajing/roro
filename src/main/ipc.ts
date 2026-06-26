@@ -18,6 +18,10 @@
 //   CH.brainEmbed         -> brain.embed()                     (sibling: src/brain)
 //   CH.memoryRemember     -> memory.remember()                 (sibling: src/memory)
 //   CH.memoryRecall       -> memory.recall()                   (sibling: src/memory)
+//   CH.memoryProfile      -> memory.profileFacts()             (main-owned trust loop)
+//   CH.memoryFixFact      -> memory.fixFact()                  (main-owned trust loop)
+//   CH.memoryVerifyFact   -> memory.verifyFact()               (main-owned trust loop)
+//   CH.memoryFactSource   -> memory.factSource()               (main-owned trust loop)
 //   CH.visionAsk          -> vision.askScreen()                (sibling: src/vision)
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { OpenDialogOptions } from 'electron';
@@ -28,7 +32,7 @@ import { bootstrapStatusFor, DEFAULT_MODEL_SPECS } from './bootstrapPlan';
 import { isAllowedExternalUrl } from './openExternalGuard';
 import { setBootstrapStatus } from './bootstrapStatusStore';
 import type { Decision, DecideInput } from '../shared/brain';
-import type { RememberInput, MemoryRow, MemoryMatch } from '../shared/memory';
+import type { RememberInput, MemoryRow, MemoryMatch, ProfileFactSourceView, ProfileFactView } from '../shared/memory';
 import { assertRendererMemoryKind } from '../shared/memory';
 import type { AgentKind } from '../shared/events';
 import { getMicStatus, ensureMicAccess } from './mic';
@@ -148,10 +152,27 @@ export function registerIpcHandlers(): void {
       return memory.recall({ ...input, ownerId: getOwnerId() });
     },
   );
-  // Transparency: the facts roro knows about THIS owner (owner injected MAIN-side).
-  ipcMain.handle(CH.memoryProfile, async (): Promise<MemoryRow[]> => {
+  // Transparency: the facts roro remembers about THIS owner (owner injected MAIN-side).
+  ipcMain.handle(CH.memoryProfile, async (): Promise<ProfileFactView[]> => {
     const memory = await loadMemory();
-    return memory.getProfile(getOwnerId());
+    return memory.profileFacts(getOwnerId());
+  });
+  // Fix/verify/source: MAIN finds the active owner-scoped row and derives the fact key from storage;
+  // renderer input is only the visible row id plus a replacement value.
+  ipcMain.handle(
+    CH.memoryFixFact,
+    async (_e, input: { id: string; value: string }): Promise<ProfileFactView> => {
+      const memory = await loadMemory();
+      return memory.fixFact(getOwnerId(), input.id, input.value);
+    },
+  );
+  ipcMain.handle(CH.memoryVerifyFact, async (_e, id: string): Promise<ProfileFactView> => {
+    const memory = await loadMemory();
+    return memory.verifyFact(getOwnerId(), id);
+  });
+  ipcMain.handle(CH.memoryFactSource, async (_e, id: string): Promise<ProfileFactSourceView> => {
+    const memory = await loadMemory();
+    return memory.factSource(getOwnerId(), id);
   });
   // Forget: hard-delete one of the owner's facts by id. forgetFact is owner-scoped + active-only, so a
   // renderer-supplied id can only ever delete one of THIS owner's currently-visible facts (never an

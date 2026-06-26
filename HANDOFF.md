@@ -13,8 +13,8 @@
 
 - **The product thesis:** the magic moment is **recalled memory** — after a restart, offline, the cat weaves what it remembers about how you work into its response ("I'll set up the signup route *with testing in place*"). Voice/cuteness are the frame; the recalled sentence is the payload.
 - **The strategy (job-first):** lead with the **coding job** (it justifies the install + builds the daily habit); let *being known* be the emergent reward. **job → habit → memory → moat.** The moat is the per-user **encrypted on-device memory** + a **human-in-the-loop correction loop** (un-clonable, model-independent).
-- **State:** the engine is strong and proven. The **biggest launch blocker is fixed** — encrypted memory now works in a packaged build (was a forge signing bug, *not* the cert). The Phase-1 packaged workdir onboarding spine landed in PR #69, and CI is green on `main`.
-- **Next:** finish the **Path to Public** in [`PUBLIC.md`](./PUBLIC.md). Cheapest next step is a **human confirmation** that a packaged build remembers across quit/relaunch; then produce the Developer-ID notarized build and build the Phase-2 trust loop.
+- **State:** the engine is strong and proven. The **biggest launch blocker is fixed** — encrypted memory now works in a packaged build (was a forge signing bug, *not* the cert). The Phase-1 packaged workdir onboarding spine landed, and the first Phase-2 correction loop slice now lets users see, fix, verify, source-check, and forget remembered facts.
+- **Next:** finish the **Path to Public** in [`PUBLIC.md`](./PUBLIC.md). Cheapest next step is a **human confirmation** that a packaged build remembers across quit/relaunch; then produce the Developer-ID notarized build and finish the remaining Phase-2 trust work: clarify nudge, README framing, and screen-capture tell.
 
 ---
 
@@ -42,7 +42,7 @@ Electron 42 + electron-forge + Vite + TypeScript + PixiJS (the cat). Vitest. Loc
 |---|---|
 | `src/main.ts` + `src/main/` | Electron **main**. `orchestrator.ts` = the **turnRun chokepoint**. `siblings.ts` = lazy brain/memory/vision loaders. `factStore.ts` = supersede-not-overwrite fact writer. `workdir.ts`, `confirmGate.ts`, `bootstrapPlan.ts`, `identity.ts` (owner_id), `memoryContext.ts`. |
 | `src/brain/` | Local brain. `index.ts` (decide/extractFact/embed/describeScreen), `extractFact.ts` (marker gate + parser + value guard), `ollama.ts`, `eval/` (the **brain eval harness** + golden fixtures + `baseline.json`). |
-| `src/memory2/` | Memory engine. `index.ts` (production singleton + `traceExtraction`), `memoryStore.ts` (files-as-truth + reconcile), `adapter.ts` (MemoryModule contract), `keyManager.ts` (envelope encryption), `safeStorageWrapper.ts` (OS-keychain seam), `cipher.ts`, `pgliteIndex.ts`, `tracer.ts`, `memoryScore.ts` (recall blend). |
+| `src/memory2/` | Memory engine. `index.ts` (production singleton + `traceExtraction`), `memoryStore.ts` (files-as-truth + reconcile), `adapter.ts` (MemoryModule contract), `profileFacts.ts` (safe correction/source view), `keyManager.ts` (envelope encryption), `safeStorageWrapper.ts` (OS-keychain seam), `cipher.ts`, `pgliteIndex.ts`, `tracer.ts`, `memoryScore.ts` (recall blend). |
 | `src/executor/` | Coding agent dispatch (edits files in `RORO_WORKDIR`). |
 | `src/renderer/` | PixiJS cat + UI. `character/`, `ask/`, `memory/forgetPanel.ts`, `voice/`, `bootstrap/`, `cosmetics/`, `confirm/`, `events/bridge.ts`. |
 | `src/vision/` | Screen capture + describe (sharp + vision model). |
@@ -100,7 +100,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - Encrypted memory **works in a packaged build** — `codesign --verify` valid + `safeStorage` true + keychain item created, **no cert** (after #67).
 
 **Weak / failed / open:**
-- **3B behavioral-extraction ceiling (~40%).** Fix is the **correction loop** (model-independent), **not a bigger brain.** The loop is **not yet exposed to the UI** (only `profile()`/`forget()` reach the renderer; `reinforceFact`/`replaceFact`/`supersede` exist in the store, unwired).
+- **3B behavioral-extraction ceiling (~40%).** Fix is the **correction loop** (model-independent), **not a bigger brain.** The first loop slice is exposed in the Memory panel (`profile` / `fixFact` / `verifyFact` / `factSource` / `forget`), but broader trust work remains: clarify nudge, README framing, and screen-capture tell.
 - **DECIDE clarify (1/5)** — prompt-only fixable, not done.
 - **Packaged-app config / onboarding spine landed in PR #69.** Phase-1 polish is now complete: icon, brain-readiness gate, and Project Settings/change-project entry.
 - **Ad-hoc cross-build memory** — the #67 fix makes a *single* build work, but ad-hoc `cdhash` changes per build → the keychain ACL doesn't survive a rebuild/update. **Developer-ID (stable team identity) is needed for update durability + a Gatekeeper-clean install.**
@@ -125,7 +125,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ## 7. The plan → see [`PUBLIC.md`](./PUBLIC.md) (authoritative)
 **Definition of done:** a stranger installs a signed build (no Gatekeeper warning), runnable without a terminal, and observes a *correct* recalled fact across a full quit/relaunch.
-**Phases:** **0** prove-the-moment-on-a-packaged-build (the `safeStorage` half is **DONE**; remaining = human confirmation + the Developer-ID build for Gatekeeper/durability) → **1** runnable-without-a-terminal (**landed**) → **2** trust (expose the **correction loop** per [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md) + clarify nudge + README job+privacy-first + screen-capture tell) → **3** debut to a small cohort, measure week-2 reopen.
+**Phases:** **0** prove-the-moment-on-a-packaged-build (the `safeStorage` half is **DONE**; remaining = human confirmation + the Developer-ID build for Gatekeeper/durability) → **1** runnable-without-a-terminal (**landed**) → **2** trust (the correction-loop first slice is landed; remaining = clarify nudge + README job+privacy-first + screen-capture tell) → **3** debut to a small cohort, measure week-2 reopen.
 **Cut from v0:** voice, Live2D, cosmetics store, Windows/Linux, the cloud-brain option, ambient/clipboard.
 
 ---
@@ -133,7 +133,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 ## 8. What to do next (concrete first moves)
 1. **(Recommended, cheapest) Human-confirm Phase 0:** `npm run package`, short session, **fully quit**, relaunch the *same* build, watch it remember. Unblocked, no cert.
 2. **Produce the Developer-ID notarized build:** `APPLE_TEAM_ID=GNG2M47BD7` + `APPLE_ID` + app-specific `APPLE_PASSWORD` + `npm run make`, then validate install + memory recall on a clean second Mac.
-3. **Phase 2 trust loop:** expose `fixFact` / `verifyFact` / `factSource` through MAIN-owned IPC and evolve the Memory panel into see/fix/verify/forget — see [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md). Plus the DECIDE clarify few-shot.
+3. **Finish Phase 2 trust:** the Memory panel can now see/fix/verify/source/forget facts. Next is the DECIDE clarify few-shot, README job/privacy framing, and a visible first vision-capture tell.
 
 ---
 
@@ -166,4 +166,4 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ---
 
-*Reflects the repo at PR #69 (main green). The one thing to internalize: the engine works, the packaged workdir onboarding spine is real, and the magic moment is real + proven; the work ahead is making it **reachable and trustworthy for a stranger** — and validating, cheaply and early, every assumption the plan rests on.*
+*Reflects the repo after the first Phase-2 correction-loop slice. The one thing to internalize: the engine works, the packaged workdir onboarding spine is real, the magic moment is real + proven, and remembered facts are now user-correctable; the work ahead is making it **reachable and trustworthy for a stranger** — and validating, cheaply and early, every assumption the plan rests on.*

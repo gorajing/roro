@@ -18,7 +18,17 @@ import { repoId } from './repoId';
 import type { Cipher } from './cipher';
 import type { Tracer } from './tracer';
 import type { Entry, Tier } from './types';
-import type { MemoryKind, RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch, RecallInput } from '../shared/memory';
+import type {
+  MemoryKind,
+  RememberInput,
+  ReplaceFactInput,
+  MemoryRow,
+  MemoryMatch,
+  RecallInput,
+  ProfileFactSourceView,
+  ProfileFactView,
+} from '../shared/memory';
+import { factSource, fixFact, profileFacts, verifyFact } from './profileFacts';
 
 const KIND_TO_TIER: Record<Exclude<MemoryKind, 'fact'>, Tier> = {
   observation: 'episode',
@@ -46,6 +56,7 @@ function entryToRow(e: Entry): MemoryRow {
     kind: tierToKind(e.tier),
     text: e.text,
     payload: e.payload ?? null,
+    confidence: e.confidence,
     superseded: e.superseded ?? false,
     created_at: e.createdAt,
     embed_model: e.embedModel,
@@ -60,6 +71,14 @@ export interface Memory2Adapter {
   reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null>;
   recall(input: RecallInput): Promise<MemoryMatch[]>;
   getProfile(ownerId: string): Promise<MemoryRow[]>;
+  /** Renderer-safe active facts for the Memory panel. */
+  profileFacts(ownerId: string): Promise<ProfileFactView[]>;
+  /** Replace one active fact value by id. Owner/key are resolved from the active profile. */
+  fixFact(ownerId: string, id: string, value: string): Promise<ProfileFactView>;
+  /** Corroborate one active fact by id. Owner/key are resolved from the active profile. */
+  verifyFact(ownerId: string, id: string): Promise<ProfileFactView>;
+  /** Return safe local source metadata for one active fact. */
+  factSource(ownerId: string, id: string): Promise<ProfileFactSourceView>;
   supersede(id: string): Promise<void>;
   /** HARD-delete one of the owner's active facts (the Forget panel — M8). Owner-scoped + active-only: a no-op
    *  if `id` isn't among this owner's current profile facts (so it can't delete an arbitrary or other-owner id). */
@@ -81,6 +100,25 @@ export interface Memory2AdapterOpts {
 /** Wrap a memory2 MemoryStore in the orchestrator's old MemoryModule contract. */
 export async function createMemory2Adapter(opts: Memory2AdapterOpts): Promise<Memory2Adapter> {
   const store: MemoryStore = await createMemoryStore(opts);
+  const deps = {
+    async getProfile(ownerId: string): Promise<MemoryRow[]> {
+      return (await store.getProfile(ownerId)).map(entryToRow);
+    },
+    async replaceFact(input: ReplaceFactInput): Promise<MemoryRow> {
+      const e = await store.replaceFact({
+        ownerId: input.owner_id,
+        factKey: input.key,
+        sessionId: input.session_id,
+        text: input.text,
+        payload: input.payload,
+      });
+      return entryToRow(e);
+    },
+    async reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null> {
+      const e = await store.reinforceFact({ ownerId: input.owner_id, factKey: input.key });
+      return e ? entryToRow(e) : null;
+    },
+  };
   return {
     async remember(input: RememberInput): Promise<MemoryRow> {
       // Facts are DERIVED (extractor + replaceFact's atomic supersede); a direct fact-remember would
@@ -108,19 +146,11 @@ export async function createMemory2Adapter(opts: Memory2AdapterOpts): Promise<Me
     },
 
     async replaceFact(input: ReplaceFactInput): Promise<MemoryRow> {
-      const e = await store.replaceFact({
-        ownerId: input.owner_id,
-        factKey: input.key,
-        sessionId: input.session_id,
-        text: input.text,
-        payload: input.payload,
-      });
-      return entryToRow(e);
+      return deps.replaceFact(input);
     },
 
     async reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null> {
-      const e = await store.reinforceFact({ ownerId: input.owner_id, factKey: input.key });
-      return e ? entryToRow(e) : null;
+      return deps.reinforceFact(input);
     },
 
     async recall(input): Promise<MemoryMatch[]> {
@@ -136,7 +166,23 @@ export async function createMemory2Adapter(opts: Memory2AdapterOpts): Promise<Me
     },
 
     async getProfile(ownerId: string): Promise<MemoryRow[]> {
-      return (await store.getProfile(ownerId)).map(entryToRow);
+      return deps.getProfile(ownerId);
+    },
+
+    profileFacts(ownerId: string): Promise<ProfileFactView[]> {
+      return profileFacts(deps, ownerId);
+    },
+
+    fixFact(ownerId: string, id: string, value: string): Promise<ProfileFactView> {
+      return fixFact(deps, ownerId, id, value);
+    },
+
+    verifyFact(ownerId: string, id: string): Promise<ProfileFactView> {
+      return verifyFact(deps, ownerId, id);
+    },
+
+    factSource(ownerId: string, id: string): Promise<ProfileFactSourceView> {
+      return factSource(deps, ownerId, id);
     },
 
     supersede(id: string): Promise<void> {
