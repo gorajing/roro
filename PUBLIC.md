@@ -101,6 +101,11 @@ VALID + `safeStorage.isEncryptionAvailable()=true` + creates its keychain item â
   `macSigningConfig` + `entitlements.mac.plist` + notarytool pipeline is wired). This is for **(a)** a Gatekeeper-clean
   install on a clean second Mac and **(b)** memory durability **across updates** (stable team identity vs. per-build
   ad-hoc cdhash) â€” *not* for making memory work at all.
+  Run `npm run verify:signing-readiness` after exporting the Apple env vars and before `npm run make`; it checks local
+  cert/tool/env readiness, not Apple authentication or clean-Mac Gatekeeper behavior. After `npm run make`, run
+  `npm run verify:release-artifact:signed` before the clean-Mac install.
+  **Packaging note:** the public go/no-go says `.dmg`, but current Forge config still uses the darwin ZIP maker. Add a
+  DMG maker before marking the `.dmg` distribution gate complete.
 
 **Exit:** a non-founder observes a fact recalled across a full quit/relaunch of a packaged build (proves the moment works
 outside `npm start`); and the Developer-ID notarized build installs Gatekeeper-clean on a clean Mac.
@@ -200,8 +205,9 @@ validation, provable in an afternoon.
 ## The first thing to do
 
 **Preflight packaged memory (`npm run package && npm run verify:packaged-memory && npm run verify:packaged-live-memory-turn`),
-then produce the first Developer-ID signed + notarized build** and test it on a clean second Mac:
-`APPLE_TEAM_ID=GNG2M47BD7 APPLE_ID=<paid Apple ID> APPLE_PASSWORD=<app-specific password> npm run make`.
+then preflight signing (`npm run verify:signing-readiness`) and produce the first Developer-ID signed + notarized build**
+to test on a clean second Mac:
+`APPLE_TEAM_ID=GNG2M47BD7 APPLE_ID=<paid Apple ID> APPLE_PASSWORD=<app-specific password> npm run verify:signing-readiness && npm run make && npm run verify:release-artifact:signed`.
 Nothing else on the path can be *truly validated* until this build exists. In parallel, build Phase 2 from
 [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md): correction, clarify, README framing, and the bounded
 screen-capture tell are landed.

@@ -1,10 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import {
+  appleSigningEnvStatus,
   macSigningConfig,
   MAC_ENTITLEMENTS_PATH,
   MAC_NATIVE_UNPACK_GLOB,
   assertSigningIdentity,
+  developerIdApplicationIdentities,
+  hasDeveloperIdApplicationIdentity,
   shouldEnableCookieEncryption,
 } from './macSigning';
 
@@ -24,6 +27,32 @@ const FULL = {
   APPLE_PASSWORD: 'app-specific-pw',
   APPLE_TEAM_ID: 'ABCDE12345',
 };
+
+describe('appleSigningEnvStatus', () => {
+  it('classifies empty-string CI secrets as absent', () => {
+    expect(appleSigningEnvStatus({ APPLE_ID: '', APPLE_PASSWORD: '  ', APPLE_TEAM_ID: undefined })).toEqual({
+      present: [],
+      missing: ['APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID'],
+      isPartial: false,
+      isComplete: false,
+    });
+  });
+
+  it('classifies partial and complete signing envs', () => {
+    expect(appleSigningEnvStatus({ APPLE_ID: 'dev@example.com' })).toMatchObject({
+      present: ['APPLE_ID'],
+      missing: ['APPLE_PASSWORD', 'APPLE_TEAM_ID'],
+      isPartial: true,
+      isComplete: false,
+    });
+    expect(appleSigningEnvStatus(FULL)).toMatchObject({
+      present: ['APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID'],
+      missing: [],
+      isPartial: false,
+      isComplete: true,
+    });
+  });
+});
 
 describe('macSigningConfig', () => {
   it('returns no Developer-ID config when NO Apple creds are present (the postPackage hook ad-hoc re-seals)', () => {
@@ -104,7 +133,29 @@ describe('assertSigningIdentity (clear preflight instead of a cryptic codesign d
   const ONLY_APPLE_DEV =
     '  1) 606C...66B "Apple Development: dev@example.com (9D9FQ9D5DT)"\n     1 valid identities found';
   const HAS_DEVELOPER_ID =
-    '  1) ABC1...23F "Developer ID Application: Dev Name (ABCDE12345)"\n     1 valid identities found';
+    '  1) ABC1ABC1ABC1ABC1ABC1ABC1ABC1ABC1ABC1ABC1 "Developer ID Application: Dev Name (ABCDE12345)"\n     1 valid identities found';
+  const HAS_DIFFERENT_DEVELOPER_ID =
+    '  1) ABC1ABC1ABC1ABC1ABC1ABC1ABC1ABC1ABC1ABC1 "Developer ID Application: Other Team (ZZZZZ99999)"\n     1 valid identities found';
+
+  it('parses Developer ID Application identities and ignores Apple Development certs', () => {
+    const output = [
+      '  1) 606CE674AA7844DBD1F4FBB2590A839F59E0E66B "Apple Development: dev@example.com (9D9FQ9D5DT)"',
+      '  2) CE6115912D370A57FC444999123F8FF2BDB25F0F "Developer ID Application: Jin Young Choi (GNG2M47BD7)"',
+      '     2 valid identities found',
+    ].join('\n');
+
+    expect(developerIdApplicationIdentities(output)).toEqual([
+      {
+        hash: 'CE6115912D370A57FC444999123F8FF2BDB25F0F',
+        name: 'Jin Young Choi',
+        teamId: 'GNG2M47BD7',
+        raw: '  2) CE6115912D370A57FC444999123F8FF2BDB25F0F "Developer ID Application: Jin Young Choi (GNG2M47BD7)"',
+      },
+    ]);
+    expect(hasDeveloperIdApplicationIdentity(output)).toBe(true);
+    expect(hasDeveloperIdApplicationIdentity(output, 'GNG2M47BD7')).toBe(true);
+    expect(hasDeveloperIdApplicationIdentity(output, 'ZZZZZ99999')).toBe(false);
+  });
 
   it('does NOT touch the keychain when signing is not requested (unsigned dev/CI build)', () => {
     const list = vi.fn(() => '');
@@ -120,6 +171,12 @@ describe('assertSigningIdentity (clear preflight instead of a cryptic codesign d
 
   it('passes when a Developer ID Application identity is present', () => {
     expect(() => assertSigningIdentity(FULL, () => HAS_DEVELOPER_ID)).not.toThrow();
+  });
+
+  it('throws when Developer ID exists but does not match APPLE_TEAM_ID', () => {
+    expect(() => assertSigningIdentity(FULL, () => HAS_DIFFERENT_DEVELOPER_ID)).toThrowError(
+      /APPLE_TEAM_ID=ABCDE12345[\s\S]*ZZZZZ99999/,
+    );
   });
 
   it('throws a CLEAR, actionable error when only an Apple Development cert exists', () => {

@@ -54,6 +54,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Release doctor
+        run: npm run release:doctor
+
       # Fresh CI checkouts do not have ignored voice caches, so seed stale generated files that must not
       # leak into the default typed-only v0 package.
       - name: Seed forbidden voice cache sentinels

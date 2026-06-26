@@ -25,12 +25,64 @@ export const MAC_ENTITLEMENTS_PATH = 'build/entitlements.mac.plist';
 export const MAC_NATIVE_UNPACK_GLOB = '**/{.**,**}/**/*.dylib';
 
 /** The three env vars that together enable signing+notarization. */
-const APPLE_CRED_VARS = ['APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID'] as const;
+export const APPLE_CRED_VARS = ['APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID'] as const;
+export type AppleCredVar = (typeof APPLE_CRED_VARS)[number];
 
-/** Which of the Apple cred vars are non-empty (an unset CI secret exports as "", which counts as absent).
- *  Shared by the config + the preflight so their "is signing requested?" gating can never drift apart. */
-function presentCreds(env: Record<string, string | undefined>): readonly string[] {
-  return APPLE_CRED_VARS.filter((name) => (env[name] ?? '').trim() !== '');
+export interface AppleSigningEnvStatus {
+  present: readonly AppleCredVar[];
+  missing: readonly AppleCredVar[];
+  isPartial: boolean;
+  isComplete: boolean;
+}
+
+/** Which Apple signing env vars are non-empty. Empty CI secrets count as absent. */
+export function appleSigningEnvStatus(env: Record<string, string | undefined>): AppleSigningEnvStatus {
+  const present = APPLE_CRED_VARS.filter((name) => (env[name] ?? '').trim() !== '');
+  const missing = APPLE_CRED_VARS.filter((name) => !present.includes(name));
+  return {
+    present,
+    missing,
+    isPartial: present.length > 0 && present.length < APPLE_CRED_VARS.length,
+    isComplete: present.length === APPLE_CRED_VARS.length,
+  };
+}
+
+/** Shared by the config + preflights so their "is signing requested?" gating cannot drift apart. */
+function presentCreds(env: Record<string, string | undefined>): readonly AppleCredVar[] {
+  return appleSigningEnvStatus(env).present;
+}
+
+export interface DeveloperIdApplicationIdentity {
+  hash: string;
+  name: string;
+  teamId: string;
+  raw: string;
+}
+
+/**
+ * Parse `security find-identity -v -p codesigning` output for distribution certs.
+ * Apple Development certs are intentionally ignored; they cannot notarize an outside-the-store app.
+ */
+export function developerIdApplicationIdentities(output: string): DeveloperIdApplicationIdentity[] {
+  const identities: DeveloperIdApplicationIdentity[] = [];
+  for (const raw of output.split(/\r?\n/)) {
+    const match = /^\s*\d+\)\s+([A-Fa-f0-9]{40})\s+"Developer ID Application:\s+(.+)\s+\(([A-Z0-9]+)\)"\s*$/.exec(raw);
+    if (!match) continue;
+    identities.push({
+      hash: match[1],
+      name: match[2],
+      teamId: match[3],
+      raw,
+    });
+  }
+  return identities;
+}
+
+export function hasDeveloperIdApplicationIdentity(output: string, teamId?: string): boolean {
+  const trimmedTeamId = teamId?.trim();
+  const identities = developerIdApplicationIdentities(output);
+  if (!trimmedTeamId) return identities.length > 0;
+  return identities.some((identity) => identity.teamId === trimmedTeamId);
 }
 
 export interface MacSigning {
@@ -118,13 +170,24 @@ export function assertSigningIdentity(
   // "Apple Development" cert (the free/local-dev type) is NOT enough and yields an ad-hoc signature. Match
   // with the trailing colon to mirror osx-sign's own identity predicate exactly (security find-identity
   // always prints "Developer ID Application: Name (TEAM)").
-  if (!listCodesignIdentities().includes('Developer ID Application:')) {
+  const output = listCodesignIdentities();
+  const identities = developerIdApplicationIdentities(output);
+  if (identities.length === 0) {
     throw new Error(
       'macOS signing is configured (APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID are set), but no ' +
         '"Developer ID Application" certificate was found in your keychain. Roro signs with a Developer ID ' +
         'cert for distribution — an "Apple Development" cert is not enough. Check with ' +
         '`security find-identity -v -p codesigning`, create a Developer ID Application certificate (needs ' +
         'the paid Apple Developer Program), or `unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID` to build unsigned.',
+    );
+  }
+
+  const teamId = env.APPLE_TEAM_ID?.trim();
+  if (teamId && !hasDeveloperIdApplicationIdentity(output, teamId)) {
+    throw new Error(
+      `macOS signing is configured for APPLE_TEAM_ID=${teamId}, but no matching "Developer ID Application" ` +
+        `certificate was found in your keychain. Found Developer ID team(s): ${identities.map((id) => id.teamId).join(', ')}. ` +
+        'Use the team id from `security find-identity -v -p codesigning`, or install the matching Developer ID Application certificate.',
     );
   }
 }
