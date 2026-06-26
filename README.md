@@ -176,8 +176,10 @@ flags, macOS permissions, and the full live-run checklist.
 npx tsc --noEmit -p tsconfig.json
 npx vitest run --no-file-parallelism
 npm run verify:floating          # on-screen smoke for the floating Ask (needs a display)
+npm run package
+npm run verify:packaged-memory   # packaged memory write -> quit -> relaunch -> recall smoke
 npm run verify:packaged-onboarding
-npx electron-forge package
+npm run verify:release-artifact
 ```
 
 ## Status
@@ -188,6 +190,7 @@ What is working:
 - typed IPC between renderer and main
 - procedural pixel cat, transparent floating mode, and state effects
 - packaged workdir onboarding: native project picker, persisted `userData/config.json`, and typed/floating Ask gates
+- packaged same-build memory persistence smoke: a real packaged app writes and recalls an observation across relaunch
 - **local Ollama brain** (decide/vision/embeddings) — verified end-to-end against a
   live daemon
 - **local PGlite + pgvector memory** (owner-scoped, survives restarts)

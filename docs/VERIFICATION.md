@@ -1,7 +1,8 @@
 # Verification
 
-Roro has two opt-in Electron smokes that observe real renderer behavior outside jsdom. They are not in CI because they
-need a GUI/app launch environment, but they are the right gates when changing first-run or floating-window UX.
+Roro has opt-in Electron smokes that observe real packaged or rendered behavior outside jsdom. The UI-launch smokes are
+not in CI because they need a GUI/app launch environment, but they are the right gates when changing first-run,
+memory-persistence, or floating-window UX.
 
 ## Packaged onboarding smoke
 
@@ -25,6 +26,34 @@ Run this after changes to:
 - `src/renderer/settings/projectSettings.ts`
 - `scripts/smoke-packaged-onboarding.mjs`
 - packaged startup/signing/fuse behavior in `forge.config.ts` or `src/build/macSigning.ts`
+
+## Packaged memory persistence smoke
+
+```sh
+npm run verify:packaged-memory
+```
+
+`scripts/smoke-packaged-memory.mjs` launches the real packaged app with disposable `cwd` and `--user-data-dir`. On macOS
+it also installs a temporary unlocked user keychain for the run, then restores the original keychain defaults; this keeps
+the smoke from mutating or blocking on stale ad-hoc `Roro Safe Storage` items in the login keychain while still exercising
+Electron `safeStorage`. It writes a unique `observation` through `window.memory.remember`, terminates the app, relaunches
+the same profile, and proves `window.memory.recall` returns that row under the same owner. It also checks that the default
+memory root is `userData/memory/memory2`, that the cwd fallback `.roro-memory2` was not created, that the memory store is
+marked encrypted, and that the smoke token is not present as plaintext under the memory store.
+
+Run this after changes to:
+
+- `src/main.ts` startup state initialization
+- `src/memory2/index.ts`
+- `src/memory2/keyManager.ts`
+- `src/memory2/encryptionMode.ts`
+- `src/main/ipc.ts` memory channels
+- `src/preload.ts` memory bridge
+- packaged startup/signing/fuse behavior in `forge.config.ts` or `src/build/macSigning.ts`
+
+This is an engineering persistence smoke for the real `.app`. It does **not** replace the Phase 0 non-founder magic
+moment validation in [`PUBLIC.md`](../PUBLIC.md), because it writes an observation directly through the memory bridge
+rather than proving a complete brain-extract-recall user turn lands for a stranger.
 
 ## On-screen floating Ask + Stop
 

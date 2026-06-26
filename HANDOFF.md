@@ -14,7 +14,7 @@
 - **The product thesis:** the magic moment is **recalled memory** — after a restart, offline, the cat weaves what it remembers about how you work into its response ("I'll set up the signup route *with testing in place*"). Voice/cuteness are the frame; the recalled sentence is the payload.
 - **The strategy (job-first):** lead with the **coding job** (it justifies the install + builds the daily habit); let *being known* be the emergent reward. **job → habit → memory → moat.** The moat is the per-user **encrypted on-device memory** + a **human-in-the-loop correction loop** (un-clonable, model-independent).
 - **State:** the engine is strong and proven. The **biggest launch blocker is fixed** — encrypted memory now works in a packaged build (was a forge signing bug, *not* the cert). The Phase-1 packaged workdir onboarding spine landed, and the first Phase-2 correction loop slice now lets users see, fix, verify, source-check, and forget remembered facts.
-- **Next:** finish the **Path to Public** in [`PUBLIC.md`](./PUBLIC.md). Cheapest next step is a **human confirmation** that a packaged build remembers across quit/relaunch; then produce the Developer-ID notarized build and run the small-cohort first-run validation.
+- **Next:** finish the **Path to Public** in [`PUBLIC.md`](./PUBLIC.md). Cheapest next step is a **human confirmation** that a packaged build remembers across quit/relaunch; `npm run verify:packaged-memory` automates the bridge/write/relaunch/recall regression, but the non-founder magic moment is still the gate. Then produce the Developer-ID notarized build and run the small-cohort first-run validation.
 
 ---
 
@@ -82,6 +82,9 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - **Packaged memory FIXED (#67):** the big one — see §5.
 - **Current handoff refreshed (#68):** this file became the live engineering handoff after the packaged-memory fix.
 - **Packaged workdir onboarding spine (#69):** `configStore`, workdir IPC, first-run folder picker, typed/floating Ask workdir gates, ad-hoc cookie-encryption hardening, and `npm run verify:packaged-onboarding`.
+- **Packaged memory persistence smoke:** `npm run verify:packaged-memory` writes/recalls an observation across full
+  relaunch of the real packaged app. This proves repeatable same-build persistence, not the Phase 0 non-founder
+  magic-moment gate.
 
 ---
 
@@ -97,7 +100,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 **Proven (observed, not assumed):**
 - The magic moment is **real** (live-tested: decide→extract→store→reopen→recall, and the brain weaves a good recalled fact into its narration).
 - Memory **survives a restart on disk** (normal + files-as-truth rebuild; verified load-bearing by sabotage).
-- Encrypted memory **works in a packaged build** — `codesign --verify` valid + `safeStorage` true + keychain item created, **no cert** (after #67).
+- Encrypted memory **works in a packaged build** — `codesign --verify` valid + `safeStorage` true + keychain item created, **no cert** (after #67), and the packaged-memory smoke now writes/recalls an observation across relaunch from the encrypted userData store.
 
 **Weak / failed / open:**
 - **3B behavioral-extraction ceiling (~40%).** Fix is the **correction loop** (model-independent), **not a bigger brain.** The first loop slice is exposed in the Memory panel (`profile` / `fixFact` / `verifyFact` / `factSource` / `forget`), and the vision path now gives a bounded one-snapshot status tell before capture.
@@ -131,7 +134,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 ---
 
 ## 8. What to do next (concrete first moves)
-1. **(Recommended, cheapest) Human-confirm Phase 0:** `npm run package`, short session, **fully quit**, relaunch the *same* build, watch it remember. Unblocked, no cert.
+1. **(Recommended, cheapest) Human-confirm Phase 0:** `npm run package`, `npm run verify:packaged-memory`, then run a short non-founder/clean-profile session, **fully quit**, relaunch the *same* build, and watch it remember. The smoke proves packaged persistence; the person proves the moment lands.
 2. **Produce the Developer-ID notarized build:** `APPLE_TEAM_ID=GNG2M47BD7` + `APPLE_ID` + app-specific `APPLE_PASSWORD` + `npm run make`, then validate install + memory recall on a clean second Mac.
 3. **Validate Phase 2 trust on real first turns:** the Memory panel can see/fix/verify/source/forget facts, referent-less requests clarify before dispatch, the README leads with the job/privacy promise, and screen reads show a bounded one-snapshot tell.
 
@@ -156,7 +159,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - **Commit footer:** `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` + `Claude-Session: <url>`. **PR footer:** `🤖 Generated with [Claude Code]` + the session URL.
 - **Don't commit `.env`** (gitignored). The **frozen `gorajing/companion` repo** must not be touched.
 - **Verify before claiming done** — "the types check" is not done; "I observed it working" is.
-- **Key commands:** `npm test`, `npm run lint`, `npx tsc --noEmit -p tsconfig.json`, `npm run package` (.app), `npm run make` (+ distributables + signing), `npm start` (dev — memory works here), `OLLAMA_AVAILABLE=1 npx vitest run crosslaunch.live` (live magic-moment smoke), `npm run eval:brain` (scorecard), `EVAL_SET=behavioral npm run eval:brain`.
+- **Key commands:** `npm test`, `npm run lint`, `npx tsc --noEmit -p tsconfig.json`, `npm run package` (.app), `npm run verify:packaged-memory` (packaged write/relaunch/recall), `npm run make` (+ distributables + signing), `npm start` (dev — memory works here), `OLLAMA_AVAILABLE=1 npx vitest run crosslaunch.live` (live magic-moment smoke), `npm run eval:brain` (scorecard), `EVAL_SET=behavioral npm run eval:brain`.
 - **State lives in:** memory + owner.json + packaged config → `app.getPath('userData')` (override `RORO_DB_DIR`). The agent's working repo resolves from explicit `RORO_WORKDIR`, then persisted `userData/config.json`, then the explicit `RORO_ALLOW_CWD=1` dev fallback.
 
 ---
@@ -166,4 +169,4 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ---
 
-*Reflects the repo after the first Phase-2 correction-loop slice, clarify trust gate, and README job/privacy framing. The one thing to internalize: the engine works, the packaged workdir onboarding spine is real, the magic moment is real + proven, remembered facts are user-correctable, and referent-less requests now ask before acting; the work ahead is making it **reachable and trustworthy for a stranger** — and validating, cheaply and early, every assumption the plan rests on.*
+*Reflects the repo after the Phase-2 trust slices plus the packaged-memory smoke. The one thing to internalize: the engine works, the packaged workdir onboarding spine is real, packaged memory now has an automated write/relaunch/recall regression, remembered facts are user-correctable, and referent-less requests now ask before acting; the work ahead is making it **reachable and trustworthy for a stranger** — and validating, cheaply and early, every assumption the plan rests on.*

@@ -48,6 +48,9 @@ required. The **two roles of the Developer-ID cert are now clear and separate:**
 > Phase 0's safeStorage half is **done**. What remains for Phase 0 is the *human* confirmation (a non-founder uses a
 > build and feels it remember) + the Developer-ID build for the Gatekeeper/longevity half. Encrypt-by-default is intact —
 > `keyManager` still fails loud; we did **not** add a plaintext fallback.
+> Automated preflight: `npm run verify:packaged-memory` now launches the real packaged app, writes an observation through
+> the memory bridge, quits, relaunches, and recalls it from the encrypted `userData` store. This strengthens the packaged
+> persistence evidence, but it does **not** replace the non-founder magic-moment test.
 
 ---
 
@@ -81,6 +84,9 @@ Roro is public-ready when **all** of these are observed (not code-read):
 **Status: the safeStorage half is DONE.** The packaged-build memory failure was a forge invalid-signature bug, fixed by
 the postPackage ad-hoc re-seal (`fix/packaged-memory-adhoc-reseal`). A clean `npm run package` is now `codesign --verify`
 VALID + `safeStorage.isEncryptionAvailable()=true` + creates its keychain item — **no cert.** What remains:
+- ✅ **Automated same-build persistence smoke:** `npm run verify:packaged-memory` writes and recalls an observation
+  across full process termination/relaunch of the real packaged app. This covers repeatable engineering persistence
+  only; Phase 0 still exits on human confirmation plus the Developer-ID/Gatekeeper path below.
 - **Human confirmation (the real Phase-0 exit):** a non-founder runs a build, has a short session, **fully quits**,
   relaunches the **same build**, and observes the fact recalled. (Within-build quit/relaunch works under ad-hoc; this is
   doable today without the cert.)
@@ -186,7 +192,8 @@ validation, provable in an afternoon.
 
 ## The first thing to do
 
-**Produce the first Developer-ID signed + notarized build**, then test it on a clean second Mac:
+**Preflight packaged memory (`npm run package && npm run verify:packaged-memory`), then produce the first Developer-ID
+signed + notarized build** and test it on a clean second Mac:
 `APPLE_TEAM_ID=GNG2M47BD7 APPLE_ID=<paid Apple ID> APPLE_PASSWORD=<app-specific password> npm run make`.
 Nothing else on the path can be *truly validated* until this build exists. In parallel, build Phase 2 from
 [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md): correction, clarify, README framing, and the bounded

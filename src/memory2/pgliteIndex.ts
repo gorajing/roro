@@ -5,16 +5,107 @@
 // returns the exact entry) plus the columns it filters/orders/reconciles on. Rebuildable from files via
 // reindexFrom (atomic: embed-all-first, then delete+insert in one txn, so a failure never empties it).
 
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
-import { vector } from '@electric-sql/pglite-pgvector';
+import { vector as pgliteVector } from '@electric-sql/pglite-pgvector';
+// eslint-disable-next-line import/no-unresolved -- Vite resolves packaged PGlite binary assets via ?url.
+import pgliteDataUrl from '../../node_modules/@electric-sql/pglite/dist/pglite.data?url';
+// eslint-disable-next-line import/no-unresolved -- Vite resolves packaged PGlite binary assets via ?url.
+import initdbWasmUrl from '../../node_modules/@electric-sql/pglite/dist/initdb.wasm?url';
+// eslint-disable-next-line import/no-unresolved -- Vite resolves packaged PGlite binary assets via ?url.
+import pgliteWasmUrl from '../../node_modules/@electric-sql/pglite/dist/pglite.wasm?url';
 import type { Entry } from './types';
 import type { IndexStore, VectorMatch } from './indexStore';
 
 const toVec = (e?: number[]): string | null => (e ? `[${e.join(',')}]` : null);
+type VectorExtension = typeof pgliteVector;
+type PGliteRuntimeArtifacts = {
+  pgliteWasmModule: WebAssembly.Module;
+  initdbWasmModule: WebAssembly.Module;
+  fsBundle: Blob;
+};
+
+let runtimeArtifacts: Promise<PGliteRuntimeArtifacts> | null = null;
+
+function dataUrlBytes(url: URL): Buffer {
+  const match = /^data:([^,]*?),(.*)$/s.exec(url.toString());
+  if (!match) throw new Error(`invalid data URL for PGlite asset: ${url.toString().slice(0, 80)}`);
+  return match[1].split(';').includes('base64')
+    ? Buffer.from(match[2], 'base64')
+    : Buffer.from(decodeURIComponent(match[2]));
+}
+
+async function assetBytes(assetUrl: string, label: string): Promise<Buffer> {
+  if (assetUrl.startsWith('/@fs/')) return readFile(assetUrl.slice('/@fs'.length));
+  if (assetUrl.startsWith('/')) return readFile(join(process.cwd(), assetUrl.slice(1)));
+  const url = new URL(assetUrl, pathToFileURL(`${process.cwd()}/`));
+  if (url.protocol === 'data:') return dataUrlBytes(url);
+  if (url.protocol === 'file:') return readFile(url);
+  throw new Error(`unsupported PGlite ${label} asset URL protocol: ${url.protocol}`);
+}
+
+function loadRuntimeArtifacts(): Promise<PGliteRuntimeArtifacts> {
+  runtimeArtifacts ??= (async () => {
+    const [pgliteWasm, initdbWasm, fsBundle] = await Promise.all([
+      assetBytes(pgliteWasmUrl, 'pglite.wasm'),
+      assetBytes(initdbWasmUrl, 'initdb.wasm'),
+      assetBytes(pgliteDataUrl, 'pglite.data'),
+    ]);
+    const [pgliteWasmModule, initdbWasmModule] = await Promise.all([
+      WebAssembly.compile(pgliteWasm),
+      WebAssembly.compile(initdbWasm),
+    ]);
+    return {
+      pgliteWasmModule,
+      initdbWasmModule,
+      fsBundle: new Blob([fsBundle]),
+    };
+  })();
+  return runtimeArtifacts;
+}
+
+/** Vite library builds inline asset URLs as data: URLs. PGlite's Node extension loader expects a file,
+ * so packaged Electron needs the bundled pgvector tarball materialized before PGlite opens it. */
+export async function materializeDataUrlBundlePath(bundlePath: URL, outDir: string, filename: string): Promise<URL> {
+  if (bundlePath.protocol !== 'data:') return bundlePath;
+  await mkdir(outDir, { recursive: true });
+  const outPath = join(outDir, filename);
+  await writeFile(outPath, dataUrlBytes(bundlePath));
+  return pathToFileURL(outPath);
+}
+
+function debugVectorBundlePath(before: URL, after: URL): void {
+  if (process.env.RORO_PGLITE_EXT_DEBUG !== '1') return;
+  console.warn(
+    `[memory2] pgvector bundlePath ${before.protocol} -> ${after.protocol} (${after.protocol === 'file:' ? after.pathname : after.toString().slice(0, 80)})`,
+  );
+}
+
+function fileBackedVectorExtension(extensionCacheDir: string): VectorExtension {
+  return {
+    ...pgliteVector,
+    setup: async (...args: Parameters<VectorExtension['setup']>): Promise<Awaited<ReturnType<VectorExtension['setup']>>> => {
+      const result = await pgliteVector.setup(...args);
+      const bundlePath = await materializeDataUrlBundlePath(result.bundlePath, extensionCacheDir, 'vector.tar.gz');
+      debugVectorBundlePath(result.bundlePath, bundlePath);
+      return {
+        ...result,
+        bundlePath,
+      };
+    },
+  };
+}
 
 export async function createPgliteIndex(opts: { dataDir?: string; dim?: number; embedModel?: string }): Promise<IndexStore> {
   const dim = opts.dim ?? 768;
-  const db = await PGlite.create(opts.dataDir ?? 'memory://', { extensions: { vector } });
+  const extensionCacheDir = join(opts.dataDir ?? process.cwd(), 'extensions');
+  const artifacts = await loadRuntimeArtifacts();
+  const db = await PGlite.create(opts.dataDir ?? 'memory://', {
+    ...artifacts,
+    extensions: { vector: fileBackedVectorExtension(extensionCacheDir) },
+  });
   await db.exec(`
     create extension if not exists vector;
     create table if not exists idx (
