@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import { buildFactPrompt, parseFactResponse, isPlausiblePreference, FACT_SYSTEM_PROMPT, type FactExtractInput, type FactCandidate } from './extractFact';
+import { clarifyForReferentlessRequest } from './clarifyGate';
 import { ollamaChat, ollamaEmbed, ollamaTags, hasModel, resolveOllamaEmbedDim, assertEmbedDimMatch } from './ollama';
 
 declare const process: { env: Record<string, string | undefined> };
@@ -94,6 +95,9 @@ RULES:
   edits the project itself. Naming a file (e.g. "fix calc.py") is NOT a reason to capture the screen.
 - Choose "capture_screen" ONLY when the request refers to something VISIBLE ON SCREEN that is not in the
   codebase — e.g. "what's this error on my screen", "look at what I'm seeing", a GUI/app/browser state.
+- Choose "clarify" when the request has no concrete target yet — e.g. "fix it", "make it better",
+  "update it", "change the color", or "do that thing we talked about" with no relevant memory/screen.
+  Ask exactly one question that would make the task executable.
 - If RELEVANT MEMORY is provided, use it for project paths, user preferences, and prior context.
 - If CURRENT SCREEN is provided, use it as visual context.
 - Output only the JSON object. Do not wrap it in markdown fences.
@@ -166,6 +170,9 @@ export async function preflight(): Promise<PreflightResult> {
 }
 
 export async function decide(input: DecideInput, options: DecideOptions = {}): Promise<Decision> {
+  const clarification = clarifyForReferentlessRequest(input);
+  if (clarification) return clarification;
+
   const models = getModelIds();
   const userPrompt = buildDecisionPrompt(input);
 
