@@ -220,6 +220,8 @@ async function inspectApp({ home, cwd, userDataDir, label }) {
         hasPromptForm: !!document.querySelector('#prompt-form'),
         promptPlaceholder: document.querySelector('#prompt-input')?.getAttribute('placeholder') ?? '',
         sendText: document.querySelector('#send-btn')?.textContent ?? '',
+        cancelText: document.querySelector('#cancel-btn')?.textContent ?? '',
+        cancelDisabled: document.querySelector('#cancel-btn')?.disabled ?? null,
         hasWorkdirBanner: !!document.querySelector('#workdir-banner'),
         workdirHidden: document.querySelector('#workdir-banner')?.hidden ?? null,
         workdirText: document.querySelector('#workdir-banner')?.textContent ?? '',
@@ -322,6 +324,7 @@ try {
   check('#prompt-form exists', fresh.dom.hasPromptForm);
   check('prompt placeholder is product-facing', /ask roro to work/i.test(fresh.dom.promptPlaceholder));
   check('submit button says Start', fresh.dom.sendText.trim() === 'Start');
+  check('Stop button says Stop and starts disabled', fresh.dom.cancelText.trim() === 'Stop' && fresh.dom.cancelDisabled === true);
   check('#workdir-banner exists', fresh.dom.hasWorkdirBanner);
   check('#workdir-banner is visible when no project is configured', fresh.dom.workdirHidden === false);
   check('#workdir-banner is visibly rendered', fresh.dom.workdirBannerVisible);

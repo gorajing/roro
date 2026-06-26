@@ -137,6 +137,7 @@ button:disabled {
 #cancel-btn {
   background: #ef5350;
   color: #1a0b0b;
+  min-width: 96px;
 }
 
 #status {
