@@ -150,7 +150,9 @@ brain blocks dispatch.
 Ollama/Codex services and drives the real `#prompt-form` through the public `window.companion.turnRun`
 bridge. It asserts the default-window DOM is visible, debug bridges are absent, Stop arms before any
 `run.started`, pre-executor Stop emits scoped `run.failed: stopped` plus `runEnd`, fake Codex receives no
-stopped-task invocation, the status copy stays neutral, and a later answer turn recovers the form.
+stopped-task invocation, the status copy stays neutral, active-executor Stop emits scoped
+`run.failed: aborted` after fake Codex has emitted `run.started` and a started `file_change`, fake Codex
+records `SIGTERM` without writing the aborted file, and a later answer turn recovers the form.
 
 Manual full-window checklist:
 
@@ -159,7 +161,8 @@ Manual full-window checklist:
 | 1 | App boots in the default window | Start is enabled, Stop says `Stop` and is disabled |
 | 2 | Submit a non-empty prompt with project + brain ready | Start disables, typed text stays visible, Stop enables immediately, status says `Thinking... click Stop if you need to pause.` |
 | 3 | Click Stop before `run.started` | Stop says `Stopping...`, status says `Stopping...`, and the turn ends with neutral `Stopped.` copy |
-| 4 | Submit while project selection or local brain readiness blocks dispatch | Start remains enabled, Stop remains disabled, and the draft stays in the input |
+| 4 | Click Stop after `run.started` on an active executor task | Stop says `Stopping...`, the executor is aborted, no completed file change lands, and the turn ends with neutral `Stopped.` copy |
+| 5 | Submit while project selection or local brain readiness blocks dispatch | Start remains enabled, Stop remains disabled, and the draft stays in the input |
 
 ## On-screen floating Ask + Stop
 
@@ -199,7 +202,10 @@ and verifies real `window.companion.turnRun` answer and executor turns over the 
 The answer turn must emit `ActionEvent`s, reach `runEnd`, avoid the coding executor, and collapse the
 floating Ask. In the deterministic fake-Ollama path, a delayed `run_agent` decision is stopped before
 `run.started`; it must emit neutral stopped copy, collapse from `runEnd`, and never launch fake Codex.
-The executor success turn must launch Codex with the expected
+The same fake path also stops a task after fake Codex has emitted `run.started` and a started
+`file_change`; it must emit scoped `run.failed: aborted`, record `SIGTERM`, never emit `run.completed`,
+never complete/write the aborted file, collapse from `runEnd`, and show neutral `Stopped.` copy. The
+following executor success turn must launch Codex with the expected
 `exec --json --skip-git-repo-check -s workspace-write -C <project>` shape, keep Stop armed for the
 accepted/running turn, emit a completed `file_change` and `run.completed`, write inside the selected
 test project (disposable by default), disarm Stop, and collapse from `runEnd`. By default it uses tiny

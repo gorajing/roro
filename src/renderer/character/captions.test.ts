@@ -26,6 +26,27 @@ describe('ActionTimeline', () => {
     expect(text).not.toContain('spawn codex ENOENT');
   });
 
+  it('renders user-stopped runs as neutral stops, not failures', () => {
+    const timeline = new ActionTimeline();
+    const stopped: ActionEvent = {
+      kind: 'run.failed',
+      runId: 'run-1',
+      ok: false,
+      error: 'aborted',
+      ts: 0,
+    };
+
+    timeline.append(stopped);
+
+    const timelineEl = document.getElementById('timeline');
+    const text = timelineEl?.textContent ?? '';
+    expect(text).toContain('Run stopped');
+    expect(text).toContain('Stopped.');
+    expect(text).not.toContain('Run needs attention');
+    expect(text).not.toContain('aborted');
+    expect(timelineEl?.querySelector('.status-failed')).toBeNull();
+  });
+
   it('renders product-friendly labels instead of raw event kind names', () => {
     const timeline = new ActionTimeline();
     const events: ActionEvent[] = [
