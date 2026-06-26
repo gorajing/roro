@@ -25,6 +25,7 @@ export interface MountLocalVoiceOptions {
   captions?: CaptionSink;
   onState?: (state: VoiceModeState) => void;
   isMuted?: () => boolean;
+  canStartTurn?: () => boolean;
 }
 
 export interface LocalVoice {
@@ -46,6 +47,7 @@ export function mountLocalVoiceMode(opts: MountLocalVoiceOptions): LocalVoice {
     captions: opts.captions,
     onState: opts.onState,
     isMuted: opts.isMuted,
+    canStartTurn: opts.canStartTurn,
   });
   // The mouth: speak the assistant's committed message via local TTS, but only while summoned.
   const unsubSpeech = wireSpeechOutput({

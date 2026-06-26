@@ -3,11 +3,13 @@
 // This launches the real packaged .app with stdout/stderr pipes immediately closed from
 // the parent side. That reproduces the production-style "write EPIPE" condition that
 // used to surface Electron's "JavaScript error occurred in the main process" dialog.
+// It also forces a local-Ollama outage and submits a typed task from a configured repo,
+// proving the renderer's brain-readiness gate blocks a doomed first coding turn.
 //
 // Run after `npm run package`: npm run verify:epipe
 
 import { spawn } from 'node:child_process';
-import { access, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -227,7 +229,24 @@ async function inspectRenderer(target, child) {
       hasPromptForm: !!document.querySelector('#prompt-form'),
     }))()`);
     const bootstrapStatus = await waitForBootstrapStatus(cdp, child);
-    return { dom, bootstrapStatus };
+    const brainGate = await evaluate(
+      cdp,
+      `new Promise((resolve) => {
+        const input = document.querySelector('#prompt-input');
+        const form = document.querySelector('#prompt-form');
+        const send = document.querySelector('#send-btn');
+        const status = document.querySelector('#status');
+        input.value = 'create a tiny smoke file';
+        form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        setTimeout(() => resolve({
+          inputValue: input.value,
+          sendDisabled: send.disabled,
+          statusText: status.textContent,
+        }), 750);
+      })`,
+      { awaitPromise: true },
+    );
+    return { dom, bootstrapStatus, brainGate };
   } finally {
     cdp.close();
   }
@@ -251,9 +270,12 @@ const root = await mkdtemp(join(tmpdir(), 'roro-packaged-epipe-'));
 const home = join(root, 'home');
 const cwd = join(root, 'cwd');
 const userDataDir = join(root, 'userData');
+const scratchRepo = join(root, 'chosen-project');
 await mkdir(home, { recursive: true });
 await mkdir(cwd, { recursive: true });
 await mkdir(userDataDir, { recursive: true });
+await mkdir(scratchRepo, { recursive: true });
+await writeFile(join(userDataDir, 'config.json'), JSON.stringify({ workdir: scratchRepo }, null, 2), 'utf8');
 
 let run;
 try {
@@ -268,7 +290,7 @@ try {
   const target = await waitForRendererTarget(port, run.child);
   check('renderer CDP target appears while stdio pipes are closed', Boolean(target.webSocketDebuggerUrl));
 
-  const { dom, bootstrapStatus } = await inspectRenderer(target, run.child);
+  const { dom, bootstrapStatus, brainGate } = await inspectRenderer(target, run.child);
   check(
     'renderer URL is packaged file:// app.asar',
     dom.href.startsWith('file://') && dom.href.includes('/Roro.app/Contents/Resources/app.asar/'),
@@ -279,6 +301,12 @@ try {
   check(
     'bootstrap status reports forced local Ollama outage',
     bootstrapStatus.ready === false && bootstrapStatus.needsOllamaInstall === true,
+  );
+  check(
+    'typed task is blocked before dispatch when local brain is not ready',
+    /start ollama/i.test(brainGate.statusText) &&
+      brainGate.inputValue === 'create a tiny smoke file' &&
+      brainGate.sendDisabled === false,
   );
 
   await assertStillRunning(run.child, STABILITY_MS);

@@ -12,6 +12,8 @@ export interface BootstrapStatusMsg {
   missing: { name: string; bytes: number }[];
   /** Total bytes for the essential download. */
   essentialBytes: number;
+  /** Optional startup diagnostic for not-ready states that do not have a one-click action. */
+  message?: string;
 }
 
 /** One model-pull progress tick pushed MAIN->renderer (M7b). */

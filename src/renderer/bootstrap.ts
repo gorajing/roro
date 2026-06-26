@@ -20,6 +20,7 @@ import { mountConfirmChip } from './confirm/confirmChip';
 import { mountForgetPanel } from './memory/forgetPanel';
 import { mountCosmeticsStore } from './cosmetics/cosmeticsStore';
 import { mountBootstrapBanner } from './bootstrap/bootstrapBanner';
+import { createBrainReadinessGate } from './bootstrap/brainReadiness';
 import { mountWorkdirBanner } from './bootstrap/workdirBanner';
 import { ensureWorkdirReady, notifyWorkdirConfigured } from './bootstrap/workdirSetup';
 import { getCompanion } from './events/bridge';
@@ -92,9 +93,14 @@ export async function bootstrap(): Promise<void> {
   const timeline = new ActionTimeline();
   subscribeActionEvents({ character: driver, timeline, captions });
 
+  const brainGate = createBrainReadinessGate({
+    subscribe: (cb) => getCompanion()?.onBootstrapStatus?.((s) => cb(s)) ?? (() => undefined),
+    getStatus: () => getCompanion()?.getBootstrapStatus?.() ?? Promise.resolve(null),
+  });
+
   // Phase B: the floating Ask input + Stop pill (the typed magic-moment surface on the cat body).
   // Lives outside #overlay; only visible in floating mode. Its lifecycle rides the push stream.
-  mountFloatingAsk({ driver, sessionId });
+  mountFloatingAsk({ driver, sessionId, canStartTurn: () => brainGate.ensureReady() });
 
   // Phase C1: the destructive-confirm chip (a spoken/typed word can't approve `rm -rf`).
   mountConfirmChip();
@@ -271,6 +277,8 @@ export async function bootstrap(): Promise<void> {
     });
     if (!workdirReady) return;
 
+    if (!brainGate.ensureReady(setStatus)) return;
+
     // Keep the typed task on screen for the whole run (cleared on runEnd).
     turnInFlight = true;
     cancelRequested = false;
@@ -375,6 +383,7 @@ export async function bootstrap(): Promise<void> {
         isRunActive: () => runState.active,
         onRunEnd: (cb) => c?.onRunEnd?.(({ runId }) => cb(runId)) ?? (() => undefined),
       },
+      canStartTurn: () => brainGate.ensureReady(setStatus),
       onActionEvent: (cb) => c?.onActionEvent?.(cb) ?? (() => undefined),
       driver: { poke: () => driver.poke?.() },
       captions,
