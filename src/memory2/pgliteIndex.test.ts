@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createPgliteIndex } from './pgliteIndex';
+import { fileURLToPath } from 'node:url';
+import { createPgliteIndex, materializeDataUrlBundlePath } from './pgliteIndex';
 import type { IndexStore } from './indexStore';
 import type { Entry } from './types';
 
@@ -17,6 +18,19 @@ describe('pgliteIndex — derived PGlite-HNSW IndexStore', () => {
   let ix: IndexStore;
   beforeEach(async () => { ix = await createPgliteIndex({ dim: DIM }); });
   afterEach(async () => { await ix.close(); });
+
+  it('materializes data-url extension bundles to file URLs for packaged Vite main builds', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mem2ext-'));
+    try {
+      const bytes = Buffer.from('vector bundle bytes');
+      const url = new URL(`data:application/gzip;base64,${bytes.toString('base64')}`);
+      const materialized = await materializeDataUrlBundlePath(url, dir, 'vector.tar.gz');
+      expect(materialized.protocol).toBe('file:');
+      expect(readFileSync(fileURLToPath(materialized))).toEqual(bytes);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   it('upsert + vectorSearch returns owner-scoped matches ranked by cosine', async () => {
     await ix.upsert(e({ id: 'a', ownerId: 'o1' }), unit(0));
