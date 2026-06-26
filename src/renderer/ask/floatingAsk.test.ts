@@ -53,6 +53,11 @@ function setup(over: {
 const submit = (form: HTMLElement) => form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
 const started: ActionEvent = { kind: 'run.started', runId: 'r1', agent: 'codex', ts: 1 };
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r));
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
 const smokeHook = () => (
   window as unknown as {
     __roroFloatingAskSmoke?: {
@@ -105,6 +110,54 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.turnRun).toHaveBeenCalledWith({ transcript: 'add a logout route', sessionId: 'sess' });
   });
 
+  it('arms Stop immediately after an accepted submit before run.started arrives', () => {
+    h.pill.click();
+    h.input.value = 'do it';
+    submit(h.form);
+    expect(h.form.classList.contains('tasked')).toBe(true);
+    expect(h.stop.classList.contains('armed')).toBe(true);
+    expect(h.stop.textContent).toBe('Stop');
+  });
+
+  it('pre-run.started Stop click cancels the latest turn with no run id and shows Stopping feedback', () => {
+    h.pill.click();
+    h.input.value = 'do it';
+    submit(h.form);
+    h.stop.click();
+    expect(h.cancelTask).toHaveBeenCalledWith(undefined);
+    expect(h.stop.classList.contains('armed')).toBe(true);
+    expect(h.stop.textContent).toBe('Stopping...');
+  });
+
+  it('reissues targeted cancel if turnRun resolves after a pre-run Stop click', async () => {
+    const turn = deferred<{ runId: string }>();
+    h.turnRun.mockReturnValueOnce(turn.promise);
+    h.pill.click();
+    h.input.value = 'do it';
+    submit(h.form);
+    h.stop.click();
+    expect(h.cancelTask).toHaveBeenCalledWith(undefined);
+
+    turn.resolve({ runId: 'late-run' });
+    await flush();
+    expect(h.cancelTask).toHaveBeenLastCalledWith('late-run');
+  });
+
+  it('does not reissue targeted cancel after runEnd has reset the accepted turn', async () => {
+    const turn = deferred<{ runId: string }>();
+    h.turnRun.mockReturnValueOnce(turn.promise);
+    h.pill.click();
+    h.input.value = 'do it';
+    submit(h.form);
+    h.stop.click();
+    h.fireRunEnd();
+
+    turn.resolve({ runId: 'late-run' });
+    await flush();
+    expect(h.cancelTask).toHaveBeenCalledTimes(1);
+    expect(h.cancelTask).toHaveBeenCalledWith(undefined);
+  });
+
   it('run.started arms the Stop pill; the universal runEnd collapses the Ask', () => {
     h.pill.click();
     h.input.value = 'do it';
@@ -130,6 +183,21 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.error.textContent).toContain('RORO_CODEX_BIN');
     expect(h.error.textContent).not.toContain('Turn failed');
     expect(h.error.textContent).not.toContain('spawn codex ENOENT');
+  });
+
+  it('shows neutral stopped copy instead of a red task failure after user cancellation', () => {
+    h.pill.click();
+    h.input.value = 'do it';
+    submit(h.form);
+    h.stop.click();
+    h.fireAction({ kind: 'run.failed', runId: 'r1', ok: false, error: 'stopped', ts: 2 });
+    h.fireRunEnd();
+    expect(h.form.classList.contains('collapsed')).toBe(true);
+    expect(h.stop.classList.contains('armed')).toBe(false);
+    expect(h.error.hidden).toBe(false);
+    expect(h.error.classList.contains('neutral')).toBe(true);
+    expect(h.error.textContent).toBe('Stopped.');
+    expect(h.error.textContent).not.toContain('Task hit a problem');
   });
 
   it('clears the previous failure when the user summons Ask again', () => {
@@ -212,15 +280,19 @@ describe('floatingAsk shell (jsdom)', () => {
     smokeHook()?.startTask('  add a logout route  ');
     expect(h.form.classList.contains('tasked')).toBe(true);
     expect(h.pill.textContent).toBe('tasked: add a logout route');
+    expect(h.stop.classList.contains('armed')).toBe(true);
 
+    h.stop.click();
+    expect(smokeHook()?.state().cancelRequests).toEqual([undefined]);
     smokeHook()?.action(started);
     expect(h.stop.classList.contains('armed')).toBe(true);
     h.stop.click();
-    expect(smokeHook()?.state().cancelRequests).toEqual(['r1']);
+    expect(smokeHook()?.state().cancelRequests).toEqual([undefined, 'r1']);
 
     smokeHook()?.action({ kind: 'run.failed', runId: 'r1', ok: false, error: 'spawn codex ENOENT', ts: 2 });
     expect(h.stop.classList.contains('armed')).toBe(false);
-    expect(h.error.textContent).toContain('Task hit a problem');
+    expect(h.error.textContent).toBe('Stopped.');
+    expect(h.error.classList.contains('neutral')).toBe(true);
 
     smokeHook()?.runEnd();
     expect(h.form.classList.contains('collapsed')).toBe(true);

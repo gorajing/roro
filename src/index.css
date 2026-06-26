@@ -382,6 +382,11 @@ body.floating-window #floating-error {
 body.floating-window #floating-error:not([hidden]) {
   display: block;
 }
+body.floating-window #floating-error.neutral {
+  color: #f3fbf6;
+  background: rgba(24, 72, 50, 0.88);
+  border-color: rgba(120, 220, 160, 0.45);
+}
 body.floating-window #floating-stop.armed + #floating-error:not([hidden]) {
   bottom: 88px;
 }
