@@ -1,4 +1,7 @@
-> ⚠️ **SUPERSEDED (2026-06-21) — see [HANDOFF.md](HANDOFF.md).** This is the hardened $25-Pro/sync model, which was **rejected** for a **free-core + cosmetics** model (alternate pets / items / voice packs). Kept only as the record of why sync was rejected.
+> **HISTORICAL / SUPERSEDED — see [HANDOFF.md](HANDOFF.md) and [PUBLIC.md](PUBLIC.md).** This is the hardened
+> $25-Pro/sync model, kept as the record of why cloud sync/account monetization was rejected for v0. The current launch
+> canon is local-first, job-first, and trust/memory-first; cosmetics or voice packs are future validation hypotheses, not
+> the v0 wedge or public-readiness path.
 
 # Roro Monetization Spec — v2 (Hardened)
 

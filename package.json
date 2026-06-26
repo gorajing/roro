@@ -2,7 +2,7 @@
   "name": "roro",
   "productName": "Roro",
   "version": "1.0.0",
-  "description": "A pixel-cat coding agent with a face, a voice, and a memory.",
+  "description": "A private local coding companion that remembers how you work.",
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {

@@ -1,21 +1,29 @@
 # Roro
 
-**A black pixel-cat coding agent with a face, a voice, and a memory.**
+**The private, local coding companion that remembers how you work.**
 
-Roro is an Electron app where an animated black pixel cat listens to a task,
-thinks through it with a **local Ollama brain**, drives a real coding agent,
-narrates the work as it happens, and stores what happened in **local PGlite +
-pgvector memory** — all on-device by default.
+Roro is an Electron app where an animated black pixel cat helps with real coding
+work in your chosen repo. It thinks through requests with a **local Ollama
+brain**, dispatches Codex or Claude through one executor stream, narrates what is
+happening, and stores durable working preferences in encrypted local
+files-as-truth memory with a PGlite-HNSW index.
 
-Built for the June 19 Midsummer Multimodal AI Hackathon; now **local-first**.
+The v0 promise is intentionally narrow: local-first coding help that gets better
+because it remembers how *you* work.
 
 ```text
 ask -> recall memory (local) -> think on local Ollama -> run Codex or Claude -> remember the result (local)
 ```
 
-Post-demo, the product direction is pet-first: Roro should become the best
-desktop AI pet, with coding as one useful trick. See
-[`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md).
+Privacy promise: Roro's default path is on-device, encrypted-by-default, and
+does not require accounts, telemetry, or cloud model keys. The Nebius provider
+and Claude executor are optional power-user paths; the public launch story is
+local Ollama + local memory + user-controlled project access.
+
+The long-term pet/companion vision is real, but the launch strategy is
+job-first: the coding job earns daily use, and the "being known" feeling emerges
+from continuity and corrected memory. See [`PUBLIC.md`](PUBLIC.md) for the path
+to public readiness and [`HANDOFF.md`](HANDOFF.md) for current engineering truth.
 
 ## Why This Exists
 
@@ -102,6 +110,10 @@ npm install
 npm start
 ```
 
+In a packaged build, Roro asks you to choose the project folder it should work
+on, stores that choice in `userData/config.json`, and reuses it after relaunch.
+In development, `RORO_WORKDIR` is still the fastest explicit override.
+
 On boot Roro runs a non-blocking brain preflight; if Ollama is down or a model is
 missing, the window still opens and a clear diagnostic appears (it never silently
 falls back to the cloud). See
@@ -119,14 +131,16 @@ right-click to mute.** The cat's body carries only affection + move — talk and
 tasking live off the body (see the interaction design spec at
 [`docs/superpowers/specs/2026-06-20-nero-interaction-design.md`](docs/superpowers/specs/2026-06-20-nero-interaction-design.md)).
 The floating window stays above normal windows and across macOS Spaces,
-including full-screen apps. Use the normal app window when you need to give Roro a
-task (typed prompt), call controls, captions, and the action timeline.
+including full-screen apps. The floating Ask pill is the compact task surface;
+the normal app window keeps the full prompt, controls, captions, memory panel,
+and action timeline visible.
 
 ## Configuration
 
 Roro is local-first and needs **no keys** for the default (Ollama + PGlite) path.
-A local `.env` (see [`.env.example`](.env.example)) can tune models or opt into the
-Nebius cloud escape hatch:
+The packaged app stores the chosen working repo in `userData/config.json`; a
+local `.env` (see [`.env.example`](.env.example)) is for development overrides,
+model tuning, and optional cloud/executor paths:
 
 ```bash
 # Brain provider: 'ollama' (default, local) or 'nebius' (cloud escape hatch).
@@ -143,6 +157,7 @@ NEBIUS_MODEL=deepseek-ai/DeepSeek-V3.2
 NEBIUS_VISION_MODEL=Qwen/Qwen2.5-VL-72B-Instruct
 NEBIUS_EMBED_MODEL=Qwen/Qwen3-Embedding-8B
 
+# Optional dev override. Packaged first-run uses the native Choose Project flow.
 RORO_WORKDIR=/absolute/path/to/scratch-git-repo
 ANTHROPIC_API_KEY=...           # optional, only for the Claude executor
 ```
@@ -160,8 +175,9 @@ flags, macOS permissions, and the full live-run checklist.
 
 ```bash
 npx tsc --noEmit -p tsconfig.json
-npx vitest run                   # 190 passing (+4 opt-in live-brain tests, skipped without OLLAMA_AVAILABLE=1)
+npx vitest run --no-file-parallelism
 npm run verify:floating          # on-screen smoke for the floating Ask (needs a display)
+npm run verify:packaged-onboarding
 npx electron-forge package
 ```
 
@@ -172,6 +188,7 @@ What is working:
 - Electron app builds and packages
 - typed IPC between renderer and main
 - procedural pixel cat, transparent floating mode, and state effects
+- packaged workdir onboarding: native project picker, persisted `userData/config.json`, and typed/floating Ask gates
 - **local Ollama brain** (decide/vision/embeddings) — verified end-to-end against a
   live daemon; Nebius remains as a `BRAIN_PROVIDER=nebius` escape hatch
 - **local PGlite + pgvector memory** (owner-scoped, survives restarts)

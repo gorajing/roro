@@ -84,7 +84,7 @@ VALID + `safeStorage.isEncryptionAvailable()=true` + creates its keychain item �
 - **Human confirmation (the real Phase-0 exit):** a non-founder runs a build, has a short session, **fully quits**,
   relaunches the **same build**, and observes the fact recalled. (Within-build quit/relaunch works under ad-hoc; this is
   doable today without the cert.)
-- **The Developer-ID + notarized build** (founder provisions the cert; `APPLE_ID`/`APPLE_PASSWORD`/`APPLE_TEAM_ID`; the
+- **The Developer-ID + notarized build** (cert is present locally; `APPLE_ID`/`APPLE_PASSWORD`/`APPLE_TEAM_ID`; the
   `macSigningConfig` + `entitlements.mac.plist` + notarytool pipeline is wired). This is for **(a)** a Gatekeeper-clean
   install on a clean second Mac and **(b)** memory durability **across updates** (stable team identity vs. per-build
   ad-hoc cdhash) — *not* for making memory work at all.
@@ -93,16 +93,20 @@ VALID + `safeStorage.isEncryptionAvailable()=true` + creates its keychain item �
 outside `npm start`); and the Developer-ID notarized build installs Gatekeeper-clean on a clean Mac.
 
 ### Phase 1 — Make the packaged app runnable without a terminal (the onboarding spine)
-**Goal:** take a stranger from launch → a successful coding turn, no shell. *(All memory-architecture-independent —
-buildable in parallel with Phase 0.)*
-- `userData/config.json` read/write for `RORO_WORKDIR` (mirror the `identity.ts` `app.getPath('userData')` pattern);
-  `resolveWorkdir` and `window.ts` source it instead of only `process.env`.
-- First-run flow: no workdir → native folder-picker ("Which project should Roro work on?") → persist; a Settings entry to
-  change it later. Not skippable.
-- Wire the **existing** `bootstrapBanner` into the boot path so Ollama-down / models-missing is clear and the one-click
-  download is reachable — gate the first turn until the brain is ready, or make "not ready" an unmistakable in-UI block.
-- Replace the raw "Roro has no working repo set" throw with an in-UI actionable prompt.
-- Branded `appBundleId` + app icon in `forge.config.ts` (`.icns` from a 1024px pixel-cat PNG).
+**Status: PARTIALLY LANDED in PR #69.** The packaged app now has a persisted workdir spine:
+`configStore`, `config:get`, `config:chooseWorkdir`, `workdirBanner`, typed/floating Ask gates via
+`ensureWorkdirReady`, and `npm run verify:packaged-onboarding`. The app no longer depends on a terminal `.env` path for
+the happy packaged first-run workdir flow.
+
+**Goal:** take a stranger from launch → a successful coding turn, no shell. *(All memory-architecture-independent.)*
+- ✅ `userData/config.json` read/write for the working repo; `resolveWorkdir` honors explicit env first, then persisted
+  config, then the explicit `RORO_ALLOW_CWD=1` dev fallback.
+- ✅ First-run flow: no workdir → native folder-picker ("Which project should Roro work on?") → persist; typed and floating
+  tasks are gated until a project exists.
+- ✅ Raw "Roro has no working repo set" is no longer the normal user path; the UI asks for a project before dispatch.
+- ✅ Branded `appBundleId` is set in `forge.config.ts` (`com.jinchoi.roro`).
+- Remaining: a Settings entry to change the repo later, stronger "brain not ready" gating before the first coding turn,
+  and a real app icon in Dock/Launchpad (`.icns` from a 1024px pixel-cat PNG).
 
 **Exit:** a stranger who has never touched a terminal launches → is guided to pick a repo → sees honest model status with
 one-click download → types a task the executor runs to completion. Dock shows the cat icon.
@@ -112,6 +116,8 @@ one-click download → types a task the executor runs to completion. Dock shows 
 Phase 0 confirms memory persists signed.)*
 - **Expose the correction loop** (the moat): `reinforceFact` / `replaceFact` / `supersede` over the preload bridge + IPC;
   extend the Forget panel so a recalled fact can be **corrected/verified**, not only deleted. Privacy *with* agency.
+- See [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md) for the build contract: correction lives in the existing
+  Memory panel, MAIN owns owner-scope validation and fact-key lookup, and the renderer never supplies trusted fact keys.
 - Never recall a `- true` / bare-boolean line (the guard prevents storage; ensure recall never surfaces noise).
 - Nudge DECIDE toward **clarify** on referent-less requests ("fix it", "make it better") via the system prompt — bias to
   asking over guessing. Re-run the eval to confirm clarify rose without tanking decide accuracy.
@@ -158,8 +164,8 @@ v0 is **one thing done well: the remembering coding companion.** Deliberately cu
 
 | Decision | Recommendation |
 |---|---|
-| **Provision the paid Apple Developer Program + Developer ID cert** | **Do this FIRST, this week.** ~$99/yr. The keystone — it unblocks Gatekeeper-clean install AND encrypted memory at once. The pipeline is coded and waiting on exactly this one input. |
-| **Bundle ID + icon** | `com.jinchoi.roro` + the black pixel cat you already have, rendered at 1024px → `.icns`. Don't design a new brand; ship the cat. |
+| **Apple Developer Program + Developer ID cert** | ✅ **Done locally** (`Developer ID Application: Jin Young Choi (GNG2M47BD7)`). Next: run `npm run make` with `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID`, and an app-specific `APPLE_PASSWORD`, then validate the notarized build on a clean Mac. |
+| **Bundle ID + icon** | Bundle ID is now `com.jinchoi.roro`; remaining is the black pixel cat rendered at 1024px → `.icns`. Don't design a new brand; ship the cat. |
 | **`RORO_WORKDIR` setup UX** | A mandatory first-launch native folder-picker (the gate between "launched" and "can code") + a Settings entry to change later. |
 | **Debut channel** | A small trusted cohort first — measure attachment (does the moment land, do they reopen), not vanity downloads. Broaden only after it lands for strangers. |
 | **The go/no-go bar** | Phase 0's exit, hardened: a non-founder, clean Mac, signed `.dmg`, fact recalled across a full quit. If that one thing isn't true, **nothing ships.** |
@@ -170,11 +176,12 @@ v0 is **one thing done well: the remembering coding companion.** Deliberately cu
 
 The magic moment (encrypted memory recall) **not surviving** the jump from `npm start` to a signed packaged build. It's
 invisible in development and only manifests in a stranger's hands; if it fails, the entire "being known" moat silently
-evaporates. The plan front-loads it as **Phase 0** — gated only on the cert (a founder action), provable in an afternoon.
+evaporates. The plan front-loads it as **Phase 0** — now gated on the notarized `make` credentials and clean-Mac
+validation, provable in an afternoon.
 
 ## The first thing to do
 
-**Provision the paid Apple Developer Program + create a Developer ID Application certificate**, then run `npm run make`
-with the three creds set to produce the first signed + notarized build. Nothing else on the path can be *truly validated*
-until this build exists. The memory-independent Phase-1 spine (configStore, onboarding, icon, README, clarify nudge) can be
-built in parallel; the memory-dependent correction loop waits for Phase 0 to confirm memory persists signed.
+**Produce the first Developer-ID signed + notarized build**, then test it on a clean second Mac:
+`APPLE_TEAM_ID=GNG2M47BD7 APPLE_ID=<paid Apple ID> APPLE_PASSWORD=<app-specific password> npm run make`.
+Nothing else on the path can be *truly validated* until this build exists. In parallel, finish the remaining Phase-1 polish
+(settings, icon, readiness gate) and build Phase 2 from [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md).

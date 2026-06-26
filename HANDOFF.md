@@ -3,7 +3,7 @@
 > **Purpose:** everything a fresh session (or a new engineer) needs to pick up Roro without re-deriving it.
 > What it is, how it's built, what's done, what's broken, what we learned, and what to do next.
 >
-> **This supersedes the 2026-06-21 handoff** (which led with "monetized by cosmetics" — now reconsidered; see §1 + §6). **Canonical companions:** [`PUBLIC.md`](./PUBLIC.md) = the launch plan (Path to Public). [`README.md`](./README.md) = user-facing. `docs/` = deep design history (**partly stale** — predates two pivots; see §11). When they conflict, **trust the most recent commit + this file + PUBLIC.md.**
+> **This supersedes the 2026-06-21 handoff** (which led with a cosmetics-first monetization idea — now reconsidered; see §1 + §6). **Canonical companions:** [`PUBLIC.md`](./PUBLIC.md) = the launch plan (Path to Public). [`README.md`](./README.md) = user-facing. `docs/` = deep design history (**partly stale** — predates two pivots; see §11). When they conflict, **trust the most recent commit + this file + PUBLIC.md.**
 
 ---
 
@@ -13,8 +13,8 @@
 
 - **The product thesis:** the magic moment is **recalled memory** — after a restart, offline, the cat weaves what it remembers about how you work into its response ("I'll set up the signup route *with testing in place*"). Voice/cuteness are the frame; the recalled sentence is the payload.
 - **The strategy (job-first):** lead with the **coding job** (it justifies the install + builds the daily habit); let *being known* be the emergent reward. **job → habit → memory → moat.** The moat is the per-user **encrypted on-device memory** + a **human-in-the-loop correction loop** (un-clonable, model-independent).
-- **State:** the engine is strong and proven. The **biggest launch blocker is fixed** — encrypted memory now works in a packaged build (was a forge signing bug, *not* the cert). 30 PRs merged this session (#38–#67), 87 test files / ~548 tests, CI green on `main`.
-- **Next:** finish the **Path to Public** in [`PUBLIC.md`](./PUBLIC.md). Cheapest next step is a **human confirmation** that a packaged build remembers across quit/relaunch; then build the **Phase-1 onboarding spine**.
+- **State:** the engine is strong and proven. The **biggest launch blocker is fixed** — encrypted memory now works in a packaged build (was a forge signing bug, *not* the cert). The Phase-1 packaged workdir onboarding spine landed in PR #69, and CI is green on `main`.
+- **Next:** finish the **Path to Public** in [`PUBLIC.md`](./PUBLIC.md). Cheapest next step is a **human confirmation** that a packaged build remembers across quit/relaunch; then produce the Developer-ID notarized build and build the Phase-2 trust loop.
 
 ---
 
@@ -28,7 +28,7 @@ A developer's ambient coding companion shaped like a pet you bond with: you **ta
 - **THE MOAT:** the per-user **encrypted, on-device memory** (a per-user switching cost, *not* an aggregate network effect — **never pool/cloud it**), deepened by a **human-in-the-loop correction loop** (user-confirmed facts are 100% true, model-independent, un-clonable).
 - **ANTI-GOALS:** no cloud/accounts/telemetry; **cosmetics LAST** (a future revenue layer on the bond, *not* the product — the old handoff's "monetize via cosmetics" headline is downgraded to a deferred Phase-3+ item); no engagement dark-patterns; don't try to *beat* Cursor at raw codegen (compete on memory + privacy + continuity); encrypt-by-default + fail-loud stay.
 
-> **Still-valid locked direction** (from the prior handoff): pet-first; ships to developers (organic-pull retains); OSS + local-first + own-the-moat; BYO-keys + near-zero-idle (idle pet ≈ $0); voice-forward / type-default; stay on Electron (Tauri's macOS WKWebView breaks mic/screen/transparency).
+> **Still-valid locked direction** (from the prior handoff): embodied companion, ships to developers (organic-pull retains), OSS + local-first + own-the-moat, BYO-keys + near-zero-idle (idle pet ≈ $0), voice-forward / type-default, stay on Electron (Tauri's macOS WKWebView breaks mic/screen/transparency). The launch narrative is **job-first**, not pet-first: the coding job earns the habit; the companion feeling emerges from memory and continuity.
 
 ---
 
@@ -66,7 +66,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ---
 
-## 3. What's been done (the work log — 30 PRs, #38–#67, all TDD'd + reviewed + CI-green)
+## 3. What's been done (the work log — PRs #38–#69, all TDD'd + reviewed + CI-green)
 - **Voice (#38–#41):** on-device TTS (Kokoro) + lip-sync, barge-in, voice packs — license-clean. **(Off by default + CUT from v0.)**
 - **M1 eval (#42):** the brain eval harness + `baseline.json`.
 - **M2 / M2.5 (#43, #44):** fail-loud guardrails + the deterministic admission gate (`isPlausiblePreference`).
@@ -80,6 +80,8 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - **The magic moment, observable + proven (#63):** extraction trace (`gated/noop/stored/reinforced/failed` via `RORO_TRACE`) + `crosslaunch.durability.test.ts` (proves restart + files-as-truth rebuild) + forgetPanel graceful errors.
 - **Extraction value quality (#65):** stopped behavioral prefs collapsing to `"true"` (a deterministic guard + a prompt nudge + an eval value-quality axis). **20%→40%.**
 - **Packaged memory FIXED (#67):** the big one — see §5.
+- **Current handoff refreshed (#68):** this file became the live engineering handoff after the packaged-memory fix.
+- **Packaged workdir onboarding spine (#69):** `configStore`, workdir IPC, first-run folder picker, typed/floating Ask workdir gates, ad-hoc cookie-encryption hardening, and `npm run verify:packaged-onboarding`.
 
 ---
 
@@ -100,9 +102,9 @@ Every turn flows through **one** path in `orchestrator.ts`:
 **Weak / failed / open:**
 - **3B behavioral-extraction ceiling (~40%).** Fix is the **correction loop** (model-independent), **not a bigger brain.** The loop is **not yet exposed to the UI** (only `profile()`/`forget()` reach the renderer; `reinforceFact`/`replaceFact`/`supersede` exist in the store, unwired).
 - **DECIDE clarify (1/5)** — prompt-only fixable, not done.
-- **Packaged-app config** — a packaged build doesn't read `.env`, so `RORO_WORKDIR` is unset → the executor refuses. Needs a `userData/config.json` + folder-picker. (Phase 1.)
+- **Packaged-app config / onboarding spine landed in PR #69.** Remaining Phase-1 polish: Settings/change-project entry, stronger brain-readiness gate before the first coding turn, and Dock/Launchpad icon.
 - **Ad-hoc cross-build memory** — the #67 fix makes a *single* build work, but ad-hoc `cdhash` changes per build → the keychain ACL doesn't survive a rebuild/update. **Developer-ID (stable team identity) is needed for update durability + a Gatekeeper-clean install.**
-- **No first-run onboarding gate;** default bundle id / no icon; voice + Live2D half-baked (**cut from v0**).
+- **No app icon yet;** voice + Live2D half-baked (**cut from v0**).
 
 ---
 
@@ -123,15 +125,16 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ## 7. The plan → see [`PUBLIC.md`](./PUBLIC.md) (authoritative)
 **Definition of done:** a stranger installs a signed build (no Gatekeeper warning), runnable without a terminal, and observes a *correct* recalled fact across a full quit/relaunch.
-**Phases:** **0** prove-the-moment-on-a-packaged-build (the `safeStorage` half is **DONE**; remaining = human confirmation + the Developer-ID build for Gatekeeper/durability) → **1** runnable-without-a-terminal (configStore + folder-picker + readiness gate + bundle id/icon — *all buildable now, no cert*) → **2** trust (expose the **correction loop** + clarify nudge + README job+privacy-first + screen-capture tell) → **3** debut to a small cohort, measure week-2 reopen.
+**Phases:** **0** prove-the-moment-on-a-packaged-build (the `safeStorage` half is **DONE**; remaining = human confirmation + the Developer-ID build for Gatekeeper/durability) → **1** runnable-without-a-terminal (workdir spine **landed**; settings/icon/readiness polish remain) → **2** trust (expose the **correction loop** per [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md) + clarify nudge + README job+privacy-first + screen-capture tell) → **3** debut to a small cohort, measure week-2 reopen.
 **Cut from v0:** voice, Live2D, cosmetics store, Windows/Linux, the cloud-brain option, ambient/clipboard.
 
 ---
 
 ## 8. What to do next (concrete first moves)
 1. **(Recommended, cheapest) Human-confirm Phase 0:** `npm run package`, short session, **fully quit**, relaunch the *same* build, watch it remember. Unblocked, no cert.
-2. **Build the Phase-1 spine** (no cert; memory-independent): `userData/config.json` for `RORO_WORKDIR` (mirror `identity.ts`); a first-run native folder-picker; gate the first turn on the existing `bootstrapBanner` readiness; branded `appBundleId` (`com.jinchoi.roro`) + icon.
-3. **Phase 2** (after Phase 0 human-confirmed): expose the **correction loop** (`reinforceFact`/`replaceFact`/`supersede` over IPC + a "fix this" UI) — the strategy's #1 moat + the real fix for the 40% ceiling. Plus the DECIDE clarify few-shot.
+2. **Produce the Developer-ID notarized build:** `APPLE_TEAM_ID=GNG2M47BD7` + `APPLE_ID` + app-specific `APPLE_PASSWORD` + `npm run make`, then validate install + memory recall on a clean second Mac.
+3. **Finish Phase-1 polish:** Settings/change-project entry, stronger model-readiness gate before the first coding turn, and the real `.icns` app icon.
+4. **Phase 2 trust loop:** expose `fixFact` / `verifyFact` / `factSource` through MAIN-owned IPC and evolve the Memory panel into see/fix/verify/forget — see [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md). Plus the DECIDE clarify few-shot.
 
 ---
 
@@ -139,7 +142,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 | Decision | Status / recommendation |
 |---|---|
 | **Apple Developer Program + Developer ID cert** | ✅ **DONE** — paid-enrolled; `Developer ID Application: Jin Young Choi (GNG2M47BD7)` in the keychain (intermediate CA present). For Gatekeeper-clean notarized build + cross-update durability, **not** for memory to work. Build it: `APPLE_TEAM_ID=GNG2M47BD7` + `APPLE_ID` (paid email) + `APPLE_PASSWORD` (app-specific pw from account.apple.com → Sign-In and Security) + `npm run make`. |
-| **Bundle id + icon** | Recommend `com.jinchoi.roro` + the existing pixel cat at 1024px → `.icns`. Founder call. |
+| **Bundle id + icon** | Bundle id is now `com.jinchoi.roro`; remaining is the existing pixel cat at 1024px → `.icns`. |
 | **Debut channel** | Small trusted cohort first (measure week-2 reopen), not a broad post. |
 | **40% behavioral ceiling: model swap?** | **No** as strategy — fix is the correction loop. Keep the brain swappable. |
 | **Stated-only vs learn-from-context extraction** | Open product-identity call. |
@@ -155,7 +158,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - **Don't commit `.env`** (gitignored). The **frozen `gorajing/companion` repo** must not be touched.
 - **Verify before claiming done** — "the types check" is not done; "I observed it working" is.
 - **Key commands:** `npm test`, `npm run lint`, `npx tsc --noEmit -p tsconfig.json`, `npm run package` (.app), `npm run make` (+ distributables + signing), `npm start` (dev — memory works here), `OLLAMA_AVAILABLE=1 npx vitest run crosslaunch.live` (live magic-moment smoke), `npm run eval:brain` (scorecard), `EVAL_SET=behavioral npm run eval:brain`.
-- **State lives in:** memory + owner.json → `app.getPath('userData')` (override `RORO_DB_DIR`). The agent's working repo → `RORO_WORKDIR` (`~/Code/roro-workspace` in the user's `.env`).
+- **State lives in:** memory + owner.json + packaged config → `app.getPath('userData')` (override `RORO_DB_DIR`). The agent's working repo resolves from explicit `RORO_WORKDIR`, then persisted `userData/config.json`, then the explicit `RORO_ALLOW_CWD=1` dev fallback.
 
 ---
 
@@ -164,4 +167,4 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ---
 
-*Reflects the repo at PR #67 (main green). The one thing to internalize: the engine works and the magic moment is real + proven; the work ahead is making it **reachable and trustworthy for a stranger** — and validating, cheaply and early, every assumption the plan rests on.*
+*Reflects the repo at PR #69 (main green). The one thing to internalize: the engine works, the packaged workdir onboarding spine is real, and the magic moment is real + proven; the work ahead is making it **reachable and trustworthy for a stranger** — and validating, cheaply and early, every assumption the plan rests on.*

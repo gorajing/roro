@@ -1,4 +1,30 @@
-# On-screen verification (WS4) — Phase B floating Ask + Stop
+# Verification
+
+Roro has two opt-in Electron smokes that observe real renderer behavior outside jsdom. They are not in CI because they
+need a GUI/app launch environment, but they are the right gates when changing first-run or floating-window UX.
+
+## Packaged onboarding smoke
+
+```sh
+npm run verify:packaged-onboarding
+```
+
+`scripts/smoke-packaged-onboarding.mjs` launches the packaged app with disposable `HOME`, disposable working directory,
+and an explicit Chromium `--user-data-dir`. It asserts the app loads from the packaged `file://...app.asar` path, the
+renderer is nonblank, the first-run workdir banner is visible, the bridge reports an unset workdir, choosing a project
+persists `userData/config.json`, relaunch hydrates the config, and the banner stays hidden once configured.
+
+Run this after changes to:
+
+- `src/main/configStore.ts`
+- `src/main/workdir.ts`
+- `src/main/ipc.ts` workdir channels
+- `src/preload.ts` workdir bridge
+- `src/renderer/bootstrap/workdir*.ts`
+- `scripts/smoke-packaged-onboarding.mjs`
+- packaged startup/signing/fuse behavior in `forge.config.ts` or `src/build/macSigning.ts`
+
+## On-screen floating Ask + Stop
 
 The floating Ask (`#floating-ask`) and Stop pill (`#floating-stop`) carry their decision logic in pure
 modules (`askMachine`, `runLifecycle`) that are unit-tested, plus a jsdom DOM shell test. But **jsdom
