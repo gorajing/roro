@@ -1,12 +1,12 @@
-// scripts/smoke-floating-live-turn.mjs — real floating Ask turn smoke.
+// scripts/smoke-floating-live-turn.mjs — real live turn smoke for floating Ask or the typed prompt.
 //
 // This is the live counterpart to smoke-floating-ask.mjs. It launches the real
-// Electron renderer in floating mode, drives the visible Ask form, and lets the
-// product bridge call window.companion.turnRun. By default it starts a tiny fake
-// Ollama server for deterministic answer-turn coverage; set
-// RORO_FLOATING_LIVE_USE_REAL_OLLAMA=1 to use a real local daemon. It does NOT
-// enable RORO_FLOATING_SMOKE, RORO_DEBUG_BRIDGE, runTask, or any direct
-// brain/memory debug handle.
+// Electron renderer, drives the visible form, and lets the product bridge call
+// window.companion.turnRun. By default it starts a tiny fake Ollama server for
+// deterministic answer-turn coverage; set RORO_FLOATING_LIVE_USE_REAL_OLLAMA=1
+// or RORO_LIVE_USE_REAL_OLLAMA=1 to use a real local daemon. It does NOT enable
+// RORO_FLOATING_SMOKE, RORO_DEBUG_BRIDGE, runTask, or any direct brain/memory
+// debug handle.
 
 import { spawn } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -18,12 +18,17 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { stripV0DeferredEnv } from './v0-deferred-env.mjs';
 
 const PORT = process.env.RORO_DEBUG_PORT || String(await freePort());
-const BOOT_TIMEOUT_MS = Number(process.env.RORO_FLOATING_LIVE_BOOT_TIMEOUT_MS || 180_000);
-const TURN_TIMEOUT_MS = Number(process.env.RORO_FLOATING_LIVE_TURN_TIMEOUT_MS || 180_000);
-const CDP_COMMAND_TIMEOUT_MS = Number(process.env.RORO_FLOATING_LIVE_CDP_TIMEOUT_MS || 60_000);
-const USE_REAL_OLLAMA = process.env.RORO_FLOATING_LIVE_USE_REAL_OLLAMA === '1';
+const SURFACE = process.env.RORO_LIVE_SURFACE || 'floating';
+if (!['floating', 'typed'].includes(SURFACE)) {
+  throw new Error(`RORO_LIVE_SURFACE must be "floating" or "typed" (got ${JSON.stringify(SURFACE)})`);
+}
+const IS_TYPED = SURFACE === 'typed';
+const BOOT_TIMEOUT_MS = Number(process.env.RORO_LIVE_BOOT_TIMEOUT_MS || process.env.RORO_FLOATING_LIVE_BOOT_TIMEOUT_MS || 180_000);
+const TURN_TIMEOUT_MS = Number(process.env.RORO_LIVE_TURN_TIMEOUT_MS || process.env.RORO_FLOATING_LIVE_TURN_TIMEOUT_MS || 180_000);
+const CDP_COMMAND_TIMEOUT_MS = Number(process.env.RORO_LIVE_CDP_TIMEOUT_MS || process.env.RORO_FLOATING_LIVE_CDP_TIMEOUT_MS || 60_000);
+const USE_REAL_OLLAMA = (process.env.RORO_LIVE_USE_REAL_OLLAMA || process.env.RORO_FLOATING_LIVE_USE_REAL_OLLAMA) === '1';
 const EXPECTED = 'roro live turn ok';
-const STOP_TRANSCRIPT = 'roro stop before executor ok';
+const STOP_TRANSCRIPT = IS_TYPED ? 'roro typed stop before executor ok' : 'roro stop before executor ok';
 const EXECUTOR_FILE = 'roro-floating-executor-smoke.txt';
 const EXECUTOR_CONTENT = 'executor turn ok\n';
 
@@ -69,6 +74,23 @@ function sendJson(res, body) {
   res.end(JSON.stringify(body));
 }
 
+function currentTranscriptFromPrompt(prompt) {
+  const prefix = 'USER SAID: ';
+  const lines = prompt.split(/\r?\n/);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line.startsWith(prefix)) continue;
+    const raw = line.slice(prefix.length).trim();
+    try {
+      const parsed = JSON.parse(raw);
+      return typeof parsed === 'string' ? parsed : raw;
+    } catch {
+      return raw;
+    }
+  }
+  return prompt;
+}
+
 async function startFakeOllama() {
   const port = await freePort();
   const server = createHttpServer(async (req, res) => {
@@ -95,8 +117,10 @@ async function startFakeOllama() {
         const prompt = Array.isArray(body.messages)
           ? body.messages.map((message) => message?.content ?? '').join('\n')
           : '';
-        const isExecutorTurn = prompt.includes(EXECUTOR_FILE);
-        const isStoppedTurn = !isExecutorTurn && prompt.includes(STOP_TRANSCRIPT);
+        const transcript = currentTranscriptFromPrompt(prompt);
+        const isExecutorTurn = transcript.includes(EXECUTOR_FILE);
+        const isAnswerTurn = !isExecutorTurn && transcript.includes(EXPECTED);
+        const isStoppedTurn = !isExecutorTurn && !isAnswerTurn && transcript.includes(STOP_TRANSCRIPT);
         if (isStoppedTurn) await sleep(3000);
         const decision = JSON.stringify(
           isStoppedTurn
@@ -339,9 +363,9 @@ async function waitFor(cdp, expression, timeoutMs, label, params = {}) {
   throw new Error(`${label} timed out (last=${JSON.stringify(lastValue)})`);
 }
 
-const root = await mkdtemp(join(tmpdir(), 'roro-floating-live-turn-'));
+const root = await mkdtemp(join(tmpdir(), IS_TYPED ? 'roro-typed-live-turn-' : 'roro-floating-live-turn-'));
 const appCwd = process.cwd();
-const projectDir = process.env.RORO_FLOATING_LIVE_WORKDIR || join(root, 'project');
+const projectDir = process.env.RORO_LIVE_WORKDIR || process.env.RORO_FLOATING_LIVE_WORKDIR || join(root, 'project');
 const dbDir = join(root, 'memory');
 const fakeCodexBin = join(root, 'fake-codex');
 const fakeCodexArgsFile = join(root, 'fake-codex-args.json');
@@ -353,7 +377,7 @@ const appEnv = stripV0DeferredEnv({
   BRAIN_PROVIDER: 'ollama',
   ...(fakeOllama ? { OLLAMA_HOST: fakeOllama.host, OLLAMA_TIMEOUT_MS: '5000' } : {}),
   RORO_DEBUG_PORT: PORT,
-  RORO_FLOATING_WINDOW: '1',
+  RORO_FLOATING_WINDOW: IS_TYPED ? '0' : '1',
   RORO_WORKDIR: projectDir,
   RORO_DB_DIR: dbDir,
   RORO_CODEX_BIN: fakeCodexBin,
@@ -370,7 +394,7 @@ let cdp;
 let browserCdp;
 try {
   console.log(
-    `[smoke] launching floating app for a real turn ` +
+    `[smoke] launching ${SURFACE} app for a real turn ` +
       `(RORO_DEBUG_PORT=${PORT}, Ollama=${fakeOllama ? fakeOllama.host : 'real daemon'})...`,
   );
   const target = await waitForRendererTarget(child);
@@ -381,6 +405,270 @@ try {
   await cdp.send('Runtime.enable');
   await cdp.send('Page.enable');
 
+  if (IS_TYPED) {
+    await waitFor(
+      cdp,
+      `!!document.getElementById('prompt-form') && !document.body?.classList.contains('floating-window')`,
+      BOOT_TIMEOUT_MS,
+      'typed prompt mount',
+    );
+
+    const bridge = await evaluate(cdp, `(() => ({
+      turnRun: typeof window.companion?.turnRun,
+      cancelTask: typeof window.companion?.cancelTask,
+      onActionEvent: typeof window.companion?.onActionEvent,
+      onRunEnd: typeof window.companion?.onRunEnd,
+      getBootstrapStatus: typeof window.companion?.getBootstrapStatus,
+      getWorkdirConfig: typeof window.companion?.getWorkdirConfig,
+      runTask: typeof window.companion?.runTask,
+      smokeHook: typeof window.__roroFloatingAskSmoke,
+      brainDecide: typeof window.brain?.decide,
+      memoryRemember: typeof window.memory?.remember,
+    }))()`, {}, 'bridge exposure check');
+    check('public turnRun bridge exists', bridge.turnRun === 'function', JSON.stringify(bridge));
+    check('public cancelTask bridge exists', bridge.cancelTask === 'function', JSON.stringify(bridge));
+    check('public action-event bridge exists', bridge.onActionEvent === 'function', JSON.stringify(bridge));
+    check('public runEnd bridge exists', bridge.onRunEnd === 'function', JSON.stringify(bridge));
+    check('public bootstrap status bridge exists', bridge.getBootstrapStatus === 'function', JSON.stringify(bridge));
+    check('public workdir config bridge exists', bridge.getWorkdirConfig === 'function', JSON.stringify(bridge));
+    check('direct runTask debug bridge is absent', bridge.runTask === 'undefined', JSON.stringify(bridge));
+    check('floating smoke harness is absent', bridge.smokeHook === 'undefined', JSON.stringify(bridge));
+    check('direct brain decide bridge is absent', bridge.brainDecide === 'undefined', JSON.stringify(bridge));
+    check('direct memory remember bridge is absent', bridge.memoryRemember === 'undefined', JSON.stringify(bridge));
+
+    const initialDom = await evaluate(cdp, `(() => {
+      const visible = (selector) => {
+        const el = document.querySelector(selector);
+        if (!el) return false;
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return !el.hidden && style.display !== 'none' && style.visibility !== 'hidden' &&
+          rect.width > 0 && rect.height > 0;
+      };
+      return {
+        bodyFloating: document.body?.classList.contains('floating-window') ?? false,
+        htmlFloating: document.documentElement?.classList.contains('floating-window') ?? false,
+        overlayVisible: visible('#overlay'),
+        formVisible: visible('#prompt-form'),
+        inputVisible: visible('#prompt-input'),
+        sendVisible: visible('#send-btn'),
+        cancelVisible: visible('#cancel-btn'),
+        floatingAskVisible: visible('#floating-ask'),
+        floatingStopVisible: visible('#floating-stop'),
+        placeholder: document.getElementById('prompt-input')?.getAttribute('placeholder') ?? '',
+        sendDisabled: document.getElementById('send-btn')?.disabled ?? null,
+        cancelDisabled: document.getElementById('cancel-btn')?.disabled ?? null,
+        cancelText: document.getElementById('cancel-btn')?.textContent ?? '',
+      };
+    })()`, {}, 'typed initial DOM check');
+    check('typed renderer is the default full-window surface', initialDom.bodyFloating === false && initialDom.htmlFloating === false, JSON.stringify(initialDom));
+    check('typed prompt form is visibly rendered', initialDom.overlayVisible && initialDom.formVisible && initialDom.inputVisible && initialDom.sendVisible && initialDom.cancelVisible, JSON.stringify(initialDom));
+    check('floating Ask controls are not visible in default window', initialDom.floatingAskVisible === false && initialDom.floatingStopVisible === false, JSON.stringify(initialDom));
+    check('typed prompt starts ready with Stop disabled', initialDom.sendDisabled === false && initialDom.cancelDisabled === true && initialDom.cancelText === 'Stop', JSON.stringify(initialDom));
+    check('typed prompt placeholder is product-facing', /ask roro to work/i.test(initialDom.placeholder), JSON.stringify(initialDom));
+
+    const bootstrap = await waitFor(
+      cdp,
+      `window.companion.getBootstrapStatus()
+        .then((status) => status?.ready ? ({ ok: true, status }) : false)
+        .catch((err) => ({ ok: false, message: String(err?.message || err) }))`,
+      BOOT_TIMEOUT_MS,
+      'local brain readiness',
+      { awaitPromise: true },
+    );
+    check('local Ollama brain is ready', bootstrap.ok === true, bootstrap.message || JSON.stringify(bootstrap.status));
+
+    const workdirConfig = await evaluate(
+      cdp,
+      `window.companion.getWorkdirConfig()
+        .then((config) => ({ ok: true, config }))
+        .catch((err) => ({ ok: false, message: String(err?.message || err) }))`,
+      { awaitPromise: true },
+      'workdir config check',
+    );
+    check(
+      'workdir gate sees a configured repo before submit',
+      workdirConfig.ok === true && workdirConfig.config?.workdir === projectDir,
+      workdirConfig.message || JSON.stringify(workdirConfig.config),
+    );
+
+    const memoryProfile = await evaluate(
+      cdp,
+      `window.memory.profile()
+        .then((facts) => ({ ok: true, count: Array.isArray(facts) ? facts.length : null }))
+        .catch((err) => ({ ok: false, message: String(err?.message || err) }))`,
+      { awaitPromise: true },
+      'memory profile warmup',
+    );
+    check(
+      'memory profile bridge responds before submit',
+      memoryProfile.ok === true,
+      memoryProfile.message || JSON.stringify(memoryProfile),
+    );
+
+    await evaluate(cdp, `(() => {
+      window.__roroTypedLiveTurn = { events: [], runEnds: [] };
+      window.companion.onActionEvent((event) => window.__roroTypedLiveTurn.events.push(event));
+      window.companion.onRunEnd((runEnd) => window.__roroTypedLiveTurn.runEnds.push(runEnd));
+      return true;
+    })()`, {}, 'stream probe install');
+
+    const stoppedTranscript = `${STOP_TRANSCRIPT}. Start a coding task that should be stopped before the executor starts.`;
+    const eventCountBeforeStopped = await evaluate(
+      cdp,
+      `window.__roroTypedLiveTurn?.events?.length ?? 0`,
+      {},
+      'event count before stopped turn',
+    );
+    const stoppedSubmit = await evaluate(cdp, `(() => {
+      const input = document.getElementById('prompt-input');
+      const form = document.getElementById('prompt-form');
+      input.value = ${JSON.stringify(stoppedTranscript)};
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const notCanceled = form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      return { defaultPrevented: !notCanceled, value: input.value };
+    })()`, {}, 'typed stopped form submit');
+    check('typed form submit listener prevents native navigation', stoppedSubmit.defaultPrevented === true, JSON.stringify(stoppedSubmit));
+
+    const accepted = await waitFor(
+      cdp,
+      `(() => {
+        const input = document.getElementById('prompt-input');
+        const send = document.getElementById('send-btn');
+        const cancel = document.getElementById('cancel-btn');
+        const status = document.getElementById('status');
+        const caption = document.getElementById('caption-final');
+        const events = window.__roroTypedLiveTurn?.events?.slice(${JSON.stringify(eventCountBeforeStopped)}) ?? [];
+        if (!send?.disabled || cancel?.disabled) return false;
+        return {
+          inputValue: input?.value ?? '',
+          sendDisabled: send.disabled,
+          cancelDisabled: cancel.disabled,
+          cancelText: cancel.textContent,
+          statusText: status?.textContent ?? '',
+          captionText: caption?.textContent ?? '',
+          sawRunStarted: events.some((event) => event?.kind === 'run.started'),
+        };
+      })()`,
+      10_000,
+      'typed accepted state before run.started',
+    );
+    check('typed input keeps submitted task visible while in flight', accepted.inputValue.includes(STOP_TRANSCRIPT), JSON.stringify(accepted));
+    check('typed Stop arms immediately before run.started', accepted.cancelDisabled === false && accepted.cancelText === 'Stop' && accepted.sawRunStarted === false, JSON.stringify(accepted));
+    check('typed status names the immediate Stop affordance', /Thinking\.\.\. click Stop/.test(accepted.statusText), JSON.stringify(accepted));
+    check('typed caption records the submitted task', accepted.captionText.includes(`You: ${stoppedTranscript}`), JSON.stringify(accepted));
+
+    await waitFor(
+      cdp,
+      `(() => {
+        const events = window.__roroTypedLiveTurn?.events?.slice(${JSON.stringify(eventCountBeforeStopped)}) ?? [];
+        return events.some((event) => event?.kind === 'message' && event.text?.includes('planning')) &&
+          !events.some((event) => event?.kind === 'run.started');
+      })()`,
+      10_000,
+      'typed stopped turn entered main planning before Stop',
+    );
+    await evaluate(cdp, `document.getElementById('cancel-btn').click()`, {}, 'typed Stop click');
+    const stopFeedback = await evaluate(cdp, `(() => ({
+      cancelText: document.getElementById('cancel-btn')?.textContent ?? '',
+      statusText: document.getElementById('status')?.textContent ?? '',
+      cancelWidth: document.getElementById('cancel-btn')?.getBoundingClientRect()?.width ?? 0,
+    }))()`, {}, 'typed Stop feedback check');
+    check('typed Stop shows Stopping feedback before run.started', stopFeedback.cancelText === 'Stopping...' && stopFeedback.statusText === 'Stopping...', JSON.stringify(stopFeedback));
+    check('typed Stopping label fits the stable Stop button width', stopFeedback.cancelWidth >= 96, JSON.stringify(stopFeedback));
+
+    const stoppedTurn = await waitFor(
+      cdp,
+      `(() => {
+        const probe = window.__roroTypedLiveTurn;
+        if (!probe?.runEnds?.length) return false;
+        const runEnd = probe.runEnds[probe.runEnds.length - 1];
+        const events = probe.events.filter((event) => event?.runId === runEnd.runId);
+        return { runEnd, events, allEvents: probe.events };
+      })()`,
+      TURN_TIMEOUT_MS,
+      'typed stopped turn runEnd',
+    );
+    const stoppedEvents = Array.isArray(stoppedTurn.events) ? stoppedTurn.events : [];
+    check('typed stopped turn produced scoped events', stoppedEvents.length > 0, JSON.stringify(stoppedTurn.allEvents ?? []));
+    check('typed stopped turn emitted run.failed stopped', stoppedEvents.some((event) => event?.kind === 'run.failed' && event.error === 'stopped'), JSON.stringify(stoppedEvents));
+    check('typed stopped turn never emitted run.started', !stoppedEvents.some((event) => event?.kind === 'run.started'), JSON.stringify(stoppedEvents));
+    check('typed stopped turn never emitted run.completed', !stoppedEvents.some((event) => event?.kind === 'run.completed'), JSON.stringify(stoppedEvents));
+    check('typed stopped turn emitted no executor side effects', !stoppedEvents.some((event) => ['file_change', 'command', 'tool'].includes(event?.kind)), JSON.stringify(stoppedEvents));
+    const invocationsAfterStopped = await readFile(fakeCodexArgsFile, 'utf8')
+      .then((text) => JSON.parse(text))
+      .catch(() => []);
+    check('typed stopped turn did not launch fake Codex', Array.isArray(invocationsAfterStopped) && invocationsAfterStopped.length === 0, JSON.stringify(invocationsAfterStopped));
+
+    const stoppedUi = await waitFor(
+      cdp,
+      `(() => {
+        const input = document.getElementById('prompt-input');
+        const send = document.getElementById('send-btn');
+        const cancel = document.getElementById('cancel-btn');
+        const status = document.getElementById('status');
+        if (send?.disabled || !cancel?.disabled || cancel?.textContent !== 'Stop' || input?.value !== '') return false;
+        return { statusText: status?.textContent ?? '', sendDisabled: send.disabled, cancelDisabled: cancel.disabled, cancelText: cancel.textContent, inputValue: input.value };
+      })()`,
+      5000,
+      'typed stopped UI release',
+    );
+    check('typed stopped copy is neutral', stoppedUi.statusText === 'Stopped.', JSON.stringify(stoppedUi));
+    check('typed stopped copy is not a task problem', !stoppedUi.statusText.includes('Task hit a problem'), JSON.stringify(stoppedUi));
+
+    const answerTranscript = `${EXPECTED}. Answer with exactly that phrase and no extra words.`;
+    const runEndCountBeforeAnswer = await evaluate(
+      cdp,
+      `window.__roroTypedLiveTurn?.runEnds?.length ?? 0`,
+      {},
+      'runEnd count before typed recovery turn',
+    );
+    const answerSubmit = await evaluate(cdp, `(() => {
+      const input = document.getElementById('prompt-input');
+      const form = document.getElementById('prompt-form');
+      input.value = ${JSON.stringify(answerTranscript)};
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const notCanceled = form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      return { defaultPrevented: !notCanceled, value: input.value };
+    })()`, {}, 'typed answer form submit');
+    check('typed form recovers after stopped turn and accepts another submit', answerSubmit.defaultPrevented === true, JSON.stringify(answerSubmit));
+
+    const answerTurn = await waitFor(
+      cdp,
+      `(() => {
+        const probe = window.__roroTypedLiveTurn;
+        if ((probe?.runEnds?.length ?? 0) <= ${JSON.stringify(runEndCountBeforeAnswer)}) return false;
+        const runEnd = probe.runEnds[probe.runEnds.length - 1];
+        const events = probe.events.filter((event) => event?.runId === runEnd.runId);
+        return { runEnd, events, allEvents: probe.events };
+      })()`,
+      TURN_TIMEOUT_MS,
+      'typed answer turn runEnd',
+    );
+    const answerEvents = Array.isArray(answerTurn.events) ? answerTurn.events : [];
+    const narration = answerEvents
+      .filter((event) => event?.kind === 'message')
+      .map((event) => event.text)
+      .join('\n');
+    check('typed answer turn produced scoped events', answerEvents.length > 0, JSON.stringify(answerTurn.allEvents ?? []));
+    check('typed answer turn did not start the coding executor', !answerEvents.some((event) => event?.kind === 'run.started'), JSON.stringify(answerEvents));
+    check('typed answer turn produced no run.failed event', !answerEvents.some((event) => event?.kind === 'run.failed'), JSON.stringify(answerEvents));
+    check('typed answer turn narration includes requested phrase', narration.toLowerCase().includes(EXPECTED), narration.slice(0, 500));
+    const recoveredUi = await waitFor(
+      cdp,
+      `(() => {
+        const input = document.getElementById('prompt-input');
+        const send = document.getElementById('send-btn');
+        const cancel = document.getElementById('cancel-btn');
+        const status = document.getElementById('status');
+        if (send?.disabled || !cancel?.disabled || input?.value !== '') return false;
+        return { statusText: status?.textContent ?? '', cancelText: cancel?.textContent ?? '' };
+      })()`,
+      5000,
+      'typed answer UI release',
+    );
+    check('typed form returns to ready state after recovery turn', recoveredUi.statusText.includes('Done') && recoveredUi.cancelText === 'Stop', JSON.stringify(recoveredUi));
+  } else {
   await waitFor(
     cdp,
     `document.body?.classList.contains('floating-window') && !!document.getElementById('floating-ask')`,
@@ -698,6 +986,7 @@ try {
     'fake Codex wrote the requested project file',
     await readFile(join(projectDir, EXECUTOR_FILE), 'utf8').then((text) => text === EXECUTOR_CONTENT).catch(() => false),
   );
+  }
 } catch (err) {
   console.error(`[smoke] harness error: ${err.message}`);
   failures.push(`harness: ${err.message}`);
@@ -715,4 +1004,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('\n[smoke] PASS — real floating Ask turns completed through turnRun and collapsed on runEnd.');
+console.log(`\n[smoke] PASS — real ${SURFACE} turns completed through turnRun with verified runEnd handling.`);

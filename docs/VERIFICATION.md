@@ -138,12 +138,19 @@ Fast regression coverage:
 
 ```sh
 npx vitest run --no-file-parallelism src/renderer/bootstrap.typedPrompt.test.ts
+npm run verify:typed-live-turn
 ```
 
 The focused test covers immediate Stop arming, no-id early cancel, late targeted recancel, stale runEnd
 guarding, neutral `Stopped.` copy, workdir-cancel gating, and local-brain-not-ready gating. The packaged
 onboarding and EPIPE smokes additionally assert that Stop starts disabled and stays disabled when the local
 brain blocks dispatch.
+
+`scripts/smoke-typed-live-turn.mjs` launches the default, non-floating Electron window with fake local
+Ollama/Codex services and drives the real `#prompt-form` through the public `window.companion.turnRun`
+bridge. It asserts the default-window DOM is visible, debug bridges are absent, Stop arms before any
+`run.started`, pre-executor Stop emits scoped `run.failed: stopped` plus `runEnd`, fake Codex receives no
+stopped-task invocation, the status copy stays neutral, and a later answer turn recovers the form.
 
 Manual full-window checklist:
 
