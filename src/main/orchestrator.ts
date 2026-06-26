@@ -17,7 +17,7 @@ import { Notification } from 'electron';
 import { CH } from '../shared/ipc';
 import type { TurnInput } from '../shared/ipc';
 import type { ActionEvent, AgentKind } from '../shared/events';
-import { newRunId } from '../shared/events';
+import { newRunId, SCREEN_CAPTURE_STATUS_TEXT } from '../shared/events';
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import type { MemoryKind } from '../shared/memory';
 import { getExecutor } from '../executor';
@@ -41,6 +41,8 @@ const RECALL_MIN_SIMILARITY = 0;
 const DEFAULT_AGENT: AgentKind = 'codex';
 /** How long after an abort we force a terminal event so Stop is provably terminal. */
 const STOP_WATCHDOG_MS = 1500;
+/** Gives the renderer one visible beat to show the privacy tell before an on-demand screen capture. */
+const SCREEN_CAPTURE_TELL_DWELL_MS = 500;
 
 /** Holds the active AbortController per runId so cancelTask can target a specific run. */
 const activeRuns = new Map<string, AbortController>();
@@ -56,6 +58,8 @@ let lastTurnId: string | null = null;
 /** Held synchronously across the clean-tree-check → dispatch critical section so that section can't
  *  interleave: it guarantees a destructive run's clean-tree result is fresh at dispatch (no TOCTOU). */
 let dispatchLock = false;
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 function pushEvent(e: ActionEvent): void {
   sendToFirstWindow(CH.actionEvent, e);
@@ -504,6 +508,17 @@ async function actOnDecision(
         // answering with whatever narration it gave.
         emitNarration(runId, decision.narration);
         pushRunEnd(runId);
+        return;
+      }
+      pushEvent({
+        kind: 'status',
+        runId,
+        text: SCREEN_CAPTURE_STATUS_TEXT,
+        ts: Date.now(),
+      });
+      await delay(SCREEN_CAPTURE_TELL_DWELL_MS);
+      if (preemptedTurns.has(runId)) {
+        pushStopped(runId);
         return;
       }
       let screen: string;

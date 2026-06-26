@@ -20,4 +20,6 @@ export type ActionEvent =
 export interface ExecutorRunOptions { repo: string; prompt: string; agent?: AgentKind; signal?: AbortSignal }
 export interface Executor { run(opts: ExecutorRunOptions): AsyncIterable<ActionEvent> }
 
+export const SCREEN_CAPTURE_STATUS_TEXT = 'Taking one screen snapshot.';
+
 export const newRunId = (): string => `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
