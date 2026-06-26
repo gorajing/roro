@@ -14,6 +14,7 @@ import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { stripV0DeferredEnv } from './v0-deferred-env.mjs';
 
 const BOOT_TIMEOUT_MS = Number(process.env.RORO_EPIPE_BOOT_TIMEOUT_MS || 120_000);
 const STABILITY_MS = Number(process.env.RORO_EPIPE_STABILITY_MS || 3_000);
@@ -69,9 +70,7 @@ function smokeEnv(home, port, ollamaPort) {
   delete env.RORO_ALLOW_CWD;
   delete env.RORO_DB_DIR;
   delete env.DOTENV_CONFIG_PATH;
-  delete env.RORO_STT_VOICE;
-  delete env.RORO_TTS_VOICE;
-  return env;
+  return stripV0DeferredEnv(env);
 }
 
 function launchApp({ home, cwd, userDataDir, port, ollamaPort }) {

@@ -29,6 +29,7 @@ const includeTransformersOrtAssets =
   process.env.RORO_TTS_VOICE === '1';
 const includeSttModel = process.env.RORO_STT_VOICE === '1';
 const includeTtsModel = process.env.RORO_TTS_VOICE === '1';
+const includeLive2DAssets = Boolean(process.env.LIVE2D_MODEL_URL);
 
 function ignorePackagedFile(file: string): boolean {
   if (!file) return false;
@@ -42,6 +43,7 @@ function ignorePackagedFile(file: string): boolean {
   if (!file.startsWith(rendererPrefix)) return false;
   const rel = file.slice(rendererPrefix.length);
 
+  if ((rel === 'live2d' || rel.startsWith('live2d/')) && !includeLive2DAssets) return true;
   if ((rel === 'vad' || rel.startsWith('vad/')) && !includeVadAssets) return true;
   if ((rel === 'ort' || rel.startsWith('ort/')) && !includeTransformersOrtAssets) return true;
   if ((rel === 'models' || rel === 'models/onnx-community') && !includeSttModel && !includeTtsModel) return true;
@@ -52,6 +54,7 @@ function ignorePackagedFile(file: string): boolean {
     if (/^kokoro(?:Synthesize|VoiceEngine)-.*\.js$/.test(assetName) && !includeTtsModel) return true;
     if (/^onnxRuntimeEnv-.*\.js$/.test(assetName) && !includeTransformersOrtAssets) return true;
     if (/^ort-wasm-simd-threaded\.jsep-.*\.wasm$/.test(assetName) && !includeTransformersOrtAssets) return true;
+    if (/live2d|cubism/i.test(assetName) && !includeLive2DAssets) return true;
   }
   if (rel === 'models/onnx-community/whisper-base.en' || rel.startsWith('models/onnx-community/whisper-base.en/')) {
     return !includeSttModel;

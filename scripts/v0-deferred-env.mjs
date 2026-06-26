@@ -1,0 +1,23 @@
+export const V0_DEFERRED_ENV_KEYS = [
+  'LIVE2D_MODEL_URL',
+  'RORO_FAKE_VOICE',
+  'RORO_VAD_VOICE',
+  'RORO_STT_VOICE',
+  'RORO_TTS_VOICE',
+  'RORO_VOICE_PACK',
+  'RORO_WS5_STORE',
+];
+
+export function stripV0DeferredEnv(env) {
+  for (const key of V0_DEFERRED_ENV_KEYS) delete env[key];
+  return env;
+}
+
+export function enabledV0DeferredEnv(env) {
+  return V0_DEFERRED_ENV_KEYS.filter((key) => {
+    const value = env[key];
+    if (value === undefined || value === '') return false;
+    if (key === 'LIVE2D_MODEL_URL' || key === 'RORO_VOICE_PACK') return true;
+    return value === '1';
+  });
+}

@@ -6,15 +6,6 @@
       content="default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:*; font-src 'self' data:;" />
     <title>Roro</title>
 
-    <!--
-      Cubism Core MUST load (classic <script>, not import) BEFORE the renderer
-      bundle: it attaches the global window.Live2DCubismCore that the Live2D
-      plugin needs. Self-hosted at public/live2d/live2dcubismcore.min.js (served
-      from the web root as /live2d/...). If the file is absent the avatar code
-      detects the missing global and renders the placeholder instead — the app
-      still boots. See public/live2d/README.md.
-    -->
-    <script src="/live2d/live2dcubismcore.min.js"></script>
   </head>
   <body>
     <div id="app">
@@ -28,12 +19,10 @@
             <b>Local</b> · PGlite + pgvector
           </div>
           <div id="controls">
-            <!-- Opt-in, consent-gated Voice Mode toggle. Clicking runs the readiness probe (mic + staged
-                 weights) and either starts cleanly or says exactly what's missing (bootstrap.ts). -->
-            <button id="voice-mode-btn" type="button" aria-pressed="false">🎙 Voice Mode</button>
-            <!-- Disabled until the on-device voice path actually mounts (there is no mic to mute on the
-                 default typed-only launch); bootstrap.ts enables it when a voice engine is summoned. -->
-            <button id="mute-btn" type="button" disabled>Mute</button>
+            <!-- Hidden by default for the typed-only v0 build. bootstrap.ts reveals these only when an
+                 explicit voice dev flag mounts the on-device or scripted voice path. -->
+            <button id="voice-mode-btn" type="button" aria-pressed="false" hidden>Voice Mode</button>
+            <button id="mute-btn" type="button" disabled hidden>Mute</button>
           </div>
         </header>
 

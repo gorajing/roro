@@ -1,5 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { voiceMicNeeded } from './voiceFlags';
+import { voiceMicNeeded, voiceRuntimeEnabled } from './voiceFlags';
+
+describe('voiceRuntimeEnabled — gate v0 voice surfaces on explicit dev flags', () => {
+  it('is false on a default typed-only launch', () => {
+    expect(voiceRuntimeEnabled({})).toBe(false);
+  });
+
+  it('is true for the scripted fake voice and each real on-device voice flag', () => {
+    expect(voiceRuntimeEnabled({ RORO_FAKE_VOICE: '1' })).toBe(true);
+    expect(voiceRuntimeEnabled({ RORO_VAD_VOICE: '1' })).toBe(true);
+    expect(voiceRuntimeEnabled({ RORO_STT_VOICE: '1' })).toBe(true);
+    expect(voiceRuntimeEnabled({ RORO_TTS_VOICE: '1' })).toBe(true);
+  });
+
+  it('treats only "1" as enabled', () => {
+    expect(voiceRuntimeEnabled({ RORO_FAKE_VOICE: 'true' })).toBe(false);
+    expect(voiceRuntimeEnabled({ RORO_STT_VOICE: '0' })).toBe(false);
+    expect(voiceRuntimeEnabled({ RORO_VAD_VOICE: '' })).toBe(false);
+  });
+});
 
 describe('voiceMicNeeded — gate macOS mic consent on the on-device voice flags', () => {
   it('is false on a default (typed-only) launch — so it never prompts for the mic', () => {

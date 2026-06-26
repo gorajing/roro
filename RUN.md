@@ -60,14 +60,15 @@ The character is Roro, a procedurally-drawn 16-bit pixel cat that ships **in cod
 animates through agent state with posture (stands / sits / **walks** while working) and
 needs **no model files**. It renders out of the box.
 
-> **Optional — swap in a Live2D model.** Drop `live2dcubismcore.min.js` + a Cubism-4
-> model into `public/live2d/` and point `modelUrl` at it (see `public/live2d/README.md`).
-> The model-agnostic `CharacterDriver` facade drives either one.
+> **Internal dev only, not v0 release:** Live2D remains an optional architecture seam.
+> Set `LIVE2D_MODEL_URL` and provide matching `public/live2d/` assets only for an
+> internal build. Default v0 packages exclude those assets.
 
-## 5. Voice (optional, fully on-device — no keys)
+## 5. Voice (internal dev only, fully on-device — no keys)
 
 Voice runs entirely on-device — Silero VAD (ear-perk), whisper STT (transcribe), and
-Kokoro TTS (speak) — behind dev flags, all default off. There is **no cloud and no key**.
+Kokoro TTS (speak) — behind dev flags, all default off and hidden from the v0
+typed-only release. There is **no cloud and no key**.
 Each flag composes the next stage of the pipeline:
 
 ```sh
@@ -87,7 +88,9 @@ second brain.
 once from Hugging Face into `public/models/` (whisper ~81MB, Kokoro ~95MB; gitignored,
 regenerable) — a plain `npm start` downloads nothing. After that the renderer loads them
 **same-origin and fully offline** (`connect-src 'self'`; no cloud, no keys). Re-stage anytime
-with `npm run stage:voice-assets` (idempotent). The Voice Mode UI lands next (M4).
+with `npm run stage:voice-assets` (idempotent). The Voice Mode and Mute controls
+are hidden in the default typed-only launch and appear only when one of the voice
+dev flags above is enabled.
 
 ## 6. macOS permissions
 
@@ -114,7 +117,8 @@ RORO_FLOATING_WINDOW=1 npm start
 
 Shrinks the window, removes the frame, makes the background transparent, hides every
 overlay so only the cat shows, and keeps Roro above normal windows across macOS Spaces.
-**Tap or hold to pet, drag to move, right-click to mute.**
+**Tap or hold to pet, drag to move.** Right-click/M mute is available only in
+voice-dev launches, when the mic can actually be muted.
 
 ## Verify
 
