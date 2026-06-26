@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "eval:brain": "tsx src/brain/eval/runEval.ts",
     "verify:floating": "node scripts/smoke-floating-ask.mjs",
+    "verify:floating-live-turn": "node scripts/smoke-floating-live-turn.mjs",
     "verify:epipe": "node scripts/smoke-packaged-epipe.mjs",
     "verify:packaged-memory": "node scripts/smoke-packaged-memory.mjs",
     "verify:packaged-live-memory-turn": "RORO_PACKAGED_MEMORY_LIVE_TURN=1 node scripts/smoke-packaged-memory.mjs",
