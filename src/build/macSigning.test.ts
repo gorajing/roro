@@ -8,6 +8,8 @@ import {
   assertSigningIdentity,
   developerIdApplicationIdentities,
   hasDeveloperIdApplicationIdentity,
+  notarytoolHistoryArgs,
+  redactAppleSecrets,
   shouldEnableCookieEncryption,
 } from './macSigning';
 
@@ -104,6 +106,41 @@ describe('shouldEnableCookieEncryption', () => {
 
   it('enables Electron cookie encryption only when Developer-ID signing is configured', () => {
     expect(shouldEnableCookieEncryption(macSigningConfig(FULL))).toBe(true);
+  });
+});
+
+describe('notarytool auth helpers', () => {
+  it('builds a no-upload history command from trimmed Apple credentials', () => {
+    expect(notarytoolHistoryArgs({
+      APPLE_ID: ' dev@example.com ',
+      APPLE_PASSWORD: ' app-specific-pw ',
+      APPLE_TEAM_ID: ' ABCDE12345 ',
+    })).toEqual([
+      'notarytool',
+      'history',
+      '--apple-id',
+      'dev@example.com',
+      '--password',
+      'app-specific-pw',
+      '--team-id',
+      'ABCDE12345',
+      '--output-format',
+      'json',
+      '--no-progress',
+    ]);
+  });
+
+  it('refuses to build an auth-check command for partial Apple credentials', () => {
+    expect(() => notarytoolHistoryArgs({ APPLE_ID: 'dev@example.com' })).toThrowError(
+      /APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID/,
+    );
+  });
+
+  it('redacts the Apple ID and app-specific password from notarytool diagnostic output', () => {
+    expect(redactAppleSecrets(
+      'notarytool rejected password app-specific-pw for dev@example.com',
+      FULL,
+    )).toBe('notarytool rejected password <redacted> for <redacted>');
   });
 });
 

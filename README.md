@@ -141,9 +141,9 @@ and action timeline visible.
 
 ## Configuration
 
-Roro's default brain and memory paths need **no keys**: Ollama runs locally,
-memory is local PGlite + pgvector, and packaged builds store the chosen working
-repo in `userData/config.json`. A local `.env` (see
+Roro's default brain and memory paths need **no app-owned cloud/model keys**:
+Ollama runs locally, memory is local PGlite + pgvector, and packaged builds
+store the chosen working repo in `userData/config.json`. A local `.env` (see
 [`.env.example`](.env.example)) is for development overrides, model tuning, and
 optional cloud/executor paths:
 
@@ -179,13 +179,16 @@ npm run verify:floating          # on-screen smoke for the floating Ask (needs a
 npm run release:doctor           # CI-safe release/signing doctor for the unsigned/ad-hoc path
 npm run package
 npm run verify:release-artifact  # after npm run package, verifies the packaged .app shape
-npm run make
-npm run verify:release-artifact:dmg # after npm run make, verifies the mounted DMG contains Roro.app
 npm run verify:packaged-memory   # packaged memory write -> quit -> relaunch -> recall smoke
 npm run verify:packaged-live-memory-turn  # packaged relaunch -> live Ollama turn uses recalled memory
 npm run verify:packaged-natural-memory-turn # packaged natural-language teach -> relaunch -> recall turn
 npm run verify:packaged-onboarding
+
+# Developer-ID release path, after exporting APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID:
 npm run verify:signing-readiness # strict Developer-ID env/cert/tool doctor before npm run make
+npm run verify:signing-auth      # checks Apple credential auth with notarytool history
+npm run make
+npm run verify:release-artifact:dmg # after npm run make, verifies the mounted DMG contains Roro.app
 npm run verify:release-artifact:signed # after Developer-ID npm run make
 ```
 
@@ -201,6 +204,7 @@ What is working:
 - packaged live-memory turn smoke: with local Ollama ready, a real packaged turn narrates a recalled value after relaunch
 - packaged natural-memory turn smoke: with local Ollama ready, a real packaged turn learns a stated preference, relaunches, and uses it
 - release/signing doctor: CI checks the unsigned path, and a strict local doctor fails loud before Developer-ID `make`
+- signing auth doctor: with Apple env set, verifies `notarytool` credentials before uploading a build
 - DMG release artifact: macOS CI builds a versioned `.dmg` and verifies it mounts with `Roro.app`
 - **local Ollama brain** (decide/vision/embeddings) — verified end-to-end against a
   live daemon
@@ -211,7 +215,7 @@ What is working:
 What needs extra setup or a real device:
 
 - on-device voice (Silero VAD + whisper STT + Kokoro TTS) behind the `RORO_*_VOICE`
-  dev flags + microphone permission — fully local, no cloud and no keys
+  dev flags + microphone permission — fully local, no cloud/model keys
 - screen capture permission for vision (the 7B vision model needs substantial RAM)
 - optional Live2D model swap
 

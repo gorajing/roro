@@ -69,7 +69,9 @@ Roro is public-ready when **all** of these are observed (not code-read):
 - [ ] A stranger downloads a Developer-ID-**signed + notarized** `.dmg` and launches it with **zero Gatekeeper warnings**
       (no right-click→Open dance). Verified on a **clean second Mac**, not the build box.
 - [ ] The packaged app is runnable **without a terminal**: a native folder-picker sets the working repo, honest
-      Ollama/model status with one-click download — no `.env`, no API keys, no shell.
+      Ollama/model status with guided Ollama install + one-click model pull — no `.env`, no app-owned model API keys,
+      no shell for the Roro setup path. Executor CLIs may still require their own local auth, separate from Roro's
+      brain/model key promise.
 - [ ] The chosen working repo persists in `userData/config.json` and survives relaunch; the executor never throws
       "Roro has no working repo set" for a user who completed onboarding. `RORO_WORKDIR` remains an explicit env override.
 - [ ] **The heart:** on the signed build, a fact stored in session 1 is recalled in session 2 after a **full quit +
@@ -110,8 +112,9 @@ VALID + `safeStorage.isEncryptionAvailable()=true` + creates its keychain item �
   install on a clean second Mac and **(b)** memory durability **across updates** (stable team identity vs. per-build
   ad-hoc cdhash) — *not* for making memory work at all.
   Run `npm run verify:signing-readiness` after exporting the Apple env vars and before `npm run make`; it checks local
-  cert/tool/env readiness, not Apple authentication or clean-Mac Gatekeeper behavior. With those env vars present,
-  `npm run make` signs/notarizes the app and notarizes/staples the DMG container. After `npm run make`, run
+  cert/tool/env readiness. Run `npm run verify:signing-auth` to check the Apple ID/app-specific password against
+  `notarytool history` without uploading an artifact. Neither command replaces clean-Mac Gatekeeper behavior. With those
+  env vars present, `npm run make` signs/notarizes the app and notarizes/staples the DMG container. After `npm run make`, run
   `npm run verify:release-artifact:dmg` and `npm run verify:release-artifact:signed` before the clean-Mac install.
 
 **Exit:** a non-founder observes a fact recalled across a full quit/relaunch of a packaged build (proves the moment works
@@ -137,7 +140,8 @@ the happy packaged first-run workdir flow.
   without relaunching; `RORO_WORKDIR` remains an explicit read-only override.
 
 **Exit:** a stranger who has never touched a terminal launches → is guided to pick a repo → sees honest model status with
-one-click download → types a task the executor runs to completion. Dock shows the cat icon.
+guided Ollama install + one-click model pull → types a task the executor runs to completion with any executor CLI auth
+already handled. Dock shows the cat icon.
 
 ### Phase 2 — Trust the first impression (correctness + honest framing)
 **Goal:** make the moment *land* and feel trustworthy, not lucky. *(Correction loop is memory-dependent — do it after
@@ -194,7 +198,7 @@ v0 is **one thing done well: the remembering coding companion.** Deliberately cu
 
 | Decision | Recommendation |
 |---|---|
-| **Apple Developer Program + Developer ID cert** | ✅ **Done locally** (`Developer ID Application: Jin Young Choi (GNG2M47BD7)`). Next: export `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID`, and an app-specific `APPLE_PASSWORD`, run `npm run verify:signing-readiness && npm run make && npm run verify:release-artifact:dmg && npm run verify:release-artifact:signed`, then validate the notarized build on a clean Mac. |
+| **Apple Developer Program + Developer ID cert** | ✅ **Done locally** (`Developer ID Application: Jin Young Choi (GNG2M47BD7)`). Next: export `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID`, and an app-specific `APPLE_PASSWORD`, run `npm run verify:signing-readiness && npm run verify:signing-auth && npm run make && npm run verify:release-artifact:dmg && npm run verify:release-artifact:signed`, then validate the notarized build on a clean Mac. |
 | **Bundle ID + icon** | ✅ Done: bundle ID is `com.jinchoi.roro`; Dock/Launchpad icon is the black pixel cat at `assets/roro-icon.icns`, generated from the 1024px source PNG. Keep this identity; don't design a new brand. |
 | **`RORO_WORKDIR` setup UX** | A mandatory first-launch native folder-picker (the gate between "launched" and "can code") + a Project control to change the saved repo later. |
 | **Debut channel** | A small trusted cohort first — measure attachment (does the moment land, do they reopen), not vanity downloads. Broaden only after it lands for strangers. |
@@ -212,19 +216,21 @@ validation, provable in an afternoon.
 ## The first thing to do
 
 **Preflight packaged memory (`npm run package && npm run verify:packaged-memory && npm run verify:packaged-live-memory-turn && npm run verify:packaged-natural-memory-turn`),
-then preflight signing (`npm run verify:signing-readiness`) and produce the first Developer-ID signed + notarized build**
-to test on a clean second Mac:
+then preflight signing (`npm run verify:signing-readiness` + `npm run verify:signing-auth`) and produce the first
+Developer-ID signed + notarized build** to test on a clean second Mac:
 
 ```sh
 export APPLE_TEAM_ID=GNG2M47BD7
 export APPLE_ID=<paid Apple ID>
 export APPLE_PASSWORD=<app-specific password>
 npm run verify:signing-readiness
+npm run verify:signing-auth
 npm run make
 npm run verify:release-artifact:dmg
 npm run verify:release-artifact:signed
 ```
 
-Nothing else on the path can be *truly validated* until this build exists. In parallel, build Phase 2 from
-[`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md): correction, clarify, README framing, and the bounded
-screen-capture tell are landed.
+The signed clean-Mac path is the final public gate. Before Apple credentials are set, the packaged smokes and a
+same-build human rehearsal still matter: they validate the core memory moment cheaply while the signed/notarized install
+and cross-update durability gates remain open. Phase 2 from [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md)
+is already landed: correction, clarify, README framing, and the bounded screen-capture tell.

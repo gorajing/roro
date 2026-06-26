@@ -25,6 +25,7 @@
     "verify:release-artifact:dmg": "node scripts/verify-release-artifact.mjs --mode default --require-dmg",
     "verify:release-artifact:signed": "node scripts/verify-release-artifact.mjs --mode signed",
     "verify:signing-readiness": "tsx scripts/verify-signing-readiness.ts",
+    "verify:signing-auth": "tsx scripts/verify-signing-readiness.ts --check-notary-auth",
     "stage:voice-assets": "node scripts/stage-voice-assets.mjs",
     "prestart": "node scripts/stage-voice-assets.mjs",
     "prepackage": "node scripts/stage-voice-assets.mjs",

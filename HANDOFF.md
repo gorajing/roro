@@ -9,12 +9,12 @@
 
 ## 0. TL;DR (read this, then skim the rest)
 
-**Roro is a local-first, on-device AI desktop coding companion** — a procedural pixel cat that floats on your screen, runs a **local** Ollama brain, keeps an **encrypted, files-as-truth memory**, and dispatches a real coding **executor**. $0, no keys, offline-default, fail-loud.
+**Roro is a local-first, on-device AI desktop coding companion** — a procedural pixel cat that floats on your screen, runs a **local** Ollama brain, keeps an **encrypted, files-as-truth memory**, and dispatches a real coding **executor**. $0, no app-owned cloud/model keys, offline-default, fail-loud.
 
 - **The product thesis:** the magic moment is **recalled memory** — after a restart, offline, the cat weaves what it remembers about how you work into its response ("I'll set up the signup route *with testing in place*"). Voice/cuteness are the frame; the recalled sentence is the payload.
 - **The strategy (job-first):** lead with the **coding job** (it justifies the install + builds the daily habit); let *being known* be the emergent reward. **job → habit → memory → moat.** The moat is the per-user **encrypted on-device memory** + a **human-in-the-loop correction loop** (un-clonable, model-independent).
 - **State:** the engine is strong and proven. The **biggest launch blocker is fixed** — encrypted memory now works in a packaged build (was a forge signing bug, *not* the cert). The Phase-1 packaged workdir onboarding spine landed, and the first Phase-2 correction loop slice now lets users see, fix, verify, source-check, and forget remembered facts.
-- **Next:** finish the **Path to Public** in [`PUBLIC.md`](./PUBLIC.md). Cheapest next step is a **human confirmation** that a packaged build remembers across quit/relaunch; `npm run verify:packaged-memory` automates the bridge/write/relaunch/recall regression, `npm run verify:packaged-live-memory-turn` adds a live Ollama turn that speaks recalled memory, and `npm run verify:packaged-natural-memory-turn` proves a packaged natural-language teach/relaunch/recall loop, but the non-founder magic moment is still the gate. Then run `npm run verify:signing-readiness`, produce the Developer-ID notarized build, and run the small-cohort first-run validation.
+- **Next:** finish the **Path to Public** in [`PUBLIC.md`](./PUBLIC.md). Cheapest next step is a **human confirmation** that a packaged build remembers across quit/relaunch; `npm run verify:packaged-memory` automates the bridge/write/relaunch/recall regression, `npm run verify:packaged-live-memory-turn` adds a live Ollama turn that speaks recalled memory, and `npm run verify:packaged-natural-memory-turn` proves a packaged natural-language teach/relaunch/recall loop, but the non-founder magic moment is still the gate. Then run `npm run verify:signing-readiness` + `npm run verify:signing-auth`, produce the Developer-ID notarized build, and run the small-cohort first-run validation.
 
 ---
 
@@ -58,7 +58,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 1. **turnRun chokepoint** — one RECALL→DECIDE→EXECUTE→NARRATE→REMEMBER path. Hang things off it; don't fork it.
 2. **Frozen `ActionEvent` union** (`src/shared/events.ts`) — consumed exhaustively (`eventToAvatarState`). Don't add variants casually.
 3. **Voice is mouth-not-brain** — a say-only `VoiceBackend` seam; committed transcripts route *through* `turnRun`, never a speech-to-speech model that bypasses recall→decide→remember.
-4. **Local-first / $0 / no-keys / offline-default** — no cloud/accounts/telemetry/required-network. (`BRAIN_PROVIDER=nebius` is an undocumented escape hatch only.)
+4. **Local-first / $0 / no app-owned cloud/model keys / offline-default** — no app-owned cloud accounts, telemetry, or required network for the default brain/memory path. Executor CLIs may still require their own local auth. (`BRAIN_PROVIDER=nebius` is an undocumented escape hatch only.)
 5. **Fail-loud over silent-degrade** — `keyManager` throws if the keychain is unavailable; **never** stores plaintext. No `catch { return null }`.
 6. **Owner-scoped memory** — every read/write scoped to `ownerId`.
 7. **Files-as-truth durability** — encrypted files on disk are truth; the PGlite-HNSW index is a *derived, rebuildable cache* (reconciled on reopen). **Proven** by `crosslaunch.durability.test.ts`.
@@ -73,7 +73,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - **Vapi deleted (#48):** single on-device voice stack.
 - **M5 memory (#51, #52):** `importanceFor(kind)` + repo-scoped recall (subordinate to the recency guarantee).
 - **M6a CI (#53):** tsc · lint · test on every PR.
-- **M7 first-run (#54, #57, #59, #60):** readiness detection + size disclosure, the model-pull engine, the one-click download banner, the "Get Ollama" install-assist (guide, not auto-shell).
+- **M7 first-run (#54, #57, #59, #60):** readiness detection + size disclosure, the model-pull engine, the one-click model-pull banner, the "Get Ollama" install-assist (guide, not auto-shell).
 - **M8 transparency + Forget (#55, #56):** `memoryStore.forget` + the "🧠 What Roro knows" panel.
 - **M9 (#58):** the WS5 cosmetics willingness-to-pay fake-door (stops at intent).
 - **M6 signing (#61, #62):** env-gated macOS signing + a clear preflight.
@@ -93,8 +93,9 @@ Every turn flows through **one** path in `orchestrator.ts`:
   recalled value in a later turn. Still not a human, cross-update, or notarized-build gate.
 - **Developer-ID signing readiness doctor:** `npm run verify:signing-readiness` checks macOS, Apple env shape,
   matching Developer ID Application cert, `notarytool`, `stapler`, and entitlements before `npm run make`. It does not
-  authenticate with Apple or replace clean-Mac Gatekeeper validation. `npm run release:doctor` runs the same doctor in
-  no-secret unsigned/ad-hoc mode and is wired into macOS CI.
+  replace clean-Mac Gatekeeper validation. `npm run verify:signing-auth` additionally checks Apple ID/app-specific
+  password authentication with `notarytool history` without uploading an artifact. `npm run release:doctor` runs the same
+  doctor in no-secret unsigned/ad-hoc mode and is wired into macOS CI.
 - **Signed-artifact verifier:** after Developer-ID `npm run make`, `npm run verify:release-artifact:signed` requires a
   non-ad-hoc Developer ID signature, hardened runtime metadata, a TeamIdentifier, local Gatekeeper acceptance, and a
   valid stapled notarization ticket on the packaged app and the app mounted from the DMG; it also checks the DMG
@@ -155,7 +156,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ## 8. What to do next (concrete first moves)
 1. **(Recommended, cheapest) Human-confirm Phase 0:** `npm run package`, `npm run verify:packaged-memory`, `npm run verify:packaged-live-memory-turn`, `npm run verify:packaged-natural-memory-turn`, then run a short non-founder/clean-profile session, **fully quit**, relaunch the *same* build, and watch it remember. The smokes prove packaged persistence, live-brain recall use, and natural-language fact extraction; the person proves the moment lands.
-2. **Produce the Developer-ID notarized build:** export `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID`, and app-specific `APPLE_PASSWORD` in the same shell, then run `npm run verify:signing-readiness`, `npm run make`, `npm run verify:release-artifact:dmg`, and `npm run verify:release-artifact:signed`; validate install + memory recall on a clean second Mac.
+2. **Produce the Developer-ID notarized build:** export `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID`, and app-specific `APPLE_PASSWORD` in the same shell, then run `npm run verify:signing-readiness`, `npm run verify:signing-auth`, `npm run make`, `npm run verify:release-artifact:dmg`, and `npm run verify:release-artifact:signed`; validate install + memory recall on a clean second Mac.
 3. **Validate Phase 2 trust on real first turns:** the Memory panel can see/fix/verify/source/forget facts, referent-less requests clarify before dispatch, the README leads with the job/privacy promise, and screen reads show a bounded one-snapshot tell.
 
 ---
@@ -163,7 +164,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 ## 9. Founder decisions + open questions
 | Decision | Status / recommendation |
 |---|---|
-| **Apple Developer Program + Developer ID cert** | ✅ **DONE** — paid-enrolled; `Developer ID Application: Jin Young Choi (GNG2M47BD7)` in the keychain (intermediate CA present). For Gatekeeper-clean notarized build + cross-update durability, **not** for memory to work. Build it by exporting `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID` (paid email), and `APPLE_PASSWORD` (app-specific pw from account.apple.com → Sign-In and Security), then run `npm run verify:signing-readiness`, `npm run make`, `npm run verify:release-artifact:dmg`, and `npm run verify:release-artifact:signed` in that shell. |
+| **Apple Developer Program + Developer ID cert** | ✅ **DONE** — paid-enrolled; `Developer ID Application: Jin Young Choi (GNG2M47BD7)` in the keychain (intermediate CA present). For Gatekeeper-clean notarized build + cross-update durability, **not** for memory to work. Build it by exporting `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID` (paid email), and `APPLE_PASSWORD` (app-specific pw from account.apple.com → Sign-In and Security), then run `npm run verify:signing-readiness`, `npm run verify:signing-auth`, `npm run make`, `npm run verify:release-artifact:dmg`, and `npm run verify:release-artifact:signed` in that shell. |
 | **Bundle id + icon** | ✅ Done: bundle id is `com.jinchoi.roro`; icon is the existing pixel cat at `assets/roro-icon.icns`. |
 | **Debut channel** | Small trusted cohort first (measure week-2 reopen), not a broad post. |
 | **40% behavioral ceiling: model swap?** | **No** as strategy — fix is the correction loop. Keep the brain swappable. |
@@ -179,7 +180,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - **Commit footer:** `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` + `Claude-Session: <url>`. **PR footer:** `🤖 Generated with [Claude Code]` + the session URL.
 - **Don't commit `.env`** (gitignored). The **frozen `gorajing/companion` repo** must not be touched.
 - **Verify before claiming done** — "the types check" is not done; "I observed it working" is.
-- **Key commands:** `npm test`, `npm run lint`, `npx tsc --noEmit -p tsconfig.json`, `npm run release:doctor` (CI-safe release/signing doctor), `npm run package` (.app), `npm run verify:packaged-memory` (packaged write/relaunch/recall), `npm run verify:packaged-live-memory-turn` (packaged relaunch + live Ollama turn uses recalled memory), `npm run verify:packaged-natural-memory-turn` (packaged natural-language teach/relaunch/recall), `npm run verify:signing-readiness` (strict Developer-ID env/cert/tool doctor), `npm run make` (+ distributables + signing), `npm run verify:release-artifact:dmg` (post-make DMG verifier), `npm run verify:release-artifact:signed` (post-make signed/notarized artifact verifier), `npm start` (dev — memory works here), `OLLAMA_AVAILABLE=1 npx vitest run crosslaunch.live` (live magic-moment smoke), `npm run eval:brain` (scorecard), `EVAL_SET=behavioral npm run eval:brain`.
+- **Key commands:** `npm test`, `npm run lint`, `npx tsc --noEmit -p tsconfig.json`, `npm run release:doctor` (CI-safe release/signing doctor), `npm run package` (.app), `npm run verify:packaged-memory` (packaged write/relaunch/recall), `npm run verify:packaged-live-memory-turn` (packaged relaunch + live Ollama turn uses recalled memory), `npm run verify:packaged-natural-memory-turn` (packaged natural-language teach/relaunch/recall), `npm run verify:signing-readiness` (strict Developer-ID env/cert/tool doctor), `npm run verify:signing-auth` (notarytool Apple credential auth check), `npm run make` (+ distributables + signing), `npm run verify:release-artifact:dmg` (post-make DMG verifier), `npm run verify:release-artifact:signed` (post-make signed/notarized artifact verifier), `npm start` (dev — memory works here), `OLLAMA_AVAILABLE=1 npx vitest run crosslaunch.live` (live magic-moment smoke), `npm run eval:brain` (scorecard), `EVAL_SET=behavioral npm run eval:brain`.
 - **State lives in:** memory + owner.json + packaged config → `app.getPath('userData')` (override `RORO_DB_DIR`). The agent's working repo resolves from explicit `RORO_WORKDIR`, then persisted `userData/config.json`, then the explicit `RORO_ALLOW_CWD=1` dev fallback.
 
 ---
