@@ -115,22 +115,25 @@ cat thinks (driven by the local brain's content stream) → drives Codex in `ROR
 RORO_FLOATING_WINDOW=1 npm start
 ```
 
-Shrinks the window, removes the frame, makes the background transparent, hides every
-overlay so only the cat shows, and keeps Roro above normal windows across macOS Spaces.
-**Tap or hold to pet, drag to move.** Right-click/M mute is available only in
-voice-dev launches, when the mic can actually be muted.
+Shrinks the window, removes the frame, makes the background transparent, hides the
+full console overlay, and keeps Roro above normal windows across macOS Spaces. The
+cat remains the center of the surface, with the compact Ask pill for tasks and
+first-run setup banners only when action is needed. **Tap or hold to pet, drag to
+move.** Right-click/M mute is available only in voice-dev launches, when the mic can
+actually be muted.
 
 ## Verify
 
 - `npx tsc --noEmit -p tsconfig.json` → 0 errors
-- `npx vitest run` → 190 passing (+4 opt-in live-brain tests, skipped without `OLLAMA_AVAILABLE=1`)
+- `npx vitest run --no-file-parallelism` → full deterministic suite
 - `npm run verify:floating` → on-screen smoke for the floating Ask (needs a display)
 
 ## Known notes
 
 - The local Ollama path streams the decision as **content** (no separate
   `reasoning_content` channel), so the "thinking" pose is driven by content deltas; under
-  `BRAIN_PROVIDER=nebius`, `reasoning_content` drives a live reasoning caption.
+  `BRAIN_PROVIDER=nebius`, `reasoning_content` drives the same thinking pose with a non-leaking
+  proof-of-life caption.
 - The Claude executor path is unit-checked; smoke-test once `ANTHROPIC_API_KEY` is set.
 - Binary path overrides: `RORO_CODEX_BIN`, `RORO_CLAUDE_BIN`. Debug CDP port:
   `RORO_DEBUG_PORT`. (Legacy `COMPANION_*` names still work with a deprecation warning.)

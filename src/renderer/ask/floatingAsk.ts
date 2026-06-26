@@ -82,7 +82,8 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
       case 'startTurn': {
         const companion = getCompanion();
         if (!companion?.turnRun) {
-          showFailure('Roro bridge unavailable. Reopen Roro and try again.');
+          console.warn('[floatingAsk] Roro bridge unavailable: window.companion.turnRun missing.');
+          showFailure('Roro lost its connection. Reopen Roro and try again.');
           // No bridge -> the turn can't run and no runEnd will arrive; recover so the Ask never
           // sticks in 'tasked'. Defer so we don't re-enter the in-flight dispatch.
           queueMicrotask(() => dispatch({ type: 'runEnded' }));
@@ -91,7 +92,7 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
         void companion.turnRun({ transcript: eff.text, sessionId }).catch(() => {
           // turnRun returns {runId} even on a decide failure (it pushes run.failed + runEnd); a
           // reject is an IPC-level failure, so no runEnd will arrive — recover the surface here.
-          showFailure('Turn failed before the coding agent started. Reopen Roro and try again.');
+          showFailure('Task could not start. Reopen Roro and try again.');
           dispatch({ type: 'runEnded' });
         });
         break;
@@ -181,7 +182,7 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
           clearFailure();
           dispatch({ type: 'runStarted' });
         } else {
-          if (e.kind === 'run.failed') showFailure(`Turn failed: ${actionableErrorCopy(e.error)}`);
+          if (e.kind === 'run.failed') showFailure(`Task hit a problem: ${actionableErrorCopy(e.error)}`);
           render(); // reflect a disarm (completed/failed) without touching the Ask state
         }
       }),

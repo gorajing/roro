@@ -215,8 +215,11 @@ async function inspectApp({ home, cwd, userDataDir, label }) {
         href: location.href,
         bodyText: document.body.innerText.slice(0, 800),
         hasTopbar: !!document.querySelector('#topbar'),
+        poweredText: document.querySelector('#powered')?.textContent ?? '',
         hasOverlay: !!document.querySelector('#overlay'),
         hasPromptForm: !!document.querySelector('#prompt-form'),
+        promptPlaceholder: document.querySelector('#prompt-input')?.getAttribute('placeholder') ?? '',
+        sendText: document.querySelector('#send-btn')?.textContent ?? '',
         hasWorkdirBanner: !!document.querySelector('#workdir-banner'),
         workdirHidden: document.querySelector('#workdir-banner')?.hidden ?? null,
         workdirText: document.querySelector('#workdir-banner')?.textContent ?? '',
@@ -313,7 +316,11 @@ try {
   );
   check('renderer body is not blank', fresh.dom.bodyText.includes('Roro'));
   check('#topbar exists', fresh.dom.hasTopbar);
+  check('topbar uses product-local copy', /private local brain and memory/i.test(fresh.dom.poweredText));
+  check('topbar hides implementation names', !/ollama|pglite|pgvector|qwen/i.test(fresh.dom.poweredText));
   check('#prompt-form exists', fresh.dom.hasPromptForm);
+  check('prompt placeholder is product-facing', /ask roro to work/i.test(fresh.dom.promptPlaceholder));
+  check('submit button says Start', fresh.dom.sendText.trim() === 'Start');
   check('#workdir-banner exists', fresh.dom.hasWorkdirBanner);
   check('#workdir-banner is visible when no project is configured', fresh.dom.workdirHidden === false);
   check('#workdir-banner is visibly rendered', fresh.dom.workdirBannerVisible);

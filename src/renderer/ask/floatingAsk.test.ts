@@ -112,8 +112,10 @@ describe('floatingAsk shell (jsdom)', () => {
     h.fireRunEnd();
     expect(h.form.classList.contains('collapsed')).toBe(true);
     expect(h.error.hidden).toBe(false);
+    expect(h.error.textContent).toContain('Task hit a problem');
     expect(h.error.textContent).toContain('Codex CLI not found');
     expect(h.error.textContent).toContain('RORO_CODEX_BIN');
+    expect(h.error.textContent).not.toContain('Turn failed');
     expect(h.error.textContent).not.toContain('spawn codex ENOENT');
   });
 
