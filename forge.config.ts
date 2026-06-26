@@ -67,6 +67,7 @@ const config: ForgeConfig = {
   packagerConfig: {
     appBundleId: 'com.jinchoi.roro',
     appCategoryType: 'public.app-category.developer-tools',
+    icon: join(__dirname, 'assets', 'roro-icon'),
     ignore: ignorePackagedFile,
     // asar bundles the app, but native LIBRARIES must stay on disk for dlopen. The unpack glob covers
     // sharp's libvips .dylib (a separate package the AutoUnpackNatives plugin's .node-only glob misses);
@@ -75,6 +76,7 @@ const config: ForgeConfig = {
     // The mic usage string the OS shows on first voice capture. REQUIRED: a hardened-runtime app that
     // touches the microphone without it crashes (pairs with the audio-input entitlement).
     extendInfo: {
+      CFBundleIconFile: 'roro-icon.icns',
       NSMicrophoneUsageDescription:
         'Roro listens only after you start Voice Mode, and transcribes your speech on-device.',
     },

@@ -6,8 +6,9 @@
 // Run after `npm run package`: npm run verify:release-artifact
 
 import { execFileSync } from 'node:child_process';
-import { access, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { access, readFile, stat } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { listPackage } from '@electron/asar';
 
 const args = new Map();
@@ -50,6 +51,8 @@ const binaryPath = join(appPath, 'Contents', 'MacOS', 'Roro');
 const resourcesPath = join(appPath, 'Contents', 'Resources');
 const appAsar = join(resourcesPath, 'app.asar');
 const infoPlist = join(appPath, 'Contents', 'Info.plist');
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const sourceIcon = join(repoRoot, 'assets', 'roro-icon.icns');
 const failures = [];
 
 async function exists(path) {
@@ -76,10 +79,16 @@ function plistJson() {
   }));
 }
 
+function iconResourceFilename(rawIconFile) {
+  if (typeof rawIconFile !== 'string' || rawIconFile.length === 0) return null;
+  return rawIconFile.endsWith('.icns') ? rawIconFile : `${rawIconFile}.icns`;
+}
+
 check('Roro.app exists', await exists(appPath), appPath);
 check('Roro binary exists', await exists(binaryPath), binaryPath);
 check('app.asar exists', await exists(appAsar), appAsar);
 check('Info.plist exists', await exists(infoPlist), infoPlist);
+check('source Roro icon exists', await exists(sourceIcon), sourceIcon);
 
 if (failures.length) {
   console.error(`\n[verify] FAILED - packaged app is incomplete.`);
@@ -146,6 +155,40 @@ if (process.platform === 'darwin') {
     check('bundle name is Roro', info.CFBundleName === 'Roro');
     check('microphone usage string is present', info.NSMicrophoneUsageDescription?.includes('Roro listens'));
     check('asar integrity is present', info.ElectronAsarIntegrity?.['Resources/app.asar']?.algorithm === 'SHA256');
+
+    const rawIconFile = info.CFBundleIconFile;
+    const iconFile = iconResourceFilename(rawIconFile);
+    const iconFileIsLocal =
+      typeof iconFile === 'string' && iconFile.length > 0 && !/[\\/]/.test(iconFile) && !iconFile.includes('..');
+    check('bundle icon is set', typeof rawIconFile === 'string' && rawIconFile.length > 0);
+    check('bundle icon is Roro branded', iconFile === 'roro-icon.icns', `CFBundleIconFile=${rawIconFile ?? '<missing>'}`);
+    check('bundle icon is a Resources-local filename', iconFileIsLocal, iconFile ?? '<missing>');
+
+    if (iconFileIsLocal) {
+      const iconPath = join(resourcesPath, iconFile);
+      const iconExists = await exists(iconPath);
+      check(`Resources/${iconFile} exists`, iconExists, iconPath);
+
+      if (iconExists) {
+        const iconStats = await stat(iconPath);
+        check(`Resources/${iconFile} is non-empty`, iconStats.size > 0, `${iconStats.size} bytes`);
+        try {
+          const [sourceBytes, bundledBytes] = await Promise.all([readFile(sourceIcon), readFile(iconPath)]);
+          check(`Resources/${iconFile} matches source icon`, bundledBytes.equals(sourceBytes));
+        } catch (err) {
+          check(`Resources/${iconFile} matches source icon`, false, err.message);
+        }
+        try {
+          const iconInfo = execFileSync('sips', ['-g', 'format', iconPath], {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
+          check(`Resources/${iconFile} is an icns`, iconInfo.includes('format: icns'));
+        } catch (err) {
+          check(`Resources/${iconFile} is an icns`, false, err.stderr?.toString().trim() || err.message);
+        }
+      }
+    }
   } catch (err) {
     check('Info.plist release metadata is readable', false, err.stderr?.toString().trim() || err.message);
   }
