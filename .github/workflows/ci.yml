@@ -39,3 +39,32 @@ jobs:
 
       - name: Test
         run: npm test
+
+  release-artifact:
+    name: package · release artifact
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Fresh CI checkouts do not have ignored voice caches, so seed stale generated files that must not
+      # leak into the default typed-only v0 package.
+      - name: Seed forbidden voice cache sentinels
+        run: |
+          mkdir -p public/models/__release_verifier_should_not_ship__ public/vad public/ort
+          printf 'do-not-ship\n' > public/models/__release_verifier_should_not_ship__/sentinel.txt
+          printf 'do-not-ship\n' > public/vad/sentinel.txt
+          printf 'do-not-ship\n' > public/ort/sentinel.txt
+
+      - name: Package default macOS app
+        run: env -u RORO_VAD_VOICE -u RORO_STT_VOICE -u RORO_TTS_VOICE npm run package
+
+      - name: Verify release artifact
+        run: npm run verify:release-artifact

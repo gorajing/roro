@@ -18,11 +18,56 @@ import {
 } from './src/build/macSigning';
 
 const macSigning = macSigningConfig(process.env);
+const includeVadAssets =
+  process.env.RORO_VAD_VOICE === '1' ||
+  process.env.RORO_STT_VOICE === '1' ||
+  process.env.RORO_TTS_VOICE === '1';
+const includeTransformersOrtAssets =
+  process.env.RORO_STT_VOICE === '1' ||
+  process.env.RORO_TTS_VOICE === '1';
+const includeSttModel = process.env.RORO_STT_VOICE === '1';
+const includeTtsModel = process.env.RORO_TTS_VOICE === '1';
+
+function ignorePackagedFile(file: string): boolean {
+  if (!file) return false;
+
+  // Preserve the Electron Forge Vite plugin's default copy filter: packaged apps only need .vite.
+  if (!file.startsWith('/.vite')) return true;
+
+  // v0 ships typed-only by default. Voice is still available for dev/opt-in builds, but ignored in
+  // normal packages so stale generated public/ assets cannot silently bloat the stranger-download app.
+  const rendererPrefix = '/.vite/renderer/main_window/';
+  if (!file.startsWith(rendererPrefix)) return false;
+  const rel = file.slice(rendererPrefix.length);
+
+  if ((rel === 'vad' || rel.startsWith('vad/')) && !includeVadAssets) return true;
+  if ((rel === 'ort' || rel.startsWith('ort/')) && !includeTransformersOrtAssets) return true;
+  if ((rel === 'models' || rel === 'models/onnx-community') && !includeSttModel && !includeTtsModel) return true;
+  if (rel.startsWith('assets/')) {
+    const assetName = rel.slice('assets/'.length);
+    if (/^sileroVad-.*\.js$/.test(assetName) && !includeVadAssets) return true;
+    if (/^whisperTranscribe-.*\.js$/.test(assetName) && !includeSttModel) return true;
+    if (/^kokoro(?:Synthesize|VoiceEngine)-.*\.js$/.test(assetName) && !includeTtsModel) return true;
+    if (/^onnxRuntimeEnv-.*\.js$/.test(assetName) && !includeTransformersOrtAssets) return true;
+    if (/^ort-wasm-simd-threaded\.jsep-.*\.wasm$/.test(assetName) && !includeTransformersOrtAssets) return true;
+  }
+  if (rel === 'models/onnx-community/whisper-base.en' || rel.startsWith('models/onnx-community/whisper-base.en/')) {
+    return !includeSttModel;
+  }
+  if (
+    rel === 'models/onnx-community/Kokoro-82M-v1.0-ONNX' ||
+    rel.startsWith('models/onnx-community/Kokoro-82M-v1.0-ONNX/')
+  ) {
+    return !includeTtsModel;
+  }
+  return false;
+}
 
 const config: ForgeConfig = {
   packagerConfig: {
     appBundleId: 'com.jinchoi.roro',
     appCategoryType: 'public.app-category.developer-tools',
+    ignore: ignorePackagedFile,
     // asar bundles the app, but native LIBRARIES must stay on disk for dlopen. The unpack glob covers
     // sharp's libvips .dylib (a separate package the AutoUnpackNatives plugin's .node-only glob misses);
     // forge merges this with the plugin's .node glob so BOTH the addon and its .dylib land unpacked.

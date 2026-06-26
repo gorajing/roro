@@ -202,7 +202,7 @@ export async function bootstrap(): Promise<void> {
 
   voiceModeBtn?.addEventListener('click', () => {
     if (voiceToggle) voiceToggle();
-    else setStatus('Voice isn’t enabled this session — relaunch with RORO_STT_VOICE=1 RORO_TTS_VOICE=1 npm start. (One-click voice install lands in a later update.)');
+    else setStatus('Voice is not part of this build yet — the typed coding companion is ready.');
   });
 
   // Text-input path: feed a typed task straight to MAIN's orchestrator

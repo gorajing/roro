@@ -18,24 +18,38 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
+const realVadEnabled =
+  process.env.RORO_VAD_VOICE === '1' ||
+  process.env.RORO_STT_VOICE === '1' ||
+  process.env.RORO_TTS_VOICE === '1';
+const transformerVoiceEnabled =
+  process.env.RORO_STT_VOICE === '1' ||
+  process.env.RORO_TTS_VOICE === '1';
+
 const vadSrc = join(root, 'node_modules', '@ricky0123', 'vad-web', 'dist');
 const ortSrc = join(root, 'node_modules', 'onnxruntime-web', 'dist'); // the 1.27 build vad-web uses
 const whisperSrc = join(root, 'node_modules', '@huggingface', 'transformers', 'dist'); // bundles its own 1.22 ORT wasm
 
 // [sourceDir, filename, destSubdir]. Silero model + AudioWorklet (baseAssetPath) + ORT 1.27 wasm/loaders
 // (onnxWASMBasePath) -> public/vad/; transformers.js's OWN ORT 1.22 wasm (jsep variant) -> public/ort/.
-const assets = [
+const vadAssets = [
   [vadSrc, 'silero_vad_v5.onnx', 'vad'],
   [vadSrc, 'vad.worklet.bundle.min.js', 'vad'],
   [ortSrc, 'ort-wasm-simd-threaded.wasm', 'vad'],
   [ortSrc, 'ort-wasm-simd-threaded.mjs', 'vad'],
   [ortSrc, 'ort-wasm-simd-threaded.jsep.wasm', 'vad'],
   [ortSrc, 'ort-wasm-simd-threaded.jsep.mjs', 'vad'],
+];
+const transformerOrtAssets = [
   [whisperSrc, 'ort-wasm-simd-threaded.jsep.wasm', 'ort'],
   [whisperSrc, 'ort-wasm-simd-threaded.jsep.mjs', 'ort'],
 ];
 
 const counts = {};
+const assets = [
+  ...(realVadEnabled ? vadAssets : []),
+  ...(transformerVoiceEnabled ? transformerOrtAssets : []),
+];
 for (const [src, name, sub] of assets) {
   const from = join(src, name);
   if (!existsSync(from)) {
@@ -47,9 +61,13 @@ for (const [src, name, sub] of assets) {
   copyFileSync(from, join(destDir, name));
   counts[sub] = (counts[sub] ?? 0) + 1;
 }
-console.log(
-  `[stage-voice-assets] staged ${Object.entries(counts).map(([d, n]) => `${n} -> public/${d}/`).join(', ')}`,
-);
+if (assets.length === 0) {
+  console.log('[stage-voice-assets] no real voice flags set — skipping VAD/ORT runtime staging.');
+} else {
+  console.log(
+    `[stage-voice-assets] staged ${Object.entries(counts).map(([d, n]) => `${n} -> public/${d}/`).join(', ')}`,
+  );
+}
 
 // ─── On-device MODEL WEIGHTS (whisper STT + Kokoro TTS) ────────────────────────────────────────────────
 // Unlike the wasm runtimes above (vendored in node_modules), the model weights are DOWNLOADED from Hugging
