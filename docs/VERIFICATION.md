@@ -31,6 +31,7 @@ Run this after changes to:
 
 ```sh
 npm run verify:packaged-memory
+npm run verify:packaged-live-memory-turn   # optional; requires local Ollama + required models
 ```
 
 `scripts/smoke-packaged-memory.mjs` launches the real packaged app with disposable `cwd` and `--user-data-dir`. On macOS
@@ -40,6 +41,17 @@ Electron `safeStorage`. It writes a unique `observation` through `window.memory.
 the same profile, and proves `window.memory.recall` returns that row under the same owner. It also checks that the default
 memory root is `userData/memory/memory2`, that the cwd fallback `.roro-memory2` was not created, that the memory store is
 marked encrypted, and that the smoke token is not present as plaintext under the memory store.
+
+By default this smoke forces local Ollama to an unreachable port. That makes it a deterministic persistence gate and
+proves recall degrades to recency when embeddings are unavailable. `npm run verify:packaged-live-memory-turn` flips on
+`RORO_PACKAGED_MEMORY_LIVE_TURN=1`: the same packaged app keeps live Ollama enabled, then after relaunch it asks
+`window.companion.turnRun` about a remembered smoke value and asserts the action stream includes a memory beat and a
+narration containing that value.
+
+The live mode proves packaged same-build encrypted recall can feed a live turn/narration after relaunch. It does **not**
+replace the Phase 0 non-founder magic-moment validation, the Developer-ID/notarized clean-Mac install, or cross-update
+memory durability. Because the smoke seeds the value directly through the memory bridge, it also does **not** prove
+natural-language extraction quality.
 
 Run this after changes to:
 

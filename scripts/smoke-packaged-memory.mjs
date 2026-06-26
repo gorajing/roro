@@ -2,8 +2,12 @@
 //
 // This launches the real packaged .app with disposable userData/cwd,
 // writes an observation through the renderer memory bridge, terminates the app,
-// relaunches the same userData profile, and recalls the observation. It is a
-// deterministic packaged-memory gate, not a replacement for the human
+// relaunches the same userData profile, and recalls the observation. By
+// default it forces local Ollama offline to keep the persistence gate
+// deterministic and prove recency fallback. With
+// RORO_PACKAGED_MEMORY_LIVE_TURN=1 it keeps live Ollama enabled and also runs
+// one packaged turn through window.companion.turnRun, asserting the brain speaks
+// the recalled memory value after relaunch. Neither mode replaces the human
 // non-founder "magic moment" test in PUBLIC.md.
 //
 // Do NOT override HOME here: on macOS Electron safeStorage deliberately uses
@@ -12,7 +16,9 @@
 // avoids mutating or blocking on stale ad-hoc Roro Safe Storage items in the
 // login keychain while still exercising Electron safeStorage.
 //
-// Run after `npm run package`: npm run verify:packaged-memory
+// Run after `npm run package`:
+//   npm run verify:packaged-memory
+//   npm run verify:packaged-live-memory-turn   # requires local Ollama + required models
 
 import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
@@ -24,8 +30,10 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 const BOOT_TIMEOUT_MS = Number(process.env.RORO_MEMORY_BOOT_TIMEOUT_MS || 120_000);
 const MEMORY_TIMEOUT_MS = Number(process.env.RORO_MEMORY_OP_TIMEOUT_MS || 45_000);
+const LIVE_TURN_TIMEOUT_MS = Number(process.env.RORO_MEMORY_LIVE_TURN_TIMEOUT_MS || 120_000);
 const CDP_COMMAND_TIMEOUT_MS = Number(process.env.RORO_MEMORY_CDP_TIMEOUT_MS || 5000);
 const KEEP = process.env.KEEP_RORO_SMOKE_HOME === '1';
+const LIVE_TURN = process.env.RORO_PACKAGED_MEMORY_LIVE_TURN === '1';
 
 function appBinaryPath(rawPath) {
   const candidate = resolve(rawPath || `out/Roro-darwin-${process.arch}/Roro.app/Contents/MacOS/Roro`);
@@ -82,9 +90,11 @@ function smokeEnv(port, ollamaPort) {
     RORO_DEBUG_PORT: String(port),
     RORO_PGLITE_EXT_DEBUG: '1',
     BRAIN_PROVIDER: 'ollama',
-    OLLAMA_HOST: `http://127.0.0.1:${ollamaPort}`,
-    OLLAMA_TIMEOUT_MS: '250',
   };
+  if (!LIVE_TURN) {
+    env.OLLAMA_HOST = `http://127.0.0.1:${ollamaPort}`;
+    env.OLLAMA_TIMEOUT_MS = '250';
+  }
   delete env.RORO_WORKDIR;
   delete env.COMPANION_WORKDIR;
   delete env.RORO_ALLOW_CWD;
@@ -239,7 +249,7 @@ async function evaluate(cdp, expression, params = {}) {
   return result.result.value;
 }
 
-async function runRendererMemoryOp(cdp, expression, label) {
+async function runRendererMemoryOp(cdp, expression, label, timeoutMs = MEMORY_TIMEOUT_MS) {
   const key = `__roroMemorySmoke_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   console.log(`[smoke] starting ${label} through renderer bridge...`);
   try {
@@ -267,9 +277,9 @@ async function runRendererMemoryOp(cdp, expression, label) {
   } catch (err) {
     throw new Error(`${label} start failed: ${(err).message}`);
   }
-  console.log(`[smoke] ${label} started; waiting up to ${MEMORY_TIMEOUT_MS}ms...`);
+  console.log(`[smoke] ${label} started; waiting up to ${timeoutMs}ms...`);
 
-  const deadline = Date.now() + MEMORY_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
   try {
     while (Date.now() < deadline) {
       let state;
@@ -284,11 +294,106 @@ async function runRendererMemoryOp(cdp, expression, label) {
     return {
       done: true,
       ok: false,
-      message: `${label} timed out after ${MEMORY_TIMEOUT_MS}ms`,
+      message: `${label} timed out after ${timeoutMs}ms`,
     };
   } finally {
     await evaluate(cdp, `delete window[${JSON.stringify(key)}]`).catch(() => {});
   }
+}
+
+function liveTurnExpression(transcript, sessionId, timeoutMs) {
+  return `new Promise((resolve) => {
+    const companion = window.companion;
+    if (
+      typeof companion?.turnRun !== 'function' ||
+      typeof companion?.onActionEvent !== 'function' ||
+      typeof companion?.onRunEnd !== 'function'
+    ) {
+      resolve({ ok: false, message: 'missing companion turn/event bridge' });
+      return;
+    }
+
+    const events = [];
+    let turnResult = null;
+    let turnRunId = null;
+    let pendingRunEnd = null;
+    let settled = false;
+    let offEvent = () => {};
+    let offRunEnd = () => {};
+
+    const timer = setTimeout(() => {
+      finish({ ok: false, message: 'live memory turn timed out after ${timeoutMs}ms' });
+    }, ${timeoutMs});
+
+    function cleanup() {
+      clearTimeout(timer);
+      try { offEvent(); } catch {}
+      try { offRunEnd(); } catch {}
+    }
+
+    function finish(payload) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      const scopedEvents = turnRunId
+        ? events.filter((event) => event?.runId === turnRunId)
+        : events;
+      resolve({ ...payload, events: scopedEvents, turnResult });
+    }
+
+    function finishIfRunEnded() {
+      if (!turnRunId || !pendingRunEnd || pendingRunEnd.runId !== turnRunId) return;
+      finish({ ok: true, runEnd: pendingRunEnd });
+    }
+
+    offEvent = companion.onActionEvent((event) => {
+      events.push(event);
+    });
+    offRunEnd = companion.onRunEnd((runEnd) => {
+      pendingRunEnd = runEnd;
+      finishIfRunEnded();
+    });
+
+    companion.turnRun(${JSON.stringify({ transcript, sessionId })})
+      .then((value) => {
+        turnResult = value;
+        turnRunId = typeof value?.runId === 'string' ? value.runId : null;
+        finishIfRunEnded();
+      })
+      .catch((err) => {
+        finish({
+          ok: false,
+          message: String(err?.message || err),
+          stack: String(err?.stack || ''),
+        });
+      });
+  })`;
+}
+
+function bootstrapStatusExpression(timeoutMs) {
+  return `new Promise((resolve) => {
+    const companion = window.companion;
+    if (typeof companion?.getBootstrapStatus !== 'function') {
+      resolve({ ok: false, message: 'missing bootstrap status bridge' });
+      return;
+    }
+
+    const deadline = Date.now() + ${timeoutMs};
+    async function poll() {
+      try {
+        const status = await companion.getBootstrapStatus();
+        if (status || Date.now() >= deadline) {
+          resolve({ ok: Boolean(status), status, message: status ? '' : 'bootstrap status timed out' });
+          return;
+        }
+      } catch (err) {
+        resolve({ ok: false, message: String(err?.message || err) });
+        return;
+      }
+      setTimeout(poll, 250);
+    }
+    poll();
+  })`;
 }
 
 async function withPackagedRenderer({ cwd, userDataDir, label, operation }) {
@@ -311,6 +416,9 @@ async function withPackagedRenderer({ cwd, userDataDir, label, operation }) {
       memoryRemember: typeof window.memory?.remember,
       memoryRecall: typeof window.memory?.recall,
       bootstrapStatus: typeof window.companion?.getBootstrapStatus,
+      turnRun: typeof window.companion?.turnRun,
+      onActionEvent: typeof window.companion?.onActionEvent,
+      onRunEnd: typeof window.companion?.onRunEnd,
     }))()`);
     const result = await operation({ cdp, evaluate, dom });
     return { ...result, dom, logs: run.logs };
@@ -437,7 +545,8 @@ const userDataDir = join(root, 'userData');
 const sessionA = 'packaged-memory-smoke-a';
 const sessionB = 'packaged-memory-smoke-b';
 const token = `roro-packaged-memory-${Date.now()}-${randomUUID()}`;
-const text = `Packaged memory smoke token ${token}`;
+const liveMemoryAnswer = 'ultraviolet';
+const text = `Packaged memory smoke token: ${token}. The user's packaged smoke color is ${liveMemoryAnswer}.`;
 await mkdir(cwd, { recursive: true });
 await mkdir(userDataDir, { recursive: true });
 let restoreKeychain = () => {};
@@ -510,12 +619,34 @@ try {
     operation: async ({ cdp, dom }) => {
       check('relaunch renderer URL is file:// app.asar', dom.href.startsWith('file://') && dom.href.includes('/Roro.app/Contents/Resources/app.asar/'));
       check('relaunch memory recall bridge exists', dom.memoryRecall === 'function');
+      check('relaunch turnRun bridge exists', !LIVE_TURN || dom.turnRun === 'function');
+      check('relaunch action-event bridge exists', !LIVE_TURN || dom.onActionEvent === 'function');
+      check('relaunch runEnd bridge exists', !LIVE_TURN || dom.onRunEnd === 'function');
       const recall = await runRendererMemoryOp(
         cdp,
         `window.memory.recall(${JSON.stringify({ query: token, k: 5, sessionId: sessionB })})`,
         'memory recall',
       );
-      return { recall };
+      let bootstrap = null;
+      let liveTurn = null;
+      if (LIVE_TURN) {
+        bootstrap = await runRendererMemoryOp(
+          cdp,
+          bootstrapStatusExpression(BOOT_TIMEOUT_MS),
+          'bootstrap status',
+        );
+        liveTurn = await runRendererMemoryOp(
+          cdp,
+          liveTurnExpression(
+            'What is my packaged smoke color? Answer with only the remembered color.',
+            sessionB,
+            LIVE_TURN_TIMEOUT_MS,
+          ),
+          'live memory turn',
+          LIVE_TURN_TIMEOUT_MS + 5000,
+        );
+      }
+      return { recall, bootstrap, liveTurn };
     },
   });
 
@@ -532,6 +663,40 @@ try {
   check('owner_id survived relaunch', ownerAfterRelaunch?.owner_id === owner?.owner_id);
   check('recalled row owner matches owner.json', hit?.owner_id === owner?.owner_id);
   check('relaunch logs have no memory keychain failure', !/OS keychain unavailable|memory store is locked|cannot encrypt memory/i.test(second.logs.join('\n')));
+
+  if (LIVE_TURN) {
+    console.log('[smoke] asserting packaged live turn uses recalled memory...');
+    const bootstrap = second.bootstrap?.value?.status;
+    check('bootstrap status bridge resolved for live turn', second.bootstrap?.ok, second.bootstrap?.message);
+    check(
+      'local Ollama brain is ready for live turn',
+      bootstrap?.ready === true,
+      second.bootstrap?.value?.message || bootstrap?.message || (bootstrap ? JSON.stringify(bootstrap) : 'missing bootstrap status'),
+    );
+
+    const live = second.liveTurn?.value;
+    const events = Array.isArray(live?.events) ? live.events : [];
+    const memoryStatus = events.find((event) => event?.kind === 'status' && /^Memory:/.test(event.text ?? ''));
+    const memoryMatch = /^Memory:\s+(\d+) known .+?,\s+(\d+) related /.exec(memoryStatus?.text ?? '');
+    const relatedCount = memoryMatch ? Number(memoryMatch[2]) : 0;
+    const narration = events
+      .filter((event) => event?.kind === 'message')
+      .map((event) => event.text)
+      .join('\n');
+
+    check('live turn bridge resolved', second.liveTurn?.ok, second.liveTurn?.message);
+    check('live turn completed with runEnd', live?.ok === true && Boolean(live.runEnd), live?.message);
+    check('live turn runEnd matches turnRun result', live?.runEnd?.runId === live?.turnResult?.runId);
+    check('live turn emitted a memory status beat', Boolean(memoryStatus), JSON.stringify(events));
+    check('live turn recalled the seeded episodic memory', relatedCount > 0, memoryStatus?.text);
+    check('live turn did not start the coding executor', !events.some((event) => event?.kind === 'run.started'));
+    check('live turn produced no run.failed event', !events.some((event) => event?.kind === 'run.failed'));
+    check(
+      'live turn narration includes the recalled memory value',
+      narration.toLowerCase().includes(liveMemoryAnswer),
+      narration.slice(0, 500),
+    );
+  }
 } catch (err) {
   console.error(`[smoke] harness error: ${err.message}`);
   failures.push(`harness: ${err.message}`);
@@ -551,4 +716,8 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('\n[smoke] PASS - packaged memory writes, stays encrypted, and recalls after relaunch.');
+console.log(
+  `\n[smoke] PASS - packaged memory writes, stays encrypted, recalls after relaunch${
+    LIVE_TURN ? ', and feeds a live turn.' : ''
+  }`,
+);

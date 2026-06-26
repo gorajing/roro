@@ -178,6 +178,7 @@ npx vitest run --no-file-parallelism
 npm run verify:floating          # on-screen smoke for the floating Ask (needs a display)
 npm run package
 npm run verify:packaged-memory   # packaged memory write -> quit -> relaunch -> recall smoke
+npm run verify:packaged-live-memory-turn  # packaged relaunch -> live Ollama turn uses recalled memory
 npm run verify:packaged-onboarding
 npm run verify:release-artifact
 ```
@@ -191,6 +192,7 @@ What is working:
 - procedural pixel cat, transparent floating mode, and state effects
 - packaged workdir onboarding: native project picker, persisted `userData/config.json`, and typed/floating Ask gates
 - packaged same-build memory persistence smoke: a real packaged app writes and recalls an observation across relaunch
+- packaged live-memory turn smoke: with local Ollama ready, a real packaged turn narrates a recalled value after relaunch
 - **local Ollama brain** (decide/vision/embeddings) — verified end-to-end against a
   live daemon
 - **local PGlite + pgvector memory** (owner-scoped, survives restarts)

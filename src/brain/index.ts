@@ -135,12 +135,13 @@ export function describeBrain(): string {
 
 export async function preflight(): Promise<PreflightResult> {
   const models = getModelIds();
-  const requiredIds = [models.reason, models.vision, models.embed];
+  const essentialIds = [models.reason, models.embed];
+  const checkedIds = [models.reason, models.vision, models.embed];
 
   if (brainProvider() === 'ollama') {
     const tags = await ollamaTags();
-    const found = requiredIds.filter((id) => hasModel(tags, id));
-    const missing = requiredIds.filter((id) => !hasModel(tags, id));
+    const found = checkedIds.filter((id) => hasModel(tags, id));
+    const missing = essentialIds.filter((id) => !hasModel(tags, id));
     if (missing.length > 0) {
       throw new Error(
         `Ollama models missing: ${missing.join(', ')}. Pull them with: ${missing.map((m) => `ollama pull ${m}`).join(' && ')}`,
@@ -156,8 +157,8 @@ export async function preflight(): Promise<PreflightResult> {
 
   const list = await getNebiusClient().models.list();
   const availableIds = list.data.map((model) => model.id);
-  const found = requiredIds.filter((id) => availableIds.indexOf(id) !== -1);
-  const missing = requiredIds.filter((id) => availableIds.indexOf(id) === -1);
+  const found = checkedIds.filter((id) => availableIds.indexOf(id) !== -1);
+  const missing = essentialIds.filter((id) => availableIds.indexOf(id) === -1);
   const result = { required: models, found, missing };
 
   if (missing.length > 0) {
