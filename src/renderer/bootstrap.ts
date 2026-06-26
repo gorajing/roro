@@ -26,6 +26,7 @@ import { mountWorkdirBanner } from './bootstrap/workdirBanner';
 import { ensureWorkdirReady, notifyWorkdirConfigured } from './bootstrap/workdirSetup';
 import { getCompanion } from './events/bridge';
 import { runState } from './events/runState';
+import { actionableErrorCopy, typedTurnEndStatus } from './events/errorCopy';
 import { mountLocalVoiceMode } from './voice/mountLocalVoiceMode';
 import { activateVoice } from './voice/voiceActivation';
 import { createFakeVoiceEngine } from './voice/fakeVoiceEngine';
@@ -236,6 +237,7 @@ export async function bootstrap(): Promise<void> {
   // reasoning caption + button state.
   let turnInFlight = false;
   let cancelRequested = false;
+  let terminalError: string | null = null;
 
   // Arm Stop ONLY once the coding agent actually starts: cancelTask can abort a
   // run only after the executor registers it. The pre-executor phase (Nebius
@@ -243,13 +245,17 @@ export async function bootstrap(): Promise<void> {
   // nothing to abort there — enabling Stop then would be a lie.
   getCompanion()?.onActionEvent((e) => {
     if (e.kind === 'run.started') {
+      terminalError = null;
       driver.setBusy?.(true);
       if (cancelBtn) cancelBtn.disabled = false;
       setStatus('Coding agent running — click Stop to abort.');
     } else if (e.kind === 'run.completed') {
+      terminalError = null;
       driver.setBusy?.(false);
     } else if (e.kind === 'run.failed') {
+      terminalError = e.error;
       driver.setBusy?.(false);
+      setStatus(`Turn failed: ${actionableErrorCopy(e.error)}`);
     }
   });
 
@@ -265,7 +271,7 @@ export async function bootstrap(): Promise<void> {
 
   getCompanion()?.onRunEnd?.(() => {
     if (!turnInFlight) return; // ignore runEnd for turns this dev form didn't start (e.g. floating Ask)
-    setStatus(cancelRequested ? 'Stopped.' : 'Done — type another task.');
+    setStatus(typedTurnEndStatus(cancelRequested, terminalError));
     releaseDevTurn();
   });
 
@@ -293,6 +299,7 @@ export async function bootstrap(): Promise<void> {
     // Keep the typed task on screen for the whole run (cleared on runEnd).
     turnInFlight = true;
     cancelRequested = false;
+    terminalError = null;
     if (sendBtn) sendBtn.disabled = true;
     captions.update('user', text, true);
     driver.setState('thinking');
@@ -308,7 +315,7 @@ export async function bootstrap(): Promise<void> {
       // turnRun normally returns {runId} even on a decide failure (it pushes run.failed + runEnd);
       // a throw here is an IPC-level failure, so no runEnd will arrive — release directly.
       driver.setState('error');
-      setStatus(`Turn failed: ${describeError(e)}`);
+      setStatus(`Turn failed: ${actionableErrorCopy(describeError(e))}`);
       releaseDevTurn();
     }
   });

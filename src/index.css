@@ -271,7 +271,8 @@ button:disabled {
    Only shown in floating mode; dev mode keeps using #overlay #prompt-form. Each interactive
    bit is its own pointer-events island so the transparent window stays click-through elsewhere. */
 #floating-ask,
-#floating-stop {
+#floating-stop,
+#floating-error {
   display: none;
 }
 
@@ -358,6 +359,31 @@ body.floating-window #floating-stop {
 }
 body.floating-window #floating-stop.armed {
   display: block;
+}
+
+body.floating-window #floating-error {
+  position: absolute;
+  left: 50%;
+  bottom: 52px;
+  transform: translateX(-50%);
+  z-index: 3;
+  pointer-events: auto;
+  max-width: min(340px, 88vw);
+  font-size: 12px;
+  line-height: 1.35;
+  color: #fff4f0;
+  background: rgba(80, 22, 18, 0.88);
+  border: 1px solid rgba(255, 150, 120, 0.45);
+  border-radius: 8px;
+  padding: 7px 10px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+body.floating-window #floating-error:not([hidden]) {
+  display: block;
+}
+body.floating-window #floating-stop.armed + #floating-error:not([hidden]) {
+  bottom: 88px;
 }
 
 /* ---- Phase C1: destructive-confirm chip (shown in BOTH modes — safety is not floating-only) ---- */
