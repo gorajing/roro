@@ -12,6 +12,7 @@ import type { CharacterDriver } from '../character/types';
 import { askReduce, INITIAL_ASK_STATE, type AskState, type AskEffect, type AskEvent } from './askMachine';
 import { reduceRun, INITIAL_RUN_LIFECYCLE, type RunLifecycle } from '../events/runLifecycle';
 import { getCompanion } from '../events/bridge';
+import { ensureWorkdirReady, notifyWorkdirConfigured } from '../bootstrap/workdirSetup';
 import type { ActionEvent } from '../../shared/events';
 
 export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: string }): () => void {
@@ -69,7 +70,22 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
           queueMicrotask(() => dispatch({ type: 'runEnded' }));
           break;
         }
-        void companion.turnRun({ transcript: eff.text, sessionId }).catch(() => {
+        void (async () => {
+          const getWorkdirConfig = companion.getWorkdirConfig;
+          const chooseWorkdir = companion.chooseWorkdir;
+          if (getWorkdirConfig && chooseWorkdir) {
+            const ready = await ensureWorkdirReady({
+              getConfig: getWorkdirConfig,
+              chooseWorkdir,
+              onConfigured: notifyWorkdirConfigured,
+            });
+            if (!ready) {
+              dispatch({ type: 'runEnded' });
+              return;
+            }
+          }
+          await companion.turnRun({ transcript: eff.text, sessionId });
+        })().catch(() => {
           // turnRun returns {runId} even on a decide failure (it pushes run.failed + runEnd); a
           // reject is an IPC-level failure, so no runEnd will arrive — recover the surface here.
           dispatch({ type: 'runEnded' });

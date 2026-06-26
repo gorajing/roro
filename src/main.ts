@@ -15,6 +15,7 @@ import { registerIpcHandlers } from './main/ipc';
 import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorTracking } from './main/window';
 import { cancelAllRuns } from './main/orchestrator';
 import { initOwnerId } from './main/identity';
+import { hydrateWorkdirConfig } from './main/configStore';
 import { loadBrain } from './main/siblings';
 import { bootstrapFailureMessage, bootstrapStatusFor, type OllamaProbe } from './main/bootstrapPlan';
 import type { BootstrapStatusMsg } from './shared/ipc';
@@ -90,13 +91,8 @@ app.whenReady().then(async () => {
   // 0. Device-stable owner_id — the memory spine. Must exist before any turn runs. The local
   //    PGlite store lives beside owner.json in userData (single-writer, owned by main only).
   process.env.RORO_DB_DIR ||= join(app.getPath('userData'), 'memory');
+  await hydrateWorkdirConfig();
   await initOwnerId();
-
-  // 0b. Memory-at-rest readiness: encrypted memory wraps its data key with the OS keychain (safeStorage).
-  //     Log it at boot so a keychain failure is visible BEFORE the first lazy memory op fails loud — e.g.
-  //     an invalidly-signed packaged build makes the Keychain return errSecAuthFailed → false here.
-  const { safeStorage } = await import('electron');
-  console.log(`[main] memory-at-rest: safeStorage.isEncryptionAvailable() = ${safeStorage.isEncryptionAvailable()}`);
 
   // 1. Chromium-level media permission grant for the renderer's getUserMedia (request+check).
   //    Cheap + promptless, so it is always installed; it only matters if voice later opens the mic.

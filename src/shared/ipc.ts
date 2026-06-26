@@ -25,6 +25,13 @@ export interface ModelPullProgressMsg {
   error?: string;
 }
 
+export type WorkdirConfigSource = 'env' | 'config' | 'unset';
+
+export interface WorkdirConfigMsg {
+  workdir?: string;
+  source: WorkdirConfigSource;
+}
+
 export const CH = {
   micStatus: 'mic:status', micRequest: 'mic:request',
   windowMoveBy: 'window:moveBy',
@@ -43,6 +50,8 @@ export const CH = {
   // renderer invokes a one-click pull; MAIN streams progress.
   bootstrapStatus: 'bootstrap:status', bootstrapStatusGet: 'bootstrap:statusGet',
   modelPull: 'model:pull', modelPullProgress: 'model:pullProgress',
+  // Packaged-app onboarding (Phase 1): persisted working repo lives in userData/config.json.
+  configGet: 'config:get', configChooseWorkdir: 'config:chooseWorkdir',
   // Open an allowlisted external URL in the default browser (the Ollama download page).
   openExternal: 'shell:openExternal',
 } as const;

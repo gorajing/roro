@@ -5,7 +5,7 @@
 // The canonical ActionEvent is the 11-kind union from src/shared/events.ts (the flat
 // electron-shell union in the BUILD_GUIDE prose is deleted per the central design decision).
 import type { ActionEvent } from '../shared/events';
-import type { MicStatus, TurnInput } from '../shared/ipc';
+import type { MicStatus, TurnInput, WorkdirConfigMsg } from '../shared/ipc';
 import type { Decision, DecideInput } from '../shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch } from '../shared/memory';
 
@@ -40,6 +40,10 @@ export interface CompanionBridge {
   onConfirmRequest(cb: (req: { runId: string; summary: string }) => void): () => void;
   /** Resolve a destructive-confirm — the ONLY approval path (never a spoken/typed word). */
   confirmResolve(runId: string, approved: boolean): Promise<void>;
+  /** Current effective working repo source (env, persisted config, or unset). */
+  getWorkdirConfig(): Promise<WorkdirConfigMsg>;
+  /** Open the native project-folder picker and persist the chosen working repo. */
+  chooseWorkdir(): Promise<WorkdirConfigMsg>;
 }
 
 export type AgentKindArg = 'codex' | 'claude';

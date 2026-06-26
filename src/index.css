@@ -535,8 +535,9 @@ body.floating-window #floating-stop.armed {
   cursor: default;
 }
 
-/* M7b: first-run download banner — a top notice; [hidden] override so the id's display can't defeat it. */
-#bootstrap-banner {
+/* First-run setup banners — top notices; [hidden] override so the id's display can't defeat it. */
+#bootstrap-banner,
+#workdir-banner {
   position: absolute;
   top: 12px;
   left: 50%;
@@ -555,10 +556,17 @@ body.floating-window #floating-stop.armed {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
-#bootstrap-banner[hidden] {
+#workdir-banner {
+  top: 58px;
+  border-color: rgba(124, 140, 255, 0.5);
+  background: rgba(18, 24, 52, 0.95);
+}
+#bootstrap-banner[hidden],
+#workdir-banner[hidden] {
   display: none;
 }
-#bootstrap-download {
+#bootstrap-download,
+#workdir-choose {
   font: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -570,7 +578,13 @@ body.floating-window #floating-stop.armed {
   background: rgba(40, 150, 70, 0.9);
   white-space: nowrap;
 }
-#bootstrap-download:disabled {
+#workdir-choose {
+  border-color: rgba(124, 140, 255, 0.7);
+  background: rgba(124, 140, 255, 0.9);
+  color: #080b16;
+}
+#bootstrap-download:disabled,
+#workdir-choose:disabled {
   opacity: 0.6;
   cursor: default;
 }

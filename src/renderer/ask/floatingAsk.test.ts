@@ -8,7 +8,10 @@ function setCompanion(stub: unknown): void {
   (window as unknown as { companion: unknown }).companion = stub;
 }
 
-function setup() {
+function setup(over: {
+  getWorkdirConfig?: ReturnType<typeof vi.fn>;
+  chooseWorkdir?: ReturnType<typeof vi.fn>;
+} = {}) {
   document.body.innerHTML = '<div id="app"></div>';
   const driver = { poke: vi.fn(), setState: vi.fn() };
   let actionCb: ((e: ActionEvent) => void) | null = null;
@@ -20,6 +23,8 @@ function setup() {
   setCompanion({
     turnRun,
     cancelTask,
+    ...(over.getWorkdirConfig ? { getWorkdirConfig: over.getWorkdirConfig } : {}),
+    ...(over.chooseWorkdir ? { chooseWorkdir: over.chooseWorkdir } : {}),
     onActionEvent: (cb: (e: ActionEvent) => void): (() => void) => { actionCb = cb; return unsub; },
     onRunEnd: (cb: () => void): (() => void) => { runEndCb = cb; return unsub; },
     onFocusAsk: (cb: () => void): (() => void) => { focusAskCb = cb; return unsub; },
@@ -39,6 +44,7 @@ function setup() {
 
 const submit = (form: HTMLElement) => form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
 const started: ActionEvent = { kind: 'run.started', runId: 'r1', agent: 'codex', ts: 1 };
+const flush = (): Promise<void> => new Promise((r) => setTimeout(r));
 
 describe('floatingAsk shell (jsdom)', () => {
   let h: ReturnType<typeof setup>;
@@ -105,7 +111,33 @@ describe('floatingAsk shell (jsdom)', () => {
     h.input.value = 'do it';
     submit(h.form);
     expect(h.form.classList.contains('tasked')).toBe(true);
-    await new Promise((r) => setTimeout(r)); // flush the .catch
+    await flush(); // flush the .catch
+    expect(h.form.classList.contains('collapsed')).toBe(true);
+  });
+
+  it('opens project setup before dispatch when the workdir is unset', async () => {
+    h.unmount();
+    const getWorkdirConfig = vi.fn(async () => ({ source: 'unset' as const }));
+    const chooseWorkdir = vi.fn(async () => ({ workdir: '/chosen/repo', source: 'config' as const }));
+    h = setup({ getWorkdirConfig, chooseWorkdir });
+    h.pill.click();
+    h.input.value = 'do it';
+    submit(h.form);
+    await flush();
+    expect(chooseWorkdir).toHaveBeenCalledTimes(1);
+    expect(h.turnRun).toHaveBeenCalledWith({ transcript: 'do it', sessionId: 'sess' });
+  });
+
+  it('recovers without dispatch when project setup is canceled', async () => {
+    h.unmount();
+    const getWorkdirConfig = vi.fn(async () => ({ source: 'unset' as const }));
+    const chooseWorkdir = vi.fn(async () => ({ source: 'unset' as const }));
+    h = setup({ getWorkdirConfig, chooseWorkdir });
+    h.pill.click();
+    h.input.value = 'do it';
+    submit(h.form);
+    await flush();
+    expect(h.turnRun).not.toHaveBeenCalled();
     expect(h.form.classList.contains('collapsed')).toBe(true);
   });
 });

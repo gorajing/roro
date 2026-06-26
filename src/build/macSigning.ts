@@ -86,6 +86,19 @@ export function macSigningConfig(env: Record<string, string | undefined>): MacSi
 }
 
 /**
+ * Electron's cookie-encryption fuse can touch the macOS Keychain while Chromium opens the user profile,
+ * before Roro's main-process JS has logged or created a renderer. Ad-hoc builds get a new cdhash on every
+ * package, so stale Keychain ACLs from the previous build can make that pre-JS path hang on an old profile.
+ *
+ * Cookies are not product state in Roro. Keep the fuse off for ad-hoc dev/CI packages, and only enable it
+ * when Developer-ID signing gives the app a stable identity across updates. Encrypted memory-at-rest remains
+ * owned by src/memory2's safeStorage key wrapper and still fails loud at the memory call site.
+ */
+export function shouldEnableCookieEncryption(signing: MacSigning): boolean {
+  return Boolean(signing.osxSign);
+}
+
+/**
  * Fail EARLY and CLEARLY when signing is requested but the keychain can't satisfy it. Without this,
  * `electron-forge make` with the env vars set but no Developer ID cert dies deep inside codesign with
  * "code has no resources but signature indicates they must be present" + a 30-line dump — which gives a
