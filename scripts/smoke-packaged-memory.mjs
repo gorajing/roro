@@ -19,6 +19,7 @@
 // Run after `npm run package`:
 //   npm run verify:packaged-memory
 //   npm run verify:packaged-live-memory-turn   # requires local Ollama + required models
+//   npm run verify:packaged-natural-memory-turn # requires local Ollama + required models
 
 import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
@@ -34,6 +35,8 @@ const LIVE_TURN_TIMEOUT_MS = Number(process.env.RORO_MEMORY_LIVE_TURN_TIMEOUT_MS
 const CDP_COMMAND_TIMEOUT_MS = Number(process.env.RORO_MEMORY_CDP_TIMEOUT_MS || 5000);
 const KEEP = process.env.KEEP_RORO_SMOKE_HOME === '1';
 const LIVE_TURN = process.env.RORO_PACKAGED_MEMORY_LIVE_TURN === '1';
+const NATURAL_LANGUAGE_TURN = process.env.RORO_PACKAGED_MEMORY_NATURAL_LANGUAGE_TURN === '1';
+const NEEDS_LIVE_OLLAMA = LIVE_TURN || NATURAL_LANGUAGE_TURN;
 
 function appBinaryPath(rawPath) {
   const candidate = resolve(rawPath || `out/Roro-darwin-${process.arch}/Roro.app/Contents/MacOS/Roro`);
@@ -69,6 +72,21 @@ async function readText(path) {
   return readFile(path, 'utf8').catch(() => '');
 }
 
+async function readTraceEvents(path) {
+  const text = await readText(path);
+  return text
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
 async function freePort() {
   return new Promise((resolvePort, reject) => {
     const server = createServer();
@@ -91,10 +109,11 @@ function smokeEnv(port, ollamaPort) {
     RORO_PGLITE_EXT_DEBUG: '1',
     BRAIN_PROVIDER: 'ollama',
   };
-  if (!LIVE_TURN) {
+  if (!NEEDS_LIVE_OLLAMA) {
     env.OLLAMA_HOST = `http://127.0.0.1:${ollamaPort}`;
     env.OLLAMA_TIMEOUT_MS = '250';
   }
+  if (NATURAL_LANGUAGE_TURN) env.RORO_TRACE = '1';
   delete env.RORO_WORKDIR;
   delete env.COMPANION_WORKDIR;
   delete env.RORO_ALLOW_CWD;
@@ -396,6 +415,87 @@ function bootstrapStatusExpression(timeoutMs) {
   })`;
 }
 
+function profileFactExpression(expectedValue, timeoutMs) {
+  return `new Promise((resolve) => {
+    if (typeof window.memory?.profile !== 'function') {
+      resolve({ ok: false, message: 'missing memory profile bridge' });
+      return;
+    }
+
+    const expected = ${JSON.stringify(expectedValue)}.toLowerCase();
+    const deadline = Date.now() + ${timeoutMs};
+    async function poll() {
+      try {
+        const facts = await window.memory.profile();
+        const hit = Array.isArray(facts)
+          ? facts.find((fact) => String(fact?.value || fact?.text || '').toLowerCase().includes(expected))
+          : null;
+        if (hit) {
+          resolve({ ok: true, fact: hit, facts });
+          return;
+        }
+        if (Date.now() >= deadline) {
+          resolve({ ok: false, message: 'profile fact timed out', facts: Array.isArray(facts) ? facts : [] });
+          return;
+        }
+      } catch (err) {
+        resolve({ ok: false, message: String(err?.message || err) });
+        return;
+      }
+      setTimeout(poll, 500);
+    }
+    poll();
+  })`;
+}
+
+async function waitForRendererBridge(cdp, child, label) {
+  const deadline = Date.now() + BOOT_TIMEOUT_MS;
+  let lastError = '';
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`${label} app exited before renderer bridge was ready (code=${child.exitCode}, signal=${child.signalCode})`);
+    }
+    try {
+      const dom = await evaluate(cdp, `(() => {
+        const bodyText = document.body?.innerText || '';
+        return {
+          title: document.title,
+          href: location.href,
+          bodyText: bodyText.slice(0, 800),
+          hasBody: !!document.body,
+          memoryRemember: typeof window.memory?.remember,
+          memoryRecall: typeof window.memory?.recall,
+          memoryProfile: typeof window.memory?.profile,
+          bootstrapStatus: typeof window.companion?.getBootstrapStatus,
+          turnRun: typeof window.companion?.turnRun,
+          onActionEvent: typeof window.companion?.onActionEvent,
+          onRunEnd: typeof window.companion?.onRunEnd,
+        };
+      })()`);
+      const bridgeReady =
+        dom.hasBody &&
+        dom.memoryRemember === 'function' &&
+        dom.memoryRecall === 'function' &&
+        dom.bootstrapStatus === 'function' &&
+        (!NATURAL_LANGUAGE_TURN || dom.memoryProfile === 'function') &&
+        (!NEEDS_LIVE_OLLAMA || (
+          dom.turnRun === 'function' &&
+          dom.onActionEvent === 'function' &&
+          dom.onRunEnd === 'function'
+        ));
+      if (bridgeReady) return dom;
+      lastError =
+        `hasBody=${dom.hasBody}, memoryRemember=${dom.memoryRemember}, memoryRecall=${dom.memoryRecall}, ` +
+        `memoryProfile=${dom.memoryProfile}, bootstrapStatus=${dom.bootstrapStatus}, turnRun=${dom.turnRun}, ` +
+        `onActionEvent=${dom.onActionEvent}, onRunEnd=${dom.onRunEnd}`;
+    } catch (err) {
+      lastError = err.message;
+    }
+    await sleep(500);
+  }
+  throw new Error(`${label} renderer bridge never became ready (${lastError})`);
+}
+
 async function withPackagedRenderer({ cwd, userDataDir, label, operation }) {
   const port = await freePort();
   const ollamaPort = await freePort();
@@ -408,18 +508,7 @@ async function withPackagedRenderer({ cwd, userDataDir, label, operation }) {
     await cdp.ready;
     await cdp.send('Runtime.enable');
     await cdp.send('Page.enable');
-    await sleep(1000);
-    const dom = await evaluate(cdp, `(() => ({
-      title: document.title,
-      href: location.href,
-      bodyText: document.body.innerText.slice(0, 800),
-      memoryRemember: typeof window.memory?.remember,
-      memoryRecall: typeof window.memory?.recall,
-      bootstrapStatus: typeof window.companion?.getBootstrapStatus,
-      turnRun: typeof window.companion?.turnRun,
-      onActionEvent: typeof window.companion?.onActionEvent,
-      onRunEnd: typeof window.companion?.onRunEnd,
-    }))()`);
+    const dom = await waitForRendererBridge(cdp, run.child, label);
     const result = await operation({ cdp, evaluate, dom });
     return { ...result, dom, logs: run.logs };
   } finally {
@@ -547,6 +636,9 @@ const sessionB = 'packaged-memory-smoke-b';
 const token = `roro-packaged-memory-${Date.now()}-${randomUUID()}`;
 const liveMemoryAnswer = 'ultraviolet';
 const text = `Packaged memory smoke token: ${token}. The user's packaged smoke color is ${liveMemoryAnswer}.`;
+const naturalMemoryAnswer = 'atlas-copper';
+const naturalTeachTranscript = `Please remember this project convention: I always use the codename ${naturalMemoryAnswer} for packaged memory checks.`;
+const naturalRecallTranscript = 'What codename do I use for packaged memory checks? Answer with only the remembered codename.';
 await mkdir(cwd, { recursive: true });
 await mkdir(userDataDir, { recursive: true });
 let restoreKeychain = () => {};
@@ -563,6 +655,12 @@ try {
       check('memory remember bridge exists', dom.memoryRemember === 'function');
       check('memory recall bridge exists', dom.memoryRecall === 'function');
       check('bootstrap status bridge exists', dom.bootstrapStatus === 'function');
+      if (NATURAL_LANGUAGE_TURN) check('memory profile bridge exists for natural-language mode', dom.memoryProfile === 'function');
+      if (NEEDS_LIVE_OLLAMA) {
+        check('turnRun bridge exists for live turn mode', dom.turnRun === 'function');
+        check('action-event bridge exists for live turn mode', dom.onActionEvent === 'function');
+        check('runEnd bridge exists for live turn mode', dom.onRunEnd === 'function');
+      }
 
       const input = {
         session_id: sessionA,
@@ -571,7 +669,29 @@ try {
         payload: { smoke: 'packaged-memory', token },
       };
       const write = await runRendererMemoryOp(cdp, `window.memory.remember(${JSON.stringify(input)})`, 'memory remember');
-      return { write };
+      let teachBootstrap = null;
+      let teachTurn = null;
+      let teachProfile = null;
+      if (NATURAL_LANGUAGE_TURN) {
+        teachBootstrap = await runRendererMemoryOp(
+          cdp,
+          bootstrapStatusExpression(BOOT_TIMEOUT_MS),
+          'teach bootstrap status',
+        );
+        teachTurn = await runRendererMemoryOp(
+          cdp,
+          liveTurnExpression(naturalTeachTranscript, sessionA, LIVE_TURN_TIMEOUT_MS),
+          'natural-language teach turn',
+          LIVE_TURN_TIMEOUT_MS + 5000,
+        );
+        teachProfile = await runRendererMemoryOp(
+          cdp,
+          profileFactExpression(naturalMemoryAnswer, MEMORY_TIMEOUT_MS),
+          'natural-language profile fact',
+          MEMORY_TIMEOUT_MS + 5000,
+        );
+      }
+      return { write, teachBootstrap, teachTurn, teachProfile };
     },
   });
 
@@ -612,6 +732,42 @@ try {
   );
   check('write logs have no memory keychain failure', !/OS keychain unavailable|memory store is locked|cannot encrypt memory/i.test(memoryLogs));
 
+  if (NATURAL_LANGUAGE_TURN) {
+    console.log('[smoke] asserting natural-language turn stores a profile fact...');
+    const bootstrap = first.teachBootstrap?.value?.status;
+    const teach = first.teachTurn?.value;
+    const teachEvents = Array.isArray(teach?.events) ? teach.events : [];
+    const teachProfile = first.teachProfile?.value;
+    const taughtFact = teachProfile?.fact;
+    const traceEvents = await readTraceEvents(join(memoryRoot, 'trace.jsonl'));
+    const storedExtract = traceEvents.find((event) =>
+      event?.kind === 'extract' &&
+      event?.sessionId === sessionA &&
+      event?.outcome === 'answered' &&
+      event?.stage === 'stored',
+    );
+
+    check('bootstrap status bridge resolved for natural-language teach turn', first.teachBootstrap?.ok, first.teachBootstrap?.message);
+    check(
+      'local Ollama brain is ready for natural-language teach turn',
+      bootstrap?.ready === true,
+      first.teachBootstrap?.value?.message || bootstrap?.message || (bootstrap ? JSON.stringify(bootstrap) : 'missing bootstrap status'),
+    );
+    check('natural-language teach turn bridge resolved', first.teachTurn?.ok, first.teachTurn?.message);
+    check('natural-language teach turn completed with runEnd', teach?.ok === true && Boolean(teach.runEnd), teach?.message);
+    check('natural-language teach runEnd matches turnRun result', teach?.runEnd?.runId === teach?.turnResult?.runId);
+    check('natural-language teach did not start the coding executor', !teachEvents.some((event) => event?.kind === 'run.started'));
+    check('natural-language teach produced no run.failed event', !teachEvents.some((event) => event?.kind === 'run.failed'));
+    check('natural-language profile bridge resolved', first.teachProfile?.ok, first.teachProfile?.message);
+    check(
+      'natural-language profile contains the taught preference',
+      String(taughtFact?.value || taughtFact?.text || '').toLowerCase().includes(naturalMemoryAnswer),
+      JSON.stringify(teachProfile?.facts ?? []),
+    );
+    check('natural-language fact source is the teach session', taughtFact?.source?.session_id === sessionA, JSON.stringify(taughtFact));
+    check('extraction trace recorded a stored fact for the teach turn', Boolean(storedExtract), JSON.stringify(traceEvents.slice(-12)));
+  }
+
   const second = await withPackagedRenderer({
     cwd,
     userDataDir,
@@ -619,9 +775,12 @@ try {
     operation: async ({ cdp, dom }) => {
       check('relaunch renderer URL is file:// app.asar', dom.href.startsWith('file://') && dom.href.includes('/Roro.app/Contents/Resources/app.asar/'));
       check('relaunch memory recall bridge exists', dom.memoryRecall === 'function');
-      check('relaunch turnRun bridge exists', !LIVE_TURN || dom.turnRun === 'function');
-      check('relaunch action-event bridge exists', !LIVE_TURN || dom.onActionEvent === 'function');
-      check('relaunch runEnd bridge exists', !LIVE_TURN || dom.onRunEnd === 'function');
+      if (NATURAL_LANGUAGE_TURN) check('relaunch profile bridge exists for natural-language mode', dom.memoryProfile === 'function');
+      if (NEEDS_LIVE_OLLAMA) {
+        check('relaunch turnRun bridge exists for live turn mode', dom.turnRun === 'function');
+        check('relaunch action-event bridge exists for live turn mode', dom.onActionEvent === 'function');
+        check('relaunch runEnd bridge exists for live turn mode', dom.onRunEnd === 'function');
+      }
       const recall = await runRendererMemoryOp(
         cdp,
         `window.memory.recall(${JSON.stringify({ query: token, k: 5, sessionId: sessionB })})`,
@@ -629,12 +788,16 @@ try {
       );
       let bootstrap = null;
       let liveTurn = null;
-      if (LIVE_TURN) {
+      let naturalProfile = null;
+      let naturalTurn = null;
+      if (NEEDS_LIVE_OLLAMA) {
         bootstrap = await runRendererMemoryOp(
           cdp,
           bootstrapStatusExpression(BOOT_TIMEOUT_MS),
           'bootstrap status',
         );
+      }
+      if (LIVE_TURN) {
         liveTurn = await runRendererMemoryOp(
           cdp,
           liveTurnExpression(
@@ -646,7 +809,21 @@ try {
           LIVE_TURN_TIMEOUT_MS + 5000,
         );
       }
-      return { recall, bootstrap, liveTurn };
+      if (NATURAL_LANGUAGE_TURN) {
+        naturalProfile = await runRendererMemoryOp(
+          cdp,
+          profileFactExpression(naturalMemoryAnswer, MEMORY_TIMEOUT_MS),
+          'natural-language profile fact after relaunch',
+          MEMORY_TIMEOUT_MS + 5000,
+        );
+        naturalTurn = await runRendererMemoryOp(
+          cdp,
+          liveTurnExpression(naturalRecallTranscript, sessionB, LIVE_TURN_TIMEOUT_MS),
+          'natural-language recall turn',
+          LIVE_TURN_TIMEOUT_MS + 5000,
+        );
+      }
+      return { recall, bootstrap, liveTurn, naturalProfile, naturalTurn };
     },
   });
 
@@ -664,8 +841,7 @@ try {
   check('recalled row owner matches owner.json', hit?.owner_id === owner?.owner_id);
   check('relaunch logs have no memory keychain failure', !/OS keychain unavailable|memory store is locked|cannot encrypt memory/i.test(second.logs.join('\n')));
 
-  if (LIVE_TURN) {
-    console.log('[smoke] asserting packaged live turn uses recalled memory...');
+  if (NEEDS_LIVE_OLLAMA) {
     const bootstrap = second.bootstrap?.value?.status;
     check('bootstrap status bridge resolved for live turn', second.bootstrap?.ok, second.bootstrap?.message);
     check(
@@ -673,7 +849,10 @@ try {
       bootstrap?.ready === true,
       second.bootstrap?.value?.message || bootstrap?.message || (bootstrap ? JSON.stringify(bootstrap) : 'missing bootstrap status'),
     );
+  }
 
+  if (LIVE_TURN) {
+    console.log('[smoke] asserting packaged live turn uses recalled memory...');
     const live = second.liveTurn?.value;
     const events = Array.isArray(live?.events) ? live.events : [];
     const memoryStatus = events.find((event) => event?.kind === 'status' && /^Memory:/.test(event.text ?? ''));
@@ -694,6 +873,41 @@ try {
     check(
       'live turn narration includes the recalled memory value',
       narration.toLowerCase().includes(liveMemoryAnswer),
+      narration.slice(0, 500),
+    );
+  }
+
+  if (NATURAL_LANGUAGE_TURN) {
+    console.log('[smoke] asserting natural-language fact survives relaunch and is used...');
+    const naturalProfile = second.naturalProfile?.value;
+    const relaunchedFact = naturalProfile?.fact;
+    const natural = second.naturalTurn?.value;
+    const naturalEvents = Array.isArray(natural?.events) ? natural.events : [];
+    const memoryStatus = naturalEvents.find((event) => event?.kind === 'status' && /^Memory:/.test(event.text ?? ''));
+    const memoryMatch = /^Memory:\s+(\d+) known .+?,\s+(\d+) related /.exec(memoryStatus?.text ?? '');
+    const knownCount = memoryMatch ? Number(memoryMatch[1]) : 0;
+    const narration = naturalEvents
+      .filter((event) => event?.kind === 'message')
+      .map((event) => event.text)
+      .join('\n');
+
+    check('natural-language profile bridge resolved after relaunch', second.naturalProfile?.ok, second.naturalProfile?.message);
+    check(
+      'natural-language profile still contains the taught preference after relaunch',
+      String(relaunchedFact?.value || relaunchedFact?.text || '').toLowerCase().includes(naturalMemoryAnswer),
+      JSON.stringify(naturalProfile?.facts ?? []),
+    );
+    check('natural-language relaunched fact source is the teach session', relaunchedFact?.source?.session_id === sessionA, JSON.stringify(relaunchedFact));
+    check('natural-language recall turn bridge resolved', second.naturalTurn?.ok, second.naturalTurn?.message);
+    check('natural-language recall turn completed with runEnd', natural?.ok === true && Boolean(natural.runEnd), natural?.message);
+    check('natural-language recall runEnd matches turnRun result', natural?.runEnd?.runId === natural?.turnResult?.runId);
+    check('natural-language recall emitted a memory status beat', Boolean(memoryStatus), JSON.stringify(naturalEvents));
+    check('natural-language recall saw at least one known fact', knownCount > 0, memoryStatus?.text);
+    check('natural-language recall did not start the coding executor', !naturalEvents.some((event) => event?.kind === 'run.started'));
+    check('natural-language recall produced no run.failed event', !naturalEvents.some((event) => event?.kind === 'run.failed'));
+    check(
+      'natural-language recall narration includes the taught memory value',
+      narration.toLowerCase().includes(naturalMemoryAnswer),
       narration.slice(0, 500),
     );
   }
@@ -718,6 +932,8 @@ if (failures.length) {
 
 console.log(
   `\n[smoke] PASS - packaged memory writes, stays encrypted, recalls after relaunch${
-    LIVE_TURN ? ', and feeds a live turn.' : ''
-  }`,
+    LIVE_TURN ? ', and feeds a live turn' : ''
+  }${
+    NATURAL_LANGUAGE_TURN ? ', and learns a natural-language fact for a relaunch turn' : ''
+  }.`,
 );
