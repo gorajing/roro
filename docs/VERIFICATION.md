@@ -138,6 +138,7 @@ Fast regression coverage:
 
 ```sh
 npx vitest run --no-file-parallelism src/renderer/bootstrap.typedPrompt.test.ts
+npx vitest run --no-file-parallelism src/main/orchestrator.stopSlotRetention.test.ts src/executor/abortKill.test.ts
 npm run verify:typed-live-turn
 ```
 
@@ -146,13 +147,19 @@ guarding, neutral `Stopped.` copy, workdir-cancel gating, and local-brain-not-re
 onboarding and EPIPE smokes additionally assert that Stop starts disabled and stays disabled when the local
 brain blocks dispatch.
 
+The non-cooperative Stop path is unit-gated, not live-smoke-gated: `orchestrator.stopSlotRetention.test.ts`
+models an aborted executor stream that stays open after the Stop watchdog has ended the UI, and proves a
+second coding task is denied until the first stream truly drains. `abortKill.test.ts` covers the helper that
+escalates an ignored abort from `SIGTERM` to `SIGKILL`.
+
 `scripts/smoke-typed-live-turn.mjs` launches the default, non-floating Electron window with fake local
 Ollama/Codex services and drives the real `#prompt-form` through the public `window.companion.turnRun`
 bridge. It asserts the default-window DOM is visible, debug bridges are absent, Stop arms before any
 `run.started`, pre-executor Stop emits scoped `run.failed: stopped` plus `runEnd`, fake Codex receives no
-stopped-task invocation, the status copy stays neutral, active-executor Stop emits scoped
+stopped-task invocation, the status copy stays neutral, cooperative active-executor Stop emits scoped
 `run.failed: aborted` after fake Codex has emitted `run.started` and a started `file_change`, fake Codex
-records `SIGTERM` without writing the aborted file, and a later answer turn recovers the form.
+records `SIGTERM` without writing the aborted file, and a later answer turn recovers the form. This smoke
+does not prove ignored-`SIGTERM` slot retention; the unit gate above does.
 
 Manual full-window checklist:
 
@@ -202,7 +209,7 @@ and verifies real `window.companion.turnRun` answer and executor turns over the 
 The answer turn must emit `ActionEvent`s, reach `runEnd`, avoid the coding executor, and collapse the
 floating Ask. In the deterministic fake-Ollama path, a delayed `run_agent` decision is stopped before
 `run.started`; it must emit neutral stopped copy, collapse from `runEnd`, and never launch fake Codex.
-The same fake path also stops a task after fake Codex has emitted `run.started` and a started
+The same fake path also stops a cooperative task after fake Codex has emitted `run.started` and a started
 `file_change`; it must emit scoped `run.failed: aborted`, record `SIGTERM`, never emit `run.completed`,
 never complete/write the aborted file, collapse from `runEnd`, and show neutral `Stopped.` copy. The
 following executor success turn must launch Codex with the expected
@@ -211,7 +218,8 @@ accepted/running turn, emit a completed `file_change` and `run.completed`, write
 test project (disposable by default), disarm Stop, and collapse from `runEnd`. By default it uses tiny
 local fake Ollama and Codex servers/binaries so the product-loop proof is deterministic; set
 `RORO_FLOATING_LIVE_USE_REAL_OLLAMA=1` when you specifically want to validate the local model path.
-Keep it out of CI unless the runner has a reliable display.
+Ignored-`SIGTERM` slot retention remains covered by the unit gate above, not this live smoke. Keep it out
+of CI unless the runner has a reliable display.
 
 ## Manual checklist
 
