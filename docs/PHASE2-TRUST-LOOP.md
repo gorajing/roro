@@ -37,7 +37,8 @@ Gate: a stale or wrong-owner fact id cannot mutate memory; a failed replacement 
    - `window.memory.factSource(id)`
    - `window.memory.forget(id)`
 
-The remaining Phase 2 work is broader trust framing and clarify behavior, not new storage primitives.
+Correction, clarify, and README trust framing are now landed. The remaining
+Phase 2 work is the first screen-capture tell, not new storage primitives.
 
 ## Minimal API
 
