@@ -12,6 +12,7 @@ function setup(over: {
   getWorkdirConfig?: ReturnType<typeof vi.fn>;
   chooseWorkdir?: ReturnType<typeof vi.fn>;
   canStartTurn?: ReturnType<typeof vi.fn>;
+  smokeLifecycle?: boolean;
 } = {}) {
   document.body.innerHTML = '<div id="app"></div>';
   const driver = { poke: vi.fn(), setState: vi.fn() };
@@ -34,6 +35,7 @@ function setup(over: {
     driver: driver as unknown as CharacterDriver,
     sessionId: 'sess',
     canStartTurn: over.canStartTurn,
+    smokeLifecycle: over.smokeLifecycle,
   });
   return {
     driver, turnRun, cancelTask, unmount,
@@ -51,6 +53,16 @@ function setup(over: {
 const submit = (form: HTMLElement) => form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
 const started: ActionEvent = { kind: 'run.started', runId: 'r1', agent: 'codex', ts: 1 };
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r));
+const smokeHook = () => (
+  window as unknown as {
+    __roroFloatingAskSmoke?: {
+      startTask(text: string): void;
+      action(e: ActionEvent): void;
+      runEnd(): void;
+      state(): { cancelRequests: Array<string | undefined> };
+    };
+  }
+).__roroFloatingAskSmoke;
 
 describe('floatingAsk shell (jsdom)', () => {
   let h: ReturnType<typeof setup>;
@@ -59,6 +71,7 @@ describe('floatingAsk shell (jsdom)', () => {
 
   it('starts collapsed', () => {
     expect(h.form.classList.contains('collapsed')).toBe(true);
+    expect(smokeHook()).toBeUndefined();
   });
 
   it('summon (pill click) expands and pokes the cat', () => {
@@ -188,5 +201,32 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.form.classList.contains('expanded')).toBe(true);
     expect(h.input.value).toBe('do it');
     expect(h.stop.classList.contains('armed')).toBe(false);
+  });
+
+  it('exposes a gated smoke harness that drives the same lifecycle handlers', () => {
+    h.unmount();
+    h = setup({ smokeLifecycle: true });
+    expect(smokeHook()).toBeDefined();
+
+    h.pill.click();
+    smokeHook()?.startTask('  add a logout route  ');
+    expect(h.form.classList.contains('tasked')).toBe(true);
+    expect(h.pill.textContent).toBe('tasked: add a logout route');
+
+    smokeHook()?.action(started);
+    expect(h.stop.classList.contains('armed')).toBe(true);
+    h.stop.click();
+    expect(smokeHook()?.state().cancelRequests).toEqual(['r1']);
+
+    smokeHook()?.action({ kind: 'run.failed', runId: 'r1', ok: false, error: 'spawn codex ENOENT', ts: 2 });
+    expect(h.stop.classList.contains('armed')).toBe(false);
+    expect(h.error.textContent).toContain('Task hit a problem');
+
+    smokeHook()?.runEnd();
+    expect(h.form.classList.contains('collapsed')).toBe(true);
+    expect(h.error.hidden).toBe(false);
+
+    h.unmount();
+    expect(smokeHook()).toBeUndefined();
   });
 });

@@ -44,6 +44,8 @@ export function createWindow(): BrowserWindow {
     cosmeticsStore: process.env.RORO_WS5_STORE === '1',
     // Dev/security escape hatch: exposes direct brain/vision/debug handles only when deliberately enabled.
     debugBridge: process.env.RORO_DEBUG_BRIDGE === '1',
+    // Test-only renderer lifecycle harness used by npm run verify:floating; never enabled for default launches.
+    floatingSmoke: process.env.RORO_FLOATING_SMOKE === '1',
   };
 
   const mainWindow = new BrowserWindow({

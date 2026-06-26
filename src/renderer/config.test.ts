@@ -12,6 +12,7 @@ function config(overrides: Partial<RoroConfig> = {}): RoroConfig {
     voicePack: '',
     cosmeticsStore: false,
     debugBridge: false,
+    floatingSmoke: false,
     ...overrides,
   };
 }
@@ -40,5 +41,13 @@ describe('loadConfig', () => {
     vi.stubGlobal('window', { RORO_CFG: { debugBridge: true } });
 
     expect(loadConfig().debugBridge).toBe(true);
+  });
+
+  it('keeps the floating smoke harness off by default and honors explicit runtime opt-in', () => {
+    expect(loadConfig().floatingSmoke).toBe(false);
+
+    vi.stubGlobal('window', { RORO_CFG: { floatingSmoke: true } });
+
+    expect(loadConfig().floatingSmoke).toBe(true);
   });
 });

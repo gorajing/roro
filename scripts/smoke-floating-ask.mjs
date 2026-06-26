@@ -4,7 +4,9 @@
 // but jsdom has no CSS layout/visibility — so a CSS regression (collapsed/expanded/tasked, .armed)
 // is invisible to the unit suite. This launches the REAL Electron renderer over the Chrome DevTools
 // Protocol (via the built-in RORO_DEBUG_PORT hook in src/main.ts) and asserts the rendered DOM
-// + COMPUTED CSS visibility, then saves a screenshot. No extra deps: Node's global fetch + WebSocket.
+// + COMPUTED CSS visibility. It enables RORO_FLOATING_SMOKE=1, a renderer-only lifecycle harness
+// that injects the same push events the real bridge would deliver without running a real coding agent.
+// No extra deps: Node's global fetch + WebSocket.
 //
 // Run on a machine with a display:  npm run verify:floating
 // Opt-in / not in CI (needs a GUI + a vite build). Exits non-zero on any failed assertion.
@@ -113,7 +115,7 @@ function cdpClient(url) {
 }
 
 const child = spawn('npm', ['start'], {
-  env: { ...process.env, RORO_DEBUG_PORT: PORT, RORO_FLOATING_WINDOW: '1' },
+  env: { ...process.env, RORO_DEBUG_PORT: PORT, RORO_FLOATING_WINDOW: '1', RORO_FLOATING_SMOKE: '1' },
   stdio: 'inherit',
   detached: true,
 });
@@ -133,23 +135,72 @@ try {
     if (r.exceptionDetails) throw new Error(`eval failed: ${r.exceptionDetails.text}`);
     return r.result.value;
   };
+  const isVisible = (selector) => evalJs(`(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el) return false;
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+  })()`);
 
   console.log('[smoke] asserting initial render…');
   check('#floating-ask exists', await evalJs(`!!document.getElementById('floating-ask')`));
   check('#floating-ask starts collapsed', await evalJs(`document.getElementById('floating-ask').classList.contains('collapsed')`));
   check('#ask-pill reads "Ask Roro…"', await evalJs(`document.getElementById('ask-pill').textContent.includes('Ask Roro')`));
   check('#floating-stop exists and is NOT armed', await evalJs(`!!document.getElementById('floating-stop') && !document.getElementById('floating-stop').classList.contains('armed')`));
+  check('floating smoke harness is explicitly enabled', await evalJs(`!!window.__roroFloatingAskSmoke`));
 
   console.log('[smoke] summoning (click the pill) and asserting REAL CSS visibility…');
   await evalJs(`document.getElementById('ask-pill').click()`);
   await sleep(300);
   check('#floating-ask becomes expanded on summon', await evalJs(`document.getElementById('floating-ask').classList.contains('expanded')`));
-  check('#ask-input is actually visible (computed display != none)', await evalJs(`getComputedStyle(document.getElementById('ask-input')).display !== 'none'`));
+  check('#ask-input is actually visible', await isVisible('#ask-input'));
 
   console.log('[smoke] Esc collapses…');
   await evalJs(`document.getElementById('ask-input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
   await sleep(200);
   check('#floating-ask collapses on Escape', await evalJs(`document.getElementById('floating-ask').classList.contains('collapsed')`));
+
+  console.log('[smoke] asserting answer/clarify turn collapse via universal runEnd…');
+  await evalJs(`document.getElementById('ask-pill').click()`);
+  await sleep(100);
+  await evalJs(`window.__roroFloatingAskSmoke.startTask('  explain the status  ')`);
+  await sleep(100);
+  check('#floating-ask becomes tasked after submit', await evalJs(`document.getElementById('floating-ask').classList.contains('tasked')`));
+  check('#ask-pill shows the trimmed tasked text', await evalJs(`document.getElementById('ask-pill').textContent === 'tasked: explain the status'`));
+  check('#ask-pill is visible while tasked', await isVisible('#ask-pill'));
+  const stopVisibleBeforeRun = await isVisible('#floating-stop');
+  check('#floating-stop remains hidden before run.started', await evalJs(`!document.getElementById('floating-stop').classList.contains('armed')`) && !stopVisibleBeforeRun);
+  await evalJs(`window.__roroFloatingAskSmoke.runEnd()`);
+  await sleep(100);
+  check('#floating-ask collapses on runEnd without run.started', await evalJs(`document.getElementById('floating-ask').classList.contains('collapsed')`));
+
+  console.log('[smoke] asserting executor run lifecycle: tasked → armed Stop → failure → runEnd…');
+  await evalJs(`document.getElementById('ask-pill').click()`);
+  await sleep(100);
+  await evalJs(`window.__roroFloatingAskSmoke.startTask('add a logout route')`);
+  await sleep(100);
+  await evalJs(`window.__roroFloatingAskSmoke.action({ kind: 'run.started', runId: 'smoke-run', agent: 'codex', ts: Date.now() })`);
+  await sleep(100);
+  check('#floating-stop arms on run.started', await evalJs(`document.getElementById('floating-stop').classList.contains('armed')`));
+  check('#floating-stop is actually visible when armed', await isVisible('#floating-stop'));
+  check('smoke lifecycle captured the active run id', await evalJs(`window.__roroFloatingAskSmoke.state().run.runId === 'smoke-run'`));
+  await evalJs(`document.getElementById('floating-stop').click()`);
+  check('Stop click targets the captured run id', await evalJs(`window.__roroFloatingAskSmoke.state().cancelRequests.includes('smoke-run')`));
+  await evalJs(`window.__roroFloatingAskSmoke.action({ kind: 'run.failed', runId: 'smoke-run', ok: false, error: 'spawn codex ENOENT', ts: Date.now() })`);
+  await sleep(100);
+  check('#floating-stop disarms on run.failed', await evalJs(`!document.getElementById('floating-stop').classList.contains('armed')`));
+  check('#floating-stop is hidden after disarm', !(await isVisible('#floating-stop')));
+  check('#floating-error is visible after run.failed', await isVisible('#floating-error'));
+  check('#floating-error shows actionable copy', await evalJs(`document.getElementById('floating-error').textContent.includes('Task hit a problem') && document.getElementById('floating-error').textContent.includes('Codex CLI not found') && document.getElementById('floating-error').textContent.includes('RORO_CODEX_BIN')`));
+  check('#floating-error hides raw spawn text', await evalJs(`!document.getElementById('floating-error').textContent.includes('spawn codex ENOENT')`));
+  await evalJs(`window.__roroFloatingAskSmoke.runEnd()`);
+  await sleep(100);
+  check('#floating-ask collapses after failed runEnd', await evalJs(`document.getElementById('floating-ask').classList.contains('collapsed')`));
+  check('#floating-error remains visible after collapse', await isVisible('#floating-error'));
+  await evalJs(`document.getElementById('ask-pill').click()`);
+  await sleep(100);
+  check('summoning Ask clears the previous failure', await evalJs(`document.getElementById('floating-error').hidden`));
 
   mkdirSync('docs/verification', { recursive: true });
   const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });

@@ -41,6 +41,8 @@ export interface RoroConfig {
   cosmeticsStore: boolean;
   /** Dev/security escape hatch: expose direct brain/vision/debug handles. Default false. */
   debugBridge: boolean;
+  /** Test-only: expose the floating Ask lifecycle harness for the on-screen smoke. Default false. */
+  floatingSmoke: boolean;
 }
 
 export function voiceSurfaceEnabled(config: Pick<RoroConfig, 'fakeVoice' | 'vadVoice' | 'sttVoice' | 'ttsVoice'>): boolean {
@@ -83,5 +85,6 @@ export function loadConfig(): RoroConfig {
     voicePack: read('voicePack', 'VITE_RORO_VOICE_PACK', ''),
     cosmeticsStore: readBool('cosmeticsStore', 'VITE_RORO_WS5_STORE', false),
     debugBridge: readBool('debugBridge', 'VITE_RORO_DEBUG_BRIDGE', false),
+    floatingSmoke: readBool('floatingSmoke', 'VITE_RORO_FLOATING_SMOKE', false),
   };
 }

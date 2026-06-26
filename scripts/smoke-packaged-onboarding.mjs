@@ -232,6 +232,7 @@ async function inspectApp({ home, cwd, userDataDir, label }) {
         cosmeticsVisible: visible('#cosmetics-toggle'),
         roroVoiceType: typeof window.__roroVoice,
         companionDebugType: typeof window.__companion,
+        floatingSmokeType: typeof window.__roroFloatingAskSmoke,
         runTaskType: typeof window.companion?.runTask,
         brainReasoningType: typeof window.brain?.onReasoning,
         brainDecideType: typeof window.brain?.decide,
@@ -333,6 +334,7 @@ try {
   check('cosmetics fake-door is absent in default v0 package', fresh.dom.cosmeticsVisible === false);
   check('__roroVoice dev handle is absent in default v0 package', fresh.dom.roroVoiceType === 'undefined');
   check('__companion debug handle is absent in default v0 package', fresh.dom.companionDebugType === 'undefined');
+  check('floating smoke harness is absent in default v0 package', fresh.dom.floatingSmokeType === 'undefined');
   check('direct runTask bridge is absent in default v0 package', fresh.dom.runTaskType === 'undefined');
   check('brain stream bridge remains available in default v0 package', fresh.dom.brainReasoningType === 'function');
   check('direct brain decide bridge is absent in default v0 package', fresh.dom.brainDecideType === 'undefined');
