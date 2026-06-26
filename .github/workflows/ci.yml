@@ -66,8 +66,10 @@ jobs:
           printf 'do-not-ship\n' > public/vad/sentinel.txt
           printf 'do-not-ship\n' > public/ort/sentinel.txt
 
-      - name: Package default macOS app
-        run: env -u RORO_VAD_VOICE -u RORO_STT_VOICE -u RORO_TTS_VOICE npm run package
+      - name: Make default macOS app and DMG
+        run: env -u RORO_VAD_VOICE -u RORO_STT_VOICE -u RORO_TTS_VOICE npm run make
 
       - name: Verify release artifact
-        run: npm run verify:release-artifact
+        run: |
+          npm run verify:release-artifact
+          npm run verify:release-artifact:dmg

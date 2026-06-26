@@ -102,10 +102,9 @@ VALID + `safeStorage.isEncryptionAvailable()=true` + creates its keychain item �
   install on a clean second Mac and **(b)** memory durability **across updates** (stable team identity vs. per-build
   ad-hoc cdhash) — *not* for making memory work at all.
   Run `npm run verify:signing-readiness` after exporting the Apple env vars and before `npm run make`; it checks local
-  cert/tool/env readiness, not Apple authentication or clean-Mac Gatekeeper behavior. After `npm run make`, run
-  `npm run verify:release-artifact:signed` before the clean-Mac install.
-  **Packaging note:** the public go/no-go says `.dmg`, but current Forge config still uses the darwin ZIP maker. Add a
-  DMG maker before marking the `.dmg` distribution gate complete.
+  cert/tool/env readiness, not Apple authentication or clean-Mac Gatekeeper behavior. With those env vars present,
+  `npm run make` signs/notarizes the app and notarizes/staples the DMG container. After `npm run make`, run
+  `npm run verify:release-artifact:dmg` and `npm run verify:release-artifact:signed` before the clean-Mac install.
 
 **Exit:** a non-founder observes a fact recalled across a full quit/relaunch of a packaged build (proves the moment works
 outside `npm start`); and the Developer-ID notarized build installs Gatekeeper-clean on a clean Mac.
@@ -187,7 +186,7 @@ v0 is **one thing done well: the remembering coding companion.** Deliberately cu
 
 | Decision | Recommendation |
 |---|---|
-| **Apple Developer Program + Developer ID cert** | ✅ **Done locally** (`Developer ID Application: Jin Young Choi (GNG2M47BD7)`). Next: run `npm run make` with `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID`, and an app-specific `APPLE_PASSWORD`, then validate the notarized build on a clean Mac. |
+| **Apple Developer Program + Developer ID cert** | ✅ **Done locally** (`Developer ID Application: Jin Young Choi (GNG2M47BD7)`). Next: export `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID`, and an app-specific `APPLE_PASSWORD`, run `npm run verify:signing-readiness && npm run make && npm run verify:release-artifact:dmg && npm run verify:release-artifact:signed`, then validate the notarized build on a clean Mac. |
 | **Bundle ID + icon** | ✅ Done: bundle ID is `com.jinchoi.roro`; Dock/Launchpad icon is the black pixel cat at `assets/roro-icon.icns`, generated from the 1024px source PNG. Keep this identity; don't design a new brand. |
 | **`RORO_WORKDIR` setup UX** | A mandatory first-launch native folder-picker (the gate between "launched" and "can code") + a Project control to change the saved repo later. |
 | **Debut channel** | A small trusted cohort first — measure attachment (does the moment land, do they reopen), not vanity downloads. Broaden only after it lands for strangers. |
@@ -207,7 +206,17 @@ validation, provable in an afternoon.
 **Preflight packaged memory (`npm run package && npm run verify:packaged-memory && npm run verify:packaged-live-memory-turn`),
 then preflight signing (`npm run verify:signing-readiness`) and produce the first Developer-ID signed + notarized build**
 to test on a clean second Mac:
-`APPLE_TEAM_ID=GNG2M47BD7 APPLE_ID=<paid Apple ID> APPLE_PASSWORD=<app-specific password> npm run verify:signing-readiness && npm run make && npm run verify:release-artifact:signed`.
+
+```sh
+export APPLE_TEAM_ID=GNG2M47BD7
+export APPLE_ID=<paid Apple ID>
+export APPLE_PASSWORD=<app-specific password>
+npm run verify:signing-readiness
+npm run make
+npm run verify:release-artifact:dmg
+npm run verify:release-artifact:signed
+```
+
 Nothing else on the path can be *truly validated* until this build exists. In parallel, build Phase 2 from
 [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md): correction, clarify, README framing, and the bounded
 screen-capture tell are landed.

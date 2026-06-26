@@ -21,6 +21,7 @@
     "verify:packaged-live-memory-turn": "RORO_PACKAGED_MEMORY_LIVE_TURN=1 node scripts/smoke-packaged-memory.mjs",
     "verify:packaged-onboarding": "node scripts/smoke-packaged-onboarding.mjs",
     "verify:release-artifact": "node scripts/verify-release-artifact.mjs --mode default",
+    "verify:release-artifact:dmg": "node scripts/verify-release-artifact.mjs --mode default --require-dmg",
     "verify:release-artifact:signed": "node scripts/verify-release-artifact.mjs --mode signed",
     "verify:signing-readiness": "tsx scripts/verify-signing-readiness.ts",
     "stage:voice-assets": "node scripts/stage-voice-assets.mjs",
@@ -37,6 +38,7 @@
   "devDependencies": {
     "@electron-forge/cli": "^7.11.2",
     "@electron-forge/maker-deb": "^7.11.2",
+    "@electron-forge/maker-dmg": "^7.11.2",
     "@electron-forge/maker-rpm": "^7.11.2",
     "@electron-forge/maker-squirrel": "^7.11.2",
     "@electron-forge/maker-zip": "^7.11.2",
@@ -45,6 +47,7 @@
     "@electron-forge/plugin-vite": "^7.11.2",
     "@electron/asar": "^3.4.1",
     "@electron/fuses": "^1.8.0",
+    "@electron/notarize": "^2.5.0",
     "@types/electron-squirrel-startup": "^1.0.2",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",

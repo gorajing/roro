@@ -1,8 +1,10 @@
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
+import { MakerDMG } from '@electron-forge/maker-dmg';
 import { MakerDeb } from '@electron-forge/maker-deb';
 import { MakerRpm } from '@electron-forge/maker-rpm';
+import { notarize } from '@electron/notarize';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
@@ -117,10 +119,30 @@ const config: ForgeConfig = {
         execFileSync('codesign', ['--force', '--deep', '--sign', '-', join(dir, 'Roro.app')], { stdio: 'inherit' });
       }
     },
+    // Electron Forge notarizes the .app during package when Developer-ID signing is enabled. The thing strangers
+    // download is the DMG made later, so notarize/staple that container too in signed builds.
+    postMake: async (_forgeConfig, makeResults) => {
+      if (process.platform !== 'darwin' || !macSigning.osxNotarize) return makeResults;
+
+      for (const result of makeResults) {
+        if (result.platform !== 'darwin') continue;
+        for (const artifact of result.artifacts.filter((path) => path.endsWith('.dmg'))) {
+          await notarize({
+            ...macSigning.osxNotarize,
+            appPath: artifact,
+          });
+        }
+      }
+
+      return makeResults;
+    },
   },
   makers: [
     new MakerSquirrel({}),
     new MakerZIP({}, ['darwin']),
+    // The public macOS distribution gate is a downloadable .dmg, not just the basic ZIP archive.
+    // Keep the default versioned name (`Roro-<version>-<arch>.dmg`) so release artifacts are traceable.
+    new MakerDMG({}, ['darwin']),
     new MakerRpm({}),
     new MakerDeb({}),
   ],

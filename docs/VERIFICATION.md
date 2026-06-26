@@ -84,18 +84,36 @@ The strict command intentionally fails on machines where the Apple env vars are 
 password, authenticates against Apple's notary service, produces a signed artifact, staples a ticket, or validates
 Gatekeeper on a clean Mac. Those remain the `npm run make` + clean-second-Mac gates.
 
-After a Developer-ID `npm run make`, run:
+Before a Developer-ID `npm run make`, export the Apple variables in the current shell and run the strict doctor:
 
 ```sh
+export APPLE_TEAM_ID=GNG2M47BD7
+export APPLE_ID=<paid Apple ID>
+export APPLE_PASSWORD=<app-specific password>
+npm run verify:signing-readiness
+```
+
+After `npm run make` in that same shell, run:
+
+```sh
+npm run verify:release-artifact:dmg
 npm run verify:release-artifact:signed
 ```
 
-This reuses the default release-artifact structure checks, then requires a non-ad-hoc `Developer ID Application`
-signature, hardened runtime metadata, a `TeamIdentifier` (matching `APPLE_TEAM_ID` when set), a passing local
-Gatekeeper assessment, and a valid stapled notarization ticket. It is still not a substitute for installing the
+`verify:release-artifact:dmg` reuses the default release-artifact structure checks, then requires a versioned DMG under
+`out/make`, verifies it with `hdiutil`, mounts it read-only, and confirms the mounted image contains a structurally
+complete `Roro.app`.
+
+When Developer-ID signing is enabled, Forge notarizes/staples the `.app` during package and the `postMake` hook
+notarizes/staples the DMG container after it is created.
+
+`verify:release-artifact:signed` additionally requires a non-ad-hoc `Developer ID Application` signature, hardened
+runtime metadata, a `TeamIdentifier` (matching `APPLE_TEAM_ID` when set), a passing local Gatekeeper assessment, and a
+valid stapled notarization ticket on both the packaged app and the app mounted from the DMG. It also requires the DMG
+itself to pass local Gatekeeper `open` assessment and `stapler validate`. It is still not a substitute for installing the
 downloaded artifact on a clean second Mac.
 
-Run this before `npm run make`, and after changes to:
+Run the relevant doctor before `npm run make`, then rerun the artifact verifiers after `npm run make`, when changing:
 
 - `src/build/macSigning.ts`
 - `forge.config.ts` signing/notarization config
