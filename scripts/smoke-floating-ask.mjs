@@ -142,8 +142,8 @@ try {
   await cdp.send('Page.enable');
   await sleep(1500); // let the renderer mount floatingAsk + apply CSS
 
-  const evalJs = async (expression) => {
-    const r = await cdp.send('Runtime.evaluate', { expression, returnByValue: true });
+  const evalJs = async (expression, options = {}) => {
+    const r = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, ...options });
     if (r.exceptionDetails) throw new Error(`eval failed: ${r.exceptionDetails.text}`);
     return r.result.value;
   };
@@ -161,6 +161,13 @@ try {
   check('#ask-pill reads "Ask Roro…"', await evalJs(`document.getElementById('ask-pill').textContent.includes('Ask Roro')`));
   check('#floating-stop exists and is NOT armed', await evalJs(`!!document.getElementById('floating-stop') && !document.getElementById('floating-stop').classList.contains('armed')`));
   check('floating smoke harness is explicitly enabled', await evalJs(`!!window.__roroFloatingAskSmoke`));
+  const memoryProfile = await evalJs(
+    `window.memory.profile()
+      .then((facts) => ({ ok: true, count: Array.isArray(facts) ? facts.length : null }))
+      .catch((err) => ({ ok: false, message: String(err?.message || err) }))`,
+    { awaitPromise: true },
+  );
+  check('memory profile bridge responds before teardown', memoryProfile.ok === true);
 
   console.log('[smoke] summoning (click the pill) and asserting REAL CSS visibility…');
   await evalJs(`document.getElementById('ask-pill').click()`);
