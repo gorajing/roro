@@ -285,12 +285,15 @@ async function inspectRenderer(target, child) {
         const input = document.querySelector('#prompt-input');
         const form = document.querySelector('#prompt-form');
         const send = document.querySelector('#send-btn');
+        const cancel = document.querySelector('#cancel-btn');
         const status = document.querySelector('#status');
         input.value = 'create a tiny smoke file';
         form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
         setTimeout(() => resolve({
           inputValue: input.value,
           sendDisabled: send.disabled,
+          cancelDisabled: cancel.disabled,
+          cancelText: cancel.textContent,
           statusText: status.textContent,
         }), 750);
       })`,
@@ -356,7 +359,9 @@ try {
     'typed task is blocked before dispatch when local brain is not ready',
     /start ollama/i.test(brainGate.statusText) &&
       brainGate.inputValue === 'create a tiny smoke file' &&
-      brainGate.sendDisabled === false,
+      brainGate.sendDisabled === false &&
+      brainGate.cancelDisabled === true &&
+      brainGate.cancelText === 'Stop',
   );
 
   await assertStillRunning(run.child, STABILITY_MS);

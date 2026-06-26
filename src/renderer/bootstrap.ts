@@ -23,10 +23,9 @@ import { mountCosmeticsStore } from './cosmetics/cosmeticsStore';
 import { mountBootstrapBanner } from './bootstrap/bootstrapBanner';
 import { createBrainReadinessGate } from './bootstrap/brainReadiness';
 import { mountWorkdirBanner } from './bootstrap/workdirBanner';
-import { ensureWorkdirReady, notifyWorkdirConfigured } from './bootstrap/workdirSetup';
+import { mountTypedPrompt } from './bootstrap/typedPrompt';
 import { getCompanion } from './events/bridge';
 import { runState } from './events/runState';
-import { actionableErrorCopy, typedTurnEndStatus } from './events/errorCopy';
 import { mountLocalVoiceMode } from './voice/mountLocalVoiceMode';
 import { activateVoice } from './voice/voiceActivation';
 import { createFakeVoiceEngine } from './voice/fakeVoiceEngine';
@@ -238,113 +237,15 @@ export async function bootstrap(): Promise<void> {
     else setStatus('Voice is not part of this build yet — the typed coding companion is ready.');
   });
 
-  // Text-input path: feed a typed task straight to MAIN's orchestrator
-  // (turnRun -> recall[memory2] -> decide[local Ollama] -> executor[Codex]). No mic,
-  // no voice. ActionEvents stream back over the same subscribeActionEvents
-  // wiring that drives the avatar, captions, and timeline.
-  const promptForm = el<HTMLFormElement>('prompt-form');
-  const promptInput = el<HTMLInputElement>('prompt-input');
-  const sendBtn = el<HTMLButtonElement>('send-btn');
-  const cancelBtn = el<HTMLButtonElement>('cancel-btn');
-
-  // One turn at a time. A disabled submit button does NOT block the Enter key,
-  // so re-entry is gated here — concurrent turns would scramble the shared
-  // reasoning caption + button state.
-  let turnInFlight = false;
-  let cancelRequested = false;
-  let terminalError: string | null = null;
-
-  // The main cancel channel can preempt a turn before the executor registers, but this full-window
-  // typed form keeps its existing executor-run button flow. Floating Ask owns the immediate
-  // accepted-turn Stop affordance for the cat-only surface.
-  getCompanion()?.onActionEvent((e) => {
-    if (e.kind === 'run.started') {
-      terminalError = null;
-      driver.setBusy?.(true);
-      if (cancelBtn) cancelBtn.disabled = false;
-      setStatus('Working on it — click Stop if you need to pause.');
-    } else if (e.kind === 'run.completed') {
-      terminalError = null;
-      driver.setBusy?.(false);
-    } else if (e.kind === 'run.failed') {
-      terminalError = e.error;
-      driver.setBusy?.(false);
-      setStatus(`Task hit a problem: ${actionableErrorCopy(e.error)}`);
-    }
-  });
-
-  // Release the dev-form turn gate. Since turnRun now resolves at DISPATCH (not completion), the
-  // turn ends on the universal runEnd push signal — not when the await returns. (Answer/clarify
-  // turns have no run.completed; runEnd is the only end signal that fires for every turn.)
-  const releaseDevTurn = (): void => {
-    turnInFlight = false;
-    if (sendBtn) sendBtn.disabled = false;
-    if (cancelBtn) cancelBtn.disabled = true;
-    if (promptInput) promptInput.value = '';
-  };
-
-  getCompanion()?.onRunEnd?.(() => {
-    if (!turnInFlight) return; // ignore runEnd for turns this dev form didn't start (e.g. floating Ask)
-    setStatus(typedTurnEndStatus(cancelRequested, terminalError));
-    releaseDevTurn();
-  });
-
-  promptForm?.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    if (turnInFlight) return;
-    const text = promptInput?.value.trim() ?? '';
-    if (!text) return;
-
-    const companion = getCompanion();
-    if (!companion?.turnRun) {
-      console.warn('[bootstrap] Roro bridge unavailable: window.companion.turnRun missing.');
-      setStatus('Roro lost its connection. Reopen Roro and try again.');
-      return;
-    }
-    const workdirReady = await ensureWorkdirReady({
-      getConfig: () => companion.getWorkdirConfig?.() ?? Promise.resolve({ source: 'unset' }),
-      chooseWorkdir: () => companion.chooseWorkdir?.() ?? Promise.resolve({ source: 'unset' }),
-      onStatus: setStatus,
-      onConfigured: notifyWorkdirConfigured,
-    });
-    if (!workdirReady) return;
-
-    if (!brainGate.ensureReady(setStatus)) return;
-
-    // Keep the typed task on screen for the whole run (cleared on runEnd).
-    turnInFlight = true;
-    cancelRequested = false;
-    terminalError = null;
-    if (sendBtn) sendBtn.disabled = true;
-    captions.update('user', text, true);
-    driver.setState('thinking');
-    setStatus('Thinking…');
-
-    try {
-      // Resolves at DISPATCH — this await only acks the handoff; it does NOT mean the turn is done
-      // (and for an answer turn it may resolve AFTER runEnd, so setting any status here would race
-      // and clobber the terminal "Done"). Status is fully stream-driven from here: run.started ->
-      // "running", the universal runEnd -> "Done" (see the onRunEnd handler above).
-      await companion.turnRun({ transcript: text, sessionId });
-    } catch (e) {
-      // turnRun normally returns {runId} even on a decide failure (it pushes run.failed + runEnd);
-      // a throw here is an IPC-level failure, so no runEnd will arrive — release directly.
-      driver.setState('error');
-      setStatus(`Task hit a problem: ${actionableErrorCopy(describeError(e))}`);
-      releaseDevTurn();
-    }
-  });
-
-  cancelBtn?.addEventListener('click', async () => {
-    const companion = getCompanion();
-    if (!companion?.cancelTask) return;
-    cancelRequested = true;
-    setStatus('Stopping the task...');
-    try {
-      await companion.cancelTask(); // no id => orchestrator aborts the latest (executor) run
-    } catch (e) {
-      setStatus(`Stop failed: ${describeError(e)}`);
-    }
+  // Text-input path: feed a typed task straight to MAIN's orchestrator. It shares the same
+  // accepted-turn Stop contract as floating Ask: no-id cancel before the run id is known, then
+  // targeted cancel once turnRun resolves.
+  mountTypedPrompt({
+    captions,
+    driver,
+    brainGate,
+    sessionId,
+    setStatus,
   });
 
   // The ON-DEVICE voice path (mouth-not-brain), behind dev flags until the full whisper/Silero/Kokoro

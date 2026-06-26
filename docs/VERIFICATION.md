@@ -126,6 +126,34 @@ Run the relevant doctor before `npm run make`, then rerun the artifact verifiers
 - local Apple Developer certificate/keychain setup
 - release docs that instruct the Developer-ID flow
 
+## Full-window typed prompt + Stop
+
+The default full-window prompt (`#prompt-form`) uses `mountTypedPrompt` for the same turn contract as
+floating Ask: accepted submit disables Start, keeps the submitted draft visible, enables Stop before any
+`run.started` event, and calls `cancelTask(undefined)` until `turnRun` returns the typed turn id. Once the id
+is known, later Stop attempts target that id. `runEnd` is still the release signal because answer/clarify
+turns may never emit `run.started`.
+
+Fast regression coverage:
+
+```sh
+npx vitest run --no-file-parallelism src/renderer/bootstrap.typedPrompt.test.ts
+```
+
+The focused test covers immediate Stop arming, no-id early cancel, late targeted recancel, stale runEnd
+guarding, neutral `Stopped.` copy, workdir-cancel gating, and local-brain-not-ready gating. The packaged
+onboarding and EPIPE smokes additionally assert that Stop starts disabled and stays disabled when the local
+brain blocks dispatch.
+
+Manual full-window checklist:
+
+| # | Action | Expected on screen |
+|---|--------|--------------------|
+| 1 | App boots in the default window | Start is enabled, Stop says `Stop` and is disabled |
+| 2 | Submit a non-empty prompt with project + brain ready | Start disables, typed text stays visible, Stop enables immediately, status says `Thinking... click Stop if you need to pause.` |
+| 3 | Click Stop before `run.started` | Stop says `Stopping...`, status says `Stopping...`, and the turn ends with neutral `Stopped.` copy |
+| 4 | Submit while project selection or local brain readiness blocks dispatch | Start remains enabled, Stop remains disabled, and the draft stays in the input |
+
 ## On-screen floating Ask + Stop
 
 The floating Ask (`#floating-ask`) and Stop pill (`#floating-stop`) carry their decision logic in pure
