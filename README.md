@@ -1,12 +1,12 @@
 # Roro
 
-**The private, local coding companion that remembers how you work.**
+**A private desktop coding companion that works in your repo and remembers how you work.**
 
-Roro is an Electron app where an animated black pixel cat helps with real coding
-work in your chosen repo. It thinks through requests with a **local Ollama
-brain**, dispatches Codex or Claude through one executor stream, narrates what is
-happening, and stores durable working preferences in encrypted local
-files-as-truth memory with a PGlite-HNSW index.
+Roro turns a typed task into a real coding-agent run against the project you
+choose: it recalls your local preferences, asks a local Ollama brain to plan the
+turn, streams Codex or Claude through one action timeline, and keeps useful
+lessons for next time. The pixel cat makes the loop visible, but the job is
+coding help with continuity.
 
 The v0 promise is intentionally narrow: local-first coding help that gets better
 because it remembers how *you* work.
@@ -15,15 +15,15 @@ because it remembers how *you* work.
 ask -> recall memory (local) -> think on local Ollama -> run Codex or Claude -> remember the result (local)
 ```
 
-Privacy promise: Roro's default path is on-device, encrypted-by-default, and
-does not require accounts, telemetry, or cloud model keys. The Nebius provider
-and Claude executor are optional power-user paths; the public launch story is
-local Ollama + local memory + user-controlled project access.
+Privacy promise: Roro's default brain, recall, embeddings, and memory run on
+your machine with local Ollama and local storage. Memory contents are encrypted
+at rest by default with the OS keychain, and Roro fails loud instead of silently
+saving plaintext if that keychain is unavailable. Roro itself does not require
+accounts, app-owned telemetry, or a cloud-model key; optional cloud brain and
+executor paths only run when you explicitly configure them.
 
-The long-term pet/companion vision is real, but the launch strategy is
-job-first: the coding job earns daily use, and the "being known" feeling emerges
-from continuity and corrected memory. See [`PUBLIC.md`](PUBLIC.md) for the path
-to public readiness and [`HANDOFF.md`](HANDOFF.md) for current engineering truth.
+See [`PUBLIC.md`](PUBLIC.md) for the path to public readiness and
+[`HANDOFF.md`](HANDOFF.md) for current engineering truth.
 
 ## Why This Exists
 
@@ -85,7 +85,7 @@ flowchart LR
 | --- | --- | --- |
 | Electron shell | windowing, IPC, macOS permission checks, floating mode | [`src/main/`](src/main/) |
 | Character | pixel cat, state machine, lip sync facade | [`src/renderer/character/`](src/renderer/character/) |
-| Brain | local Ollama reasoning/vision/embeddings (Nebius escape hatch) | [`src/brain/`](src/brain/) |
+| Brain | local Ollama reasoning/vision/embeddings | [`src/brain/`](src/brain/) |
 | Memory | encrypted files-as-truth + PGlite-HNSW hybrid recall (local, owner-scoped) | [`src/memory2/`](src/memory2/) |
 | Executor | Codex and Claude stream adapters | [`src/executor/`](src/executor/) |
 | Voice | on-device VAD + STT + TTS (Silero / whisper / Kokoro), behind dev flags | [`src/renderer/voice/`](src/renderer/voice/) |
@@ -113,6 +113,9 @@ npm start
 In a packaged build, Roro asks you to choose the project folder it should work
 on, stores that choice in `userData/config.json`, and reuses it after relaunch.
 In development, `RORO_WORKDIR` is still the fastest explicit override.
+If Roro says no working repo is set, choose a project in Settings or relaunch
+with `RORO_WORKDIR=/absolute/path/to/repo npm start`; blank or stale paths are
+treated as unset so the executor never runs against a guessed directory.
 
 On boot Roro runs a non-blocking brain preflight; if Ollama is down or a model is
 missing, the window still opens and a clear diagnostic appears (it never silently
@@ -137,25 +140,20 @@ and action timeline visible.
 
 ## Configuration
 
-Roro is local-first and needs **no keys** for the default (Ollama + PGlite) path.
-The packaged app stores the chosen working repo in `userData/config.json`; a
-local `.env` (see [`.env.example`](.env.example)) is for development overrides,
-model tuning, and optional cloud/executor paths:
+Roro's default brain and memory paths need **no keys**: Ollama runs locally,
+memory is local PGlite + pgvector, and packaged builds store the chosen working
+repo in `userData/config.json`. A local `.env` (see
+[`.env.example`](.env.example)) is for development overrides, model tuning, and
+optional cloud/executor paths:
 
 ```bash
-# Brain provider: 'ollama' (default, local) or 'nebius' (cloud escape hatch).
+# Brain provider: 'ollama' is the default local path.
 BRAIN_PROVIDER=ollama
 OLLAMA_HOST=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen2.5:3b
 OLLAMA_VISION_MODEL=qwen2.5vl:7b
 OLLAMA_EMBED_MODEL=nomic-embed-text
 OLLAMA_EMBED_DIM=768            # set this if OLLAMA_EMBED_MODEL is not 768-dim
-
-# Optional: only used when BRAIN_PROVIDER=nebius.
-NEBIUS_API_KEY=...
-NEBIUS_MODEL=deepseek-ai/DeepSeek-V3.2
-NEBIUS_VISION_MODEL=Qwen/Qwen2.5-VL-72B-Instruct
-NEBIUS_EMBED_MODEL=Qwen/Qwen3-Embedding-8B
 
 # Optional dev override. Packaged first-run uses the native Choose Project flow.
 RORO_WORKDIR=/absolute/path/to/scratch-git-repo
@@ -190,7 +188,7 @@ What is working:
 - procedural pixel cat, transparent floating mode, and state effects
 - packaged workdir onboarding: native project picker, persisted `userData/config.json`, and typed/floating Ask gates
 - **local Ollama brain** (decide/vision/embeddings) — verified end-to-end against a
-  live daemon; Nebius remains as a `BRAIN_PROVIDER=nebius` escape hatch
+  live daemon
 - **local PGlite + pgvector memory** (owner-scoped, survives restarts)
 - Codex and Claude executor adapters behind one event stream
 - typed text path + the on-device voice control core/seam
@@ -207,7 +205,7 @@ What needs extra setup or a real device:
 ```text
 src/main/                 Electron main process and orchestration
 src/renderer/             UI, character, voice, captions, event wiring
-src/brain/                local Ollama decision, vision, embeddings (Nebius escape hatch)
+src/brain/                local Ollama decision, vision, embeddings
 src/memory2/              local encrypted files-as-truth + PGlite-HNSW memory
 src/executor/             Codex and Claude adapters
 src/shared/               IPC, event, memory, avatar, env contracts

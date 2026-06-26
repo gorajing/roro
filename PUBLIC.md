@@ -59,8 +59,8 @@ Roro is public-ready when **all** of these are observed (not code-read):
       (no right-click→Open dance). Verified on a **clean second Mac**, not the build box.
 - [ ] The packaged app is runnable **without a terminal**: a native folder-picker sets the working repo, honest
       Ollama/model status with one-click download — no `.env`, no API keys, no shell.
-- [ ] `RORO_WORKDIR` persists in `userData/config.json` and survives relaunch; the executor never throws
-      "Roro has no working repo set" for a user who completed onboarding.
+- [ ] The chosen working repo persists in `userData/config.json` and survives relaunch; the executor never throws
+      "Roro has no working repo set" for a user who completed onboarding. `RORO_WORKDIR` remains an explicit env override.
 - [ ] **The heart:** on the signed build, a fact stored in session 1 is recalled in session 2 after a **full quit +
       relaunch** — `safeStorage.isEncryptionAvailable()` is true, the AES-256-GCM envelope round-trips.
 - [ ] **A non-founder** observes the magic moment: types a task, Roro recalls a prior fact and uses it, and the recall
@@ -68,8 +68,8 @@ Roro is public-ready when **all** of these are observed (not code-read):
 - [ ] Branded bundle ID (not `com.github.Electron`) + a real app icon (the pixel cat) in Dock/Launchpad.
 - [ ] Brain-not-ready and executor-can't-run failures are **loud + actionable in-UI** — never a silent empty window or a
       mid-task surprise or a raw env-var error string.
-- [ ] README leads with the **job + a 3-sentence privacy promise** (on-device, encrypted-by-default, no telemetry) — not
-      a feature list of face/voice/memory.
+- [x] README leads with the **job + a 3-sentence privacy promise** (local brain/memory, encrypted-by-default, no
+      app-owned telemetry) — not a feature list of face/voice/memory.
 - [ ] **Nothing half-baked ships:** voice and Live2D are either fully working behind onboarding *or* fully hidden (no
       dead "relaunch with RORO_STT_VOICE=1" hints). A stranger sees nothing they can't actually use.
 
@@ -125,7 +125,7 @@ Phase 0 confirms memory persists signed.)*
 - Never recall a `- true` / bare-boolean line (the guard prevents storage; ensure recall never surfaces noise).
 - ✅ Nudge DECIDE toward **clarify** on referent-less requests ("fix it", "make it better") via a deterministic pre-model
   trust gate plus prompt guidance. Live eval now has all clarify rows passing without concrete-task regressions.
-- Rewrite the README to lead with the **job + privacy promise** + a `RORO_WORKDIR` troubleshooting line.
+- ✅ Rewrite the README to lead with the **job + privacy promise** + a `RORO_WORKDIR` troubleshooting line.
 - A visible **"Roro is looking at your screen"** tell before the first vision capture (the creepy↔care line).
 
 **Exit:** a stranger's first turn lands a *correct* recalled fact or honestly asks to clarify (never a confident wrong
@@ -158,7 +158,7 @@ v0 is **one thing done well: the remembering coding companion.** Deliberately cu
 - **Windows / Linux** — the whole trust stack (hardened runtime, notarization, `safeStorage`) is macOS-first and proven
   there. Port after the macOS moment is validated.
 - **Cloud-brain option** (`BRAIN_PROVIDER=nebius`) — works in code, but adds an API-key path and dilutes the
-  "on-device by default, zero network calls" promise. Keep it an undocumented power-user env var.
+  local-first promise. Keep it out of the default quickstart and launch story; leave it as an explicit power-user env var.
 - **Ambient / clipboard proactivity** ("I notice you copied an error") — raises consent/creepiness stakes before basic
   trust is established. Wrong order.
 
@@ -188,5 +188,5 @@ validation, provable in an afternoon.
 **Produce the first Developer-ID signed + notarized build**, then test it on a clean second Mac:
 `APPLE_TEAM_ID=GNG2M47BD7 APPLE_ID=<paid Apple ID> APPLE_PASSWORD=<app-specific password> npm run make`.
 Nothing else on the path can be *truly validated* until this build exists. In parallel, build Phase 2 from
-[`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md): correction and clarify are landed; README framing and the
-screen capture tell remain.
+[`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md): correction, clarify, and README framing are landed; the
+screen capture tell remains.
