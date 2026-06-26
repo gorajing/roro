@@ -51,6 +51,10 @@ required. The **two roles of the Developer-ID cert are now clear and separate:**
 > Automated preflight: `npm run verify:packaged-memory` now launches the real packaged app, writes an observation through
 > the memory bridge, quits, relaunches, and recalls it from the encrypted `userData` store. This strengthens the packaged
 > persistence evidence, but it does **not** replace the non-founder magic-moment test.
+> Live-brain preflight: `npm run verify:packaged-live-memory-turn` requires local Ollama and proves the packaged
+> RECALL → DECIDE → NARRATE path can speak a bridge-seeded recalled value after relaunch. This narrows the engineering
+> risk, but still is not natural-language extraction proof, Developer-ID/notarized clean-Mac validation, or non-founder
+> validation.
 
 ---
 
@@ -87,6 +91,9 @@ VALID + `safeStorage.isEncryptionAvailable()=true` + creates its keychain item �
 - ✅ **Automated same-build persistence smoke:** `npm run verify:packaged-memory` writes and recalls an observation
   across full process termination/relaunch of the real packaged app. This covers repeatable engineering persistence
   only; Phase 0 still exits on human confirmation plus the Developer-ID/Gatekeeper path below.
+- ✅ **Live packaged turn smoke:** `npm run verify:packaged-live-memory-turn` keeps local Ollama enabled and asserts a
+  packaged relaunch feeds recalled memory into `turnRun` narration. It is a stronger local preflight, not a replacement
+  for the human, extraction-quality, or notarized-build gates.
 - **Human confirmation (the real Phase-0 exit):** a non-founder runs a build, has a short session, **fully quits**,
   relaunches the **same build**, and observes the fact recalled. (Within-build quit/relaunch works under ad-hoc; this is
   doable today without the cert.)
@@ -192,8 +199,8 @@ validation, provable in an afternoon.
 
 ## The first thing to do
 
-**Preflight packaged memory (`npm run package && npm run verify:packaged-memory`), then produce the first Developer-ID
-signed + notarized build** and test it on a clean second Mac:
+**Preflight packaged memory (`npm run package && npm run verify:packaged-memory && npm run verify:packaged-live-memory-turn`),
+then produce the first Developer-ID signed + notarized build** and test it on a clean second Mac:
 `APPLE_TEAM_ID=GNG2M47BD7 APPLE_ID=<paid Apple ID> APPLE_PASSWORD=<app-specific password> npm run make`.
 Nothing else on the path can be *truly validated* until this build exists. In parallel, build Phase 2 from
 [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md): correction, clarify, README framing, and the bounded

@@ -17,6 +17,7 @@
     "verify:floating": "node scripts/smoke-floating-ask.mjs",
     "verify:epipe": "node scripts/smoke-packaged-epipe.mjs",
     "verify:packaged-memory": "node scripts/smoke-packaged-memory.mjs",
+    "verify:packaged-live-memory-turn": "RORO_PACKAGED_MEMORY_LIVE_TURN=1 node scripts/smoke-packaged-memory.mjs",
     "verify:packaged-onboarding": "node scripts/smoke-packaged-onboarding.mjs",
     "verify:release-artifact": "node scripts/verify-release-artifact.mjs --mode default",
     "stage:voice-assets": "node scripts/stage-voice-assets.mjs",
