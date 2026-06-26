@@ -113,6 +113,20 @@ describe('config IPC — packaged-app workdir onboarding spine', () => {
     expect(tryResolveWorkdir({}, '/cwd')).toBe('/chosen/repo');
   });
 
+  it('config:chooseWorkdir overwrites an existing saved repo and the next resolver read uses the new repo', async () => {
+    await writeFile(join(dir, 'config.json'), JSON.stringify({ workdir: '/old/repo' }), 'utf8');
+    setPersistedWorkdir('/old/repo');
+    h.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['/new/repo'] });
+
+    const result = await handler<(event: { sender: unknown }) => Promise<unknown>>(CH.configChooseWorkdir)({
+      sender: {},
+    });
+
+    expect(result).toEqual({ workdir: '/new/repo', source: 'config' });
+    expect(JSON.parse(await readFile(join(dir, 'config.json'), 'utf8'))).toEqual({ workdir: '/new/repo' });
+    expect(tryResolveWorkdir({}, '/cwd')).toBe('/new/repo');
+  });
+
   it('config:chooseWorkdir cancel leaves config and resolver unchanged', async () => {
     h.showOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] });
 
@@ -123,5 +137,21 @@ describe('config IPC — packaged-app workdir onboarding spine', () => {
     expect(result).toEqual({ source: 'unset' });
     await expect(readFile(join(dir, 'config.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     expect(tryResolveWorkdir({}, '/cwd')).toBeUndefined();
+  });
+
+  it('config:chooseWorkdir cancel preserves an existing saved repo', async () => {
+    const repo = join(dir, 'existing-repo');
+    await mkdir(repo);
+    await writeFile(join(dir, 'config.json'), JSON.stringify({ workdir: repo }), 'utf8');
+    setPersistedWorkdir(repo);
+    h.showOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] });
+
+    const result = await handler<(event: { sender: unknown }) => Promise<unknown>>(CH.configChooseWorkdir)({
+      sender: {},
+    });
+
+    expect(result).toEqual({ workdir: repo, source: 'config' });
+    expect(JSON.parse(await readFile(join(dir, 'config.json'), 'utf8'))).toEqual({ workdir: repo });
+    expect(tryResolveWorkdir({}, '/cwd')).toBe(repo);
   });
 });

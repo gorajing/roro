@@ -93,7 +93,7 @@ VALID + `safeStorage.isEncryptionAvailable()=true` + creates its keychain item �
 outside `npm start`); and the Developer-ID notarized build installs Gatekeeper-clean on a clean Mac.
 
 ### Phase 1 — Make the packaged app runnable without a terminal (the onboarding spine)
-**Status: PARTIALLY LANDED in PR #69.** The packaged app now has a persisted workdir spine:
+**Status: LANDED.** The packaged app now has a persisted workdir spine:
 `configStore`, `config:get`, `config:chooseWorkdir`, `workdirBanner`, typed/floating Ask gates via
 `ensureWorkdirReady`, and `npm run verify:packaged-onboarding`. The app no longer depends on a terminal `.env` path for
 the happy packaged first-run workdir flow.
@@ -108,7 +108,8 @@ the happy packaged first-run workdir flow.
 - ✅ Real app icon in Dock/Launchpad: `assets/roro-icon.icns` from the 1024px pixel-cat PNG.
 - ✅ Stronger brain-readiness gate: typed and floating Ask block a coding turn when the startup preflight reports
   Ollama/models are not ready.
-- Remaining: a Settings entry to change the repo later.
+- ✅ Project control in Settings: after first setup, the user can see the active repo and change the saved project
+  without relaunching; `RORO_WORKDIR` remains an explicit read-only override.
 
 **Exit:** a stranger who has never touched a terminal launches → is guided to pick a repo → sees honest model status with
 one-click download → types a task the executor runs to completion. Dock shows the cat icon.
@@ -168,7 +169,7 @@ v0 is **one thing done well: the remembering coding companion.** Deliberately cu
 |---|---|
 | **Apple Developer Program + Developer ID cert** | ✅ **Done locally** (`Developer ID Application: Jin Young Choi (GNG2M47BD7)`). Next: run `npm run make` with `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID`, and an app-specific `APPLE_PASSWORD`, then validate the notarized build on a clean Mac. |
 | **Bundle ID + icon** | ✅ Done: bundle ID is `com.jinchoi.roro`; Dock/Launchpad icon is the black pixel cat at `assets/roro-icon.icns`, generated from the 1024px source PNG. Keep this identity; don't design a new brand. |
-| **`RORO_WORKDIR` setup UX** | A mandatory first-launch native folder-picker (the gate between "launched" and "can code") + a Settings entry to change later. |
+| **`RORO_WORKDIR` setup UX** | A mandatory first-launch native folder-picker (the gate between "launched" and "can code") + a Project control to change the saved repo later. |
 | **Debut channel** | A small trusted cohort first — measure attachment (does the moment land, do they reopen), not vanity downloads. Broaden only after it lands for strangers. |
 | **The go/no-go bar** | Phase 0's exit, hardened: a non-founder, clean Mac, signed `.dmg`, fact recalled across a full quit. If that one thing isn't true, **nothing ships.** |
 
@@ -185,5 +186,5 @@ validation, provable in an afternoon.
 
 **Produce the first Developer-ID signed + notarized build**, then test it on a clean second Mac:
 `APPLE_TEAM_ID=GNG2M47BD7 APPLE_ID=<paid Apple ID> APPLE_PASSWORD=<app-specific password> npm run make`.
-Nothing else on the path can be *truly validated* until this build exists. In parallel, finish the remaining Phase-1 polish
-(settings, icon, readiness gate) and build Phase 2 from [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md).
+Nothing else on the path can be *truly validated* until this build exists. In parallel, build Phase 2 from
+[`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md).

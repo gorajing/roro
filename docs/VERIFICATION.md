@@ -11,8 +11,9 @@ npm run verify:packaged-onboarding
 
 `scripts/smoke-packaged-onboarding.mjs` launches the packaged app with disposable `HOME`, disposable working directory,
 and an explicit Chromium `--user-data-dir`. It asserts the app loads from the packaged `file://...app.asar` path, the
-renderer is nonblank, the first-run workdir banner is visible, the bridge reports an unset workdir, choosing a project
-persists `userData/config.json`, relaunch hydrates the config, and the banner stays hidden once configured.
+renderer is nonblank, the first-run workdir banner is visible, the bridge reports an unset workdir, Settings can show
+that no project is selected, choosing a project persists `userData/config.json`, relaunch hydrates the config, the
+banner stays hidden once configured, and Settings shows the saved project.
 
 Run this after changes to:
 
@@ -21,6 +22,7 @@ Run this after changes to:
 - `src/main/ipc.ts` workdir channels
 - `src/preload.ts` workdir bridge
 - `src/renderer/bootstrap/workdir*.ts`
+- `src/renderer/settings/projectSettings.ts`
 - `scripts/smoke-packaged-onboarding.mjs`
 - packaged startup/signing/fuse behavior in `forge.config.ts` or `src/build/macSigning.ts`
 
