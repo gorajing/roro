@@ -44,6 +44,6 @@ export function actionableErrorCopy(error: string): string {
 
 export function typedTurnEndStatus(cancelRequested: boolean, terminalError: string | null): string {
   if (cancelRequested) return 'Stopped.';
-  if (terminalError) return `Turn failed: ${actionableErrorCopy(terminalError)}`;
+  if (terminalError) return `Task hit a problem: ${actionableErrorCopy(terminalError)}`;
   return 'Done — type another task.';
 }

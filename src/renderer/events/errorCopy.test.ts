@@ -36,7 +36,7 @@ describe('actionableErrorCopy', () => {
 describe('typedTurnEndStatus', () => {
   it('does not call a failed turn done when runEnd arrives', () => {
     expect(typedTurnEndStatus(false, 'spawn codex ENOENT')).toBe(
-      'Turn failed: Codex CLI not found. Install Codex or set RORO_CODEX_BIN to the CLI path, then try again.',
+      'Task hit a problem: Codex CLI not found. Install Codex or set RORO_CODEX_BIN to the CLI path, then try again.',
     );
   });
 

@@ -12,9 +12,10 @@ npm run verify:packaged-onboarding
 
 `scripts/smoke-packaged-onboarding.mjs` launches the packaged app with disposable `HOME`, disposable working directory,
 and an explicit Chromium `--user-data-dir`. It asserts the app loads from the packaged `file://...app.asar` path, the
-renderer is nonblank, the first-run workdir banner is visible, the bridge reports an unset workdir, Settings can show
-that no project is selected, choosing a project persists `userData/config.json`, relaunch hydrates the config, the
-banner stays hidden once configured, and Settings shows the saved project.
+renderer is nonblank, default v0 hides voice/mute/cosmetics and debug/direct bridges, the first-run workdir banner is
+visible, the bridge reports an unset workdir, Settings can show that no project is selected, choosing a project persists
+`userData/config.json`, relaunch hydrates the config, the banner stays hidden once configured, and Settings shows the
+saved project.
 
 Run this after changes to:
 
@@ -128,9 +129,9 @@ Run the relevant doctor before `npm run make`, then rerun the artifact verifiers
 ## On-screen floating Ask + Stop
 
 The floating Ask (`#floating-ask`) and Stop pill (`#floating-stop`) carry their decision logic in pure
-modules (`askMachine`, `runLifecycle`) that are unit-tested, plus a jsdom DOM shell test. But **jsdom
-has no CSS layout/visibility**, so the collapsed/expanded/tasked + `.armed` *rendering* — the part a
-real user sees — has never been verified in the running app (HANDOFF §8 #2: "on-screen check owed").
+modules (`askMachine`, `runLifecycle`) that are unit-tested, plus a jsdom DOM shell test. Because **jsdom
+has no CSS layout/visibility**, the rendered collapsed/expanded/tasked + `.armed` states must also be
+checked in the running app whenever `floatingAsk.ts` or `src/index.css` changes.
 
 Two ways to verify, below. The automated smoke is the fast path; the manual checklist is the
 authoritative fallback and what to run when changing `floatingAsk.ts` or `src/index.css`.

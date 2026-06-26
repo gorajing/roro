@@ -258,14 +258,14 @@ export async function bootstrap(): Promise<void> {
       terminalError = null;
       driver.setBusy?.(true);
       if (cancelBtn) cancelBtn.disabled = false;
-      setStatus('Coding agent running — click Stop to abort.');
+      setStatus('Working on it — click Stop if you need to pause.');
     } else if (e.kind === 'run.completed') {
       terminalError = null;
       driver.setBusy?.(false);
     } else if (e.kind === 'run.failed') {
       terminalError = e.error;
       driver.setBusy?.(false);
-      setStatus(`Turn failed: ${actionableErrorCopy(e.error)}`);
+      setStatus(`Task hit a problem: ${actionableErrorCopy(e.error)}`);
     }
   });
 
@@ -293,7 +293,8 @@ export async function bootstrap(): Promise<void> {
 
     const companion = getCompanion();
     if (!companion?.turnRun) {
-      setStatus('Roro bridge unavailable (window.companion.turnRun missing).');
+      console.warn('[bootstrap] Roro bridge unavailable: window.companion.turnRun missing.');
+      setStatus('Roro lost its connection. Reopen Roro and try again.');
       return;
     }
     const workdirReady = await ensureWorkdirReady({
@@ -325,7 +326,7 @@ export async function bootstrap(): Promise<void> {
       // turnRun normally returns {runId} even on a decide failure (it pushes run.failed + runEnd);
       // a throw here is an IPC-level failure, so no runEnd will arrive — release directly.
       driver.setState('error');
-      setStatus(`Turn failed: ${actionableErrorCopy(describeError(e))}`);
+      setStatus(`Task hit a problem: ${actionableErrorCopy(describeError(e))}`);
       releaseDevTurn();
     }
   });
@@ -334,7 +335,7 @@ export async function bootstrap(): Promise<void> {
     const companion = getCompanion();
     if (!companion?.cancelTask) return;
     cancelRequested = true;
-    setStatus('Stopping the agent…');
+    setStatus('Stopping the task...');
     try {
       await companion.cancelTask(); // no id => orchestrator aborts the latest (executor) run
     } catch (e) {

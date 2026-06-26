@@ -32,37 +32,57 @@ export class CaptionPanel implements CaptionSink {
   }
 }
 
+function statusText(status: 'started' | 'completed' | 'failed'): string {
+  switch (status) {
+    case 'started':
+      return 'Working';
+    case 'completed':
+      return 'Done';
+    case 'failed':
+      return 'Needs attention';
+  }
+}
+
+function fileSummary(e: Extract<ActionEvent, { kind: 'file_change' }>): string {
+  if (e.files.length === 0) return 'files';
+  if (e.files.length === 1) {
+    const file = e.files[0];
+    return `${file.op} ${file.path}`;
+  }
+  return `${e.files.length} files`;
+}
+
 function summarizeEvent(e: ActionEvent): { label: string; detail: string; status?: string } {
   switch (e.kind) {
     case 'run.started':
-      return { label: `${e.agent === 'claude' ? 'Claude' : 'Codex'} agent started`, detail: e.runId };
+      return { label: `${e.agent === 'claude' ? 'Claude' : 'Codex'} started`, detail: '' };
     case 'turn.started':
-      return { label: 'turn.started', detail: e.runId };
+      return { label: 'Task accepted', detail: '' };
     case 'reasoning':
       // This event comes from the EXECUTOR (the coding agent), not the Nebius
       // brain — the brain's reasoning streams over a separate channel. Label it
       // honestly as the agent's reasoning.
-      return { label: 'Agent reasoning', detail: e.text };
+      return { label: 'Agent is thinking', detail: e.text };
     case 'command':
-      return { label: 'command', detail: e.command, status: e.status };
+      return { label: `${statusText(e.status)} command`, detail: e.command, status: e.status };
     case 'file_change':
       return {
-        label: 'file_change',
-        detail: e.files.map((f) => `${f.op} ${f.path}`).join(', '),
+        label: `${statusText(e.status)} file changes`,
+        detail: fileSummary(e),
         status: e.status,
       };
     case 'tool':
-      return { label: `tool: ${e.tool}`, detail: e.summary ?? '', status: e.status };
+      return { label: `${statusText(e.status)} ${e.tool}`, detail: e.summary ?? '', status: e.status };
     case 'message.delta':
-      return { label: 'message.delta', detail: e.text };
+      return { label: 'Roro is drafting', detail: e.text };
     case 'message':
-      return { label: 'message', detail: e.text };
+      return { label: 'Roro said', detail: e.text };
     case 'status':
-      return { label: 'status', detail: e.text };
+      return { label: 'Status', detail: e.text };
     case 'run.completed':
-      return { label: 'run.completed', detail: e.finalText ?? '', status: 'completed' };
+      return { label: 'Run finished', detail: e.finalText ?? '', status: 'completed' };
     case 'run.failed':
-      return { label: 'run.failed', detail: `Agent hit an error — ${actionableErrorCopy(e.error)}`, status: 'failed' };
+      return { label: 'Run needs attention', detail: actionableErrorCopy(e.error), status: 'failed' };
     default: {
       // Exhaustiveness guard: if a new ActionEvent kind is added, this errors.
       const _never: never = e;
@@ -89,7 +109,7 @@ export class ActionTimeline {
     const time = new Date(e.ts).toLocaleTimeString();
     const kindEl = document.createElement('span');
     kindEl.className = 'tl-kind';
-    kindEl.textContent = status ? `${label} [${status}]` : label;
+    kindEl.textContent = label;
 
     const detailEl = document.createElement('span');
     detailEl.className = 'tl-detail';

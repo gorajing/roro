@@ -14,10 +14,7 @@
       <div id="overlay">
         <header id="topbar">
           <div id="brand">Roro</div>
-          <div id="powered">
-            Brain: <b>Local</b> · Ollama (qwen2.5) &nbsp;|&nbsp; Memory:
-            <b>Local</b> · PGlite + pgvector
-          </div>
+          <div id="powered">Private local brain and memory</div>
           <div id="controls">
             <!-- Hidden by default for the typed-only v0 build. bootstrap.ts reveals these only when an
                  explicit voice dev flag mounts the on-device or scripted voice path. -->
@@ -45,15 +42,15 @@
           <input
             id="prompt-input"
             type="text"
-            aria-label="Task for Roro"
-            placeholder="Type a task — e.g. &quot;fix the failing test in calc.py&quot;"
+            aria-label="Ask Roro to work on a task"
+            placeholder="Ask Roro to work on something..."
           />
-          <button id="send-btn" type="submit">Send</button>
+          <button id="send-btn" type="submit">Start</button>
           <button id="cancel-btn" type="button" disabled>Stop</button>
         </form>
 
         <section id="timeline-panel">
-          <h2>Action timeline</h2>
+          <h2>What Roro is doing</h2>
           <div id="timeline"></div>
         </section>
       </div>

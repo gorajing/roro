@@ -129,10 +129,10 @@ For the floating desktop agent:
 RORO_FLOATING_WINDOW=1 npm start
 ```
 
-The floating mode opens a transparent, frameless 380x400 window that hides all
-controls and shows only the cat. **Tap or hold the cat to pet it; drag to move it.**
-When an explicit voice dev flag is enabled, the same surface also reveals the
-Voice Mode/Mute controls and the right-click/M mute affordance. The cat's body
+The floating mode opens a transparent, frameless 380x400 window around the cat,
+with a compact Ask pill for tasks and setup banners only when action is needed.
+**Tap or hold the cat to pet it; drag to move it.** When an explicit voice dev
+flag is enabled, right-click/M mute is available for the mic path. The cat's body
 carries only affection + move — talk and tasking live off the body (see the
 interaction design spec at
 [`docs/superpowers/specs/2026-06-20-nero-interaction-design.md`](docs/superpowers/specs/2026-06-20-nero-interaction-design.md)).

@@ -91,11 +91,6 @@ export function activityForEvent(e: ActionEvent): ActivityCue | null {
 export function subscribeActionEvents(opts: SubscribeOptions): () => void {
   const { character, timeline, captions } = opts;
   const unsubs: Array<() => void> = [];
-  // Accumulates DeepSeek reasoning_content deltas for the current turn so the
-  // otherwise-silent decide phase shows live proof-of-life. Reset when the turn's
-  // narration / final summary lands (see the message / run.completed branch).
-  let reasoningBuf = '';
-
   const companion = getCompanion();
   if (companion?.onActionEvent) {
     unsubs.push(
@@ -115,10 +110,8 @@ export function subscribeActionEvents(opts: SubscribeOptions): () => void {
         // text-input turn is legible without any voice output.
         if (captions) {
           if (e.kind === 'message' && e.text) {
-            reasoningBuf = ''; // turn's spoken line has landed; end the live-reasoning view
             captions.update('assistant', e.text, true);
           } else if (e.kind === 'run.completed' && e.finalText) {
-            reasoningBuf = '';
             captions.update('assistant', e.finalText, true);
           }
         }
@@ -130,9 +123,9 @@ export function subscribeActionEvents(opts: SubscribeOptions): () => void {
 
   if (companion?.onRunEnd) {
     unsubs.push(
-      companion.onRunEnd(({ runId }) => {
+      companion.onRunEnd(() => {
         runState.set(false);
-        timeline.marker(`— run ended: ${runId} —`);
+        timeline.marker('Task finished.');
         // Let the 'done'/'error' cue read for a beat, then settle the avatar back
         // to idle so a finished run doesn't leave the cat parked (in floating mode
         // 'done' otherwise looks like idle forever). Skipped if a new run started.
@@ -148,17 +141,13 @@ export function subscribeActionEvents(opts: SubscribeOptions): () => void {
   const brain = getBrain();
   if (brain?.onReasoning) {
     unsubs.push(
-      brain.onReasoning((delta: string) => {
-        // reasoning_content streams during decide() (Nebius path only) -> 'thinking' pose AND a
-        // live caption so the decide phase isn't silent dead air. Show the tail (most recent
-        // reasoning). Provider-neutral label — the planning beat (from MAIN) names the brain.
+      brain.onReasoning(() => {
+        // reasoning_content streams during decide() (Nebius path only) -> 'thinking' pose and a
+        // proof-of-life caption. Do not echo raw reasoning text into the product UI.
         character.setState('thinking');
         character.setActivity({ kind: 'thinking', text: 'thinking' });
         if (captions) {
-          reasoningBuf += delta;
-          const tail =
-            reasoningBuf.length > 240 ? '…' + reasoningBuf.slice(-240) : reasoningBuf;
-          captions.update('assistant', `reasoning: ${tail}`, false);
+          captions.update('assistant', 'Thinking through it...', false);
         }
       }),
     );

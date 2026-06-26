@@ -28,8 +28,10 @@ const noopTimeline = { append() {}, marker() {} } as unknown as ActionTimeline;
 
 describe('subscribeActionEvents — local brain content stream', () => {
   let contentCb: ((d: string) => void) | undefined;
+  let reasoningCb: ((d: string) => void) | undefined;
   beforeEach(() => {
     contentCb = undefined;
+    reasoningCb = undefined;
     w().companion = { onActionEvent: () => () => {} };
     // The Ollama default exposes onContent but NOT onReasoning.
     w().brain = { onContent: (cb: (d: string) => void) => { contentCb = cb; return () => {}; } };
@@ -75,5 +77,20 @@ describe('subscribeActionEvents — local brain content stream', () => {
 
     expect(activities).toContainEqual({ kind: 'read', text: SCREEN_CAPTURE_STATUS_TEXT });
     expect(lines).toHaveLength(0);
+  });
+
+  it('shows proof of life for reasoning deltas without exposing raw provider reasoning', () => {
+    w().brain = { onReasoning: (cb: (d: string) => void) => { reasoningCb = cb; return () => {}; } };
+    const { character, states } = fakeCharacter();
+    const lines: Array<{ who: string; text: string }> = [];
+    const captions = { update: (who: string, text: string) => lines.push({ who, text }) } as unknown as CaptionSink;
+
+    subscribeActionEvents({ character, timeline: noopTimeline, captions });
+    if (!reasoningCb) throw new Error('missing reasoning subscription');
+    reasoningCb('raw hidden chain text');
+
+    expect(states).toContain('thinking');
+    expect(lines).toEqual([{ who: 'assistant', text: 'Thinking through it...' }]);
+    expect(lines.map((line) => line.text).join(' ')).not.toContain('raw hidden chain text');
   });
 });
