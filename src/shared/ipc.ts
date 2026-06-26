@@ -1,5 +1,5 @@
 // src/shared/ipc.ts — ALL IPC channel names (the const CH) + small shared payload types. Imported by main + preload.
-// invoke = request/response; push = MAIN->renderer webContents.send (streams; invoke can't stream).
+// invoke = request/response; push = guarded MAIN->renderer send (streams; invoke can't stream).
 export type MicStatus = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
 export interface TurnInput { transcript: string; sessionId: string }
 

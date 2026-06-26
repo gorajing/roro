@@ -1,4 +1,5 @@
-import 'dotenv/config'; // MUST be first: populates process.env from ./.env before any module reads it.
+import './main/processOutputGuard'; // MUST be first: broken stdout/stderr pipes must not crash Electron.
+import 'dotenv/config'; // Populates process.env from ./.env before app modules read it.
 import './shared/env-migrate'; // back-compat: COMPANION_* -> RORO_* BEFORE any module reads env at load.
 // src/main.ts — Electron MAIN process entry. Boots a secure window, gates the macOS mic via
 // TCC, installs Chromium permission handlers, registers all typed IPC, and a summon shortcut.
@@ -21,6 +22,7 @@ import { bootstrapFailureMessage, bootstrapStatusFor, type OllamaProbe } from '.
 import type { BootstrapStatusMsg } from './shared/ipc';
 import { ollamaTags } from './brain/ollama';
 import { CH } from './shared/ipc';
+import { sendToWindow } from './main/safeSend';
 
 /**
  * Startup self-check for the (local-first) brain: confirm the provider is reachable and the models are
@@ -62,10 +64,10 @@ async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
     }
     lastBootstrapStatus = status; // serve it on demand (race recovery), in addition to the push below
     const send = (): void => {
-      win.webContents.send(CH.actionEvent, { kind: 'message', runId: 'preflight', text: `⚠️ ${message}`, ts: Date.now() });
-      if (status) win.webContents.send(CH.bootstrapStatus, status);
+      sendToWindow(win, CH.actionEvent, { kind: 'message', runId: 'preflight', text: `⚠️ ${message}`, ts: Date.now() });
+      if (status) sendToWindow(win, CH.bootstrapStatus, status);
     };
-    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
+    if (!win.isDestroyed() && !win.webContents.isDestroyed() && win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
     else send();
   }
 }
