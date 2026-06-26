@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MemoryModule } from './siblings';
 
 const h = vi.hoisted(() => ({
@@ -94,8 +94,10 @@ function fakeMemory(): MemoryModule {
 
 describe('memory IPC trust loop', () => {
   let memory: MemoryModule;
+  let savedDebugBridge: string | undefined;
 
   beforeEach(() => {
+    savedDebugBridge = process.env.RORO_DEBUG_BRIDGE;
     h.handlers.clear();
     h.loadBrain.mockReset();
     h.loadMemory.mockReset();
@@ -103,6 +105,11 @@ describe('memory IPC trust loop', () => {
     memory = fakeMemory();
     h.loadMemory.mockResolvedValue(memory);
     registerIpcHandlers();
+  });
+
+  afterEach(() => {
+    if (savedDebugBridge === undefined) delete process.env.RORO_DEBUG_BRIDGE;
+    else process.env.RORO_DEBUG_BRIDGE = savedDebugBridge;
   });
 
   it('memory:profile injects the MAIN owner and returns the renderer-safe view', async () => {
@@ -159,6 +166,10 @@ describe('memory IPC trust loop', () => {
   });
 
   it('memory:remember still rejects renderer-authored facts before loading memory', async () => {
+    h.handlers.clear();
+    process.env.RORO_DEBUG_BRIDGE = '1';
+    registerIpcHandlers();
+
     await expect(
       handler<(event: unknown, input: unknown) => Promise<unknown>>(CH.memoryRemember)(
         {},

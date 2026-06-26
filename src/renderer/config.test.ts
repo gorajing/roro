@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { voiceSurfaceEnabled, type RoroConfig } from './config';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { loadConfig, voiceSurfaceEnabled, type RoroConfig } from './config';
 
 function config(overrides: Partial<RoroConfig> = {}): RoroConfig {
   return {
@@ -11,9 +11,14 @@ function config(overrides: Partial<RoroConfig> = {}): RoroConfig {
     ttsVoice: false,
     voicePack: '',
     cosmeticsStore: false,
+    debugBridge: false,
     ...overrides,
   };
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('voiceSurfaceEnabled', () => {
   it('keeps voice UI hidden for the default typed-only v0 launch', () => {
@@ -25,5 +30,15 @@ describe('voiceSurfaceEnabled', () => {
     expect(voiceSurfaceEnabled(config({ vadVoice: true }))).toBe(true);
     expect(voiceSurfaceEnabled(config({ sttVoice: true }))).toBe(true);
     expect(voiceSurfaceEnabled(config({ ttsVoice: true }))).toBe(true);
+  });
+});
+
+describe('loadConfig', () => {
+  it('keeps the debug bridge off by default and honors explicit runtime opt-in', () => {
+    expect(loadConfig().debugBridge).toBe(false);
+
+    vi.stubGlobal('window', { RORO_CFG: { debugBridge: true } });
+
+    expect(loadConfig().debugBridge).toBe(true);
   });
 });

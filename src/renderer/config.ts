@@ -39,6 +39,8 @@ export interface RoroConfig {
   /** WS5 validation (M9): mount the cosmetics fake-door (captures willingness-to-pay intent, no payment).
    *  OFF by default — the founder enables it to run the demand experiment. RORO_WS5_STORE=1. */
   cosmeticsStore: boolean;
+  /** Dev/security escape hatch: expose direct brain/vision/debug handles. Default false. */
+  debugBridge: boolean;
 }
 
 export function voiceSurfaceEnabled(config: Pick<RoroConfig, 'fakeVoice' | 'vadVoice' | 'sttVoice' | 'ttsVoice'>): boolean {
@@ -80,5 +82,6 @@ export function loadConfig(): RoroConfig {
     ttsVoice: readBool('ttsVoice', 'VITE_RORO_TTS_VOICE', false),
     voicePack: read('voicePack', 'VITE_RORO_VOICE_PACK', ''),
     cosmeticsStore: readBool('cosmeticsStore', 'VITE_RORO_WS5_STORE', false),
+    debugBridge: readBool('debugBridge', 'VITE_RORO_DEBUG_BRIDGE', false),
   };
 }

@@ -120,7 +120,9 @@ function smokeEnv(port, ollamaPort) {
   delete env.RORO_ALLOW_CWD;
   delete env.RORO_DB_DIR;
   delete env.DOTENV_CONFIG_PATH;
-  return stripV0DeferredEnv(env);
+  const stripped = stripV0DeferredEnv(env);
+  stripped.RORO_DEBUG_BRIDGE = '1';
+  return stripped;
 }
 
 function launchApp({ cwd, userDataDir, port, ollamaPort, label }) {

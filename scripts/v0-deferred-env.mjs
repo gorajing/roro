@@ -6,6 +6,7 @@ export const V0_DEFERRED_ENV_KEYS = [
   'RORO_TTS_VOICE',
   'RORO_VOICE_PACK',
   'RORO_WS5_STORE',
+  'RORO_DEBUG_BRIDGE',
 ];
 
 export function stripV0DeferredEnv(env) {

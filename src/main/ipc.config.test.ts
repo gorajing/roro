@@ -54,11 +54,14 @@ function handler<T extends (...args: never[]) => unknown>(channel: string): T {
 describe('config IPC — packaged-app workdir onboarding spine', () => {
   let dir: string;
   let savedWorkdir: string | undefined;
+  let savedDebugBridge: string | undefined;
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'roro-ipc-config-'));
     savedWorkdir = process.env.RORO_WORKDIR;
+    savedDebugBridge = process.env.RORO_DEBUG_BRIDGE;
     delete process.env.RORO_WORKDIR;
+    delete process.env.RORO_DEBUG_BRIDGE;
     setPersistedWorkdir(undefined);
     h.handlers.clear();
     h.getPath.mockReturnValue(dir);
@@ -70,6 +73,8 @@ describe('config IPC — packaged-app workdir onboarding spine', () => {
   afterEach(async () => {
     if (savedWorkdir === undefined) delete process.env.RORO_WORKDIR;
     else process.env.RORO_WORKDIR = savedWorkdir;
+    if (savedDebugBridge === undefined) delete process.env.RORO_DEBUG_BRIDGE;
+    else process.env.RORO_DEBUG_BRIDGE = savedDebugBridge;
     setPersistedWorkdir(undefined);
     await rm(dir, { recursive: true, force: true });
   });
@@ -153,5 +158,29 @@ describe('config IPC — packaged-app workdir onboarding spine', () => {
     expect(result).toEqual({ workdir: repo, source: 'config' });
     expect(JSON.parse(await readFile(join(dir, 'config.json'), 'utf8'))).toEqual({ workdir: repo });
     expect(tryResolveWorkdir({}, '/cwd')).toBe(repo);
+  });
+
+  it('keeps direct executor, brain, memory, and vision invoke handlers behind RORO_DEBUG_BRIDGE', () => {
+    expect(h.handlers.has(CH.runTask)).toBe(false);
+    expect(h.handlers.has(CH.brainDecide)).toBe(false);
+    expect(h.handlers.has(CH.brainDescribeScreen)).toBe(false);
+    expect(h.handlers.has(CH.brainEmbed)).toBe(false);
+    expect(h.handlers.has(CH.memoryRemember)).toBe(false);
+    expect(h.handlers.has(CH.memoryRecall)).toBe(false);
+    expect(h.handlers.has(CH.visionAsk)).toBe(false);
+    expect(h.handlers.has(CH.turnRun)).toBe(true);
+    expect(h.handlers.has(CH.memoryProfile)).toBe(true);
+
+    h.handlers.clear();
+    process.env.RORO_DEBUG_BRIDGE = '1';
+    registerIpcHandlers();
+
+    expect(h.handlers.has(CH.runTask)).toBe(true);
+    expect(h.handlers.has(CH.brainDecide)).toBe(true);
+    expect(h.handlers.has(CH.brainDescribeScreen)).toBe(true);
+    expect(h.handlers.has(CH.brainEmbed)).toBe(true);
+    expect(h.handlers.has(CH.memoryRemember)).toBe(true);
+    expect(h.handlers.has(CH.memoryRecall)).toBe(true);
+    expect(h.handlers.has(CH.visionAsk)).toBe(true);
   });
 });

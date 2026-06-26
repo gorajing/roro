@@ -34,8 +34,8 @@ export interface CompanionBridge {
    * onActionEvent / onRunEnd; this promise resolves only with the runId.
    */
   turnRun(input: TurnInput): Promise<{ runId: string }>;
-  /** Direct executor dispatch, bypassing the brain (decide() already produced a command). */
-  runTask(prompt: string, agent: AgentKindArg): Promise<{ runId: string }>;
+  /** Debug bridge only: direct executor dispatch, bypassing the brain. */
+  runTask?(prompt: string, agent: AgentKindArg): Promise<{ runId: string }>;
   /** SIGTERM/abort the active runner for a given runId (or the latest run if omitted). */
   cancelTask(runId?: string): Promise<void>;
   /** Move the current floating BrowserWindow by screen-pixel deltas. */
@@ -71,9 +71,12 @@ export interface CompanionBridge {
 export type AgentKindArg = 'codex' | 'claude';
 
 export interface BrainBridge {
-  decide(input: DecideInput): Promise<Decision>;
-  describeScreen(input: { b64: string; mime: string }): Promise<string>;
-  embed(input: string | string[]): Promise<number[] | number[][]>;
+  /** Debug bridge only: direct brain decision invoke. Product turns use window.companion.turnRun. */
+  decide?(input: DecideInput): Promise<Decision>;
+  /** Debug bridge only: direct screen caption invoke. */
+  describeScreen?(input: { b64: string; mime: string }): Promise<string>;
+  /** Debug bridge only: direct embedding invoke. */
+  embed?(input: string | string[]): Promise<number[] | number[][]>;
   /** DeepSeek reasoning_content token deltas -> avatar 'thinking'. Returns unsubscribe. */
   onReasoning(cb: (delta: string) => void): () => void;
   /** Optional live JSON-preview content deltas. Returns unsubscribe. */
@@ -81,9 +84,10 @@ export interface BrainBridge {
 }
 
 export interface MemoryBridge {
-  // owner_id is injected MAIN-side from the device identity; the renderer never supplies it.
-  remember(input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow>;
-  recall(input: { query: string; k?: number; sessionId?: string }): Promise<MemoryMatch[]>;
+  /** Debug bridge only: owner_id is injected MAIN-side from the device identity. */
+  remember?(input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow>;
+  /** Debug bridge only: direct semantic recall. Product recall is orchestrator-owned. */
+  recall?(input: { query: string; k?: number; sessionId?: string }): Promise<MemoryMatch[]>;
   /** Renderer-safe transparency view: active owner-scoped facts only. */
   profile(): Promise<ProfileFactView[]>;
   /** Replace one active fact value; MAIN owns owner/key lookup. */
@@ -106,7 +110,8 @@ declare global {
     companion: CompanionBridge;
     brain: BrainBridge;
     memory: MemoryBridge;
-    vision: VisionBridge;
+    /** Debug bridge only: direct renderer-initiated screen capture. */
+    vision?: VisionBridge;
   }
 }
 
