@@ -97,6 +97,45 @@ export interface MacSigning {
   };
 }
 
+/** Args for a lightweight notarytool auth check. `xcrun <args>` lists prior submissions and therefore
+ * verifies Apple-ID/app-password/team-id auth without creating or uploading a new build artifact. */
+export function notarytoolHistoryArgs(env: Record<string, string | undefined>): string[] {
+  const status = appleSigningEnvStatus(env);
+  if (!status.isComplete) {
+    throw new Error(`notarytool auth check requires all of ${APPLE_CRED_VARS.join(', ')}`);
+  }
+  const appleId = env.APPLE_ID?.trim();
+  const applePassword = env.APPLE_PASSWORD?.trim();
+  const appleTeamId = env.APPLE_TEAM_ID?.trim();
+  if (!appleId || !applePassword || !appleTeamId) {
+    throw new Error(`notarytool auth check requires all of ${APPLE_CRED_VARS.join(', ')}`);
+  }
+  return [
+    'notarytool',
+    'history',
+    '--apple-id',
+    appleId,
+    '--password',
+    applePassword,
+    '--team-id',
+    appleTeamId,
+    '--output-format',
+    'json',
+    '--no-progress',
+  ];
+}
+
+/** Redact Apple credentials before printing notarytool stderr/stdout. */
+export function redactAppleSecrets(text: string, env: Record<string, string | undefined>): string {
+  let out = text;
+  const secretVars: AppleCredVar[] = ['APPLE_ID', 'APPLE_PASSWORD'];
+  for (const name of secretVars) {
+    const value = env[name]?.trim();
+    if (value) out = out.split(value).join('<redacted>');
+  }
+  return out;
+}
+
 /** Build the osxSign/osxNotarize slice of packagerConfig from the environment. Pure + fail-loud. */
 export function macSigningConfig(env: Record<string, string | undefined>): MacSigning {
   const present = presentCreds(env);

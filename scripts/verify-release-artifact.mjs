@@ -460,3 +460,6 @@ const passSummary =
       ? 'default release artifact and DMG are typed-only and structurally complete'
     : 'default release artifact is typed-only and structurally complete';
 console.log(`\n[verify] PASS - ${passSummary}.`);
+if (mode === 'signed') {
+  console.log('[verify] Manual gates remain: install the DMG on a clean second Mac and confirm non-founder memory recall after quit/relaunch.');
+}
