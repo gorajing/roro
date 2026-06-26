@@ -10,20 +10,33 @@ export interface WorkdirEnv {
   RORO_ALLOW_CWD?: string;
 }
 
+let persistedWorkdir: string | undefined;
+
 /**
- * Best-effort repo, or undefined — NEVER throws. The chosen RORO_WORKDIR (trimmed), else `cwd` under the
- * explicit RORO_ALLOW_CWD=1 opt-in, else undefined. This is the resolution shared by both entry points.
+ * MAIN boot hook: the packaged-app workdir chosen during onboarding. Kept behind the resolver so every
+ * edit path shares one precedence order: explicit env > persisted user choice > explicit dev cwd opt-in.
+ */
+export function setPersistedWorkdir(workdir: string | undefined): void {
+  const chosen = workdir?.trim();
+  persistedWorkdir = chosen || undefined;
+}
+
+/**
+ * Best-effort repo, or undefined — NEVER throws. The chosen RORO_WORKDIR (trimmed), else the persisted
+ * packaged-app config, else `cwd` under the explicit RORO_ALLOW_CWD=1 opt-in, else undefined.
  */
 export function tryResolveWorkdir(env: WorkdirEnv, cwd: string): string | undefined {
   const chosen = env.RORO_WORKDIR?.trim();
   if (chosen) return chosen;
+  if (persistedWorkdir) return persistedWorkdir;
   if (env.RORO_ALLOW_CWD === '1') return cwd;
   return undefined;
 }
 
 /**
  * Resolve the repo Roro's coding agent EDITS. RORO_WORKDIR is the chosen project. With none set we throw
- * rather than silently use `cwd`; RORO_ALLOW_CWD=1 is the explicit local-dev opt-in to use the current dir.
+ * rather than silently use `cwd`; persisted config is the packaged-app choice; RORO_ALLOW_CWD=1 is the
+ * explicit local-dev opt-in to use the current dir.
  * (For MEMORY SCOPING — recall/remember context, where a missing repo is fine — use tryResolveWorkdir.)
  */
 export function resolveWorkdir(env: WorkdirEnv, cwd: string): string {

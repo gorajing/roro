@@ -10,6 +10,8 @@
 //   CH.windowMoveBy       -> current BrowserWindow.setPosition()
 //   CH.turnRun            -> orchestrator.runTurn()            (recall+decide+dispatch)
 //   CH.runTask            -> orchestrator.runTask()            -> executor.getExecutor()
+//   CH.configGet          -> configStore.hydrateWorkdirConfig()
+//   CH.configChooseWorkdir-> native folder picker + configStore.persistWorkdirChoice()
 //   CH.cancelTask         -> orchestrator.cancelTask()
 //   CH.brainDecide        -> brain.decide()                    (sibling: src/brain)
 //   CH.brainDescribeScreen-> brain.describeScreen()            (sibling: src/brain)
@@ -17,9 +19,10 @@
 //   CH.memoryRemember     -> memory.remember()                 (sibling: src/memory)
 //   CH.memoryRecall       -> memory.recall()                   (sibling: src/memory)
 //   CH.visionAsk          -> vision.askScreen()                (sibling: src/vision)
-import { BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import type { OpenDialogOptions } from 'electron';
 import { CH } from '../shared/ipc';
-import type { MicStatus, TurnInput, ModelPullProgressMsg } from '../shared/ipc';
+import type { MicStatus, TurnInput, ModelPullProgressMsg, WorkdirConfigMsg } from '../shared/ipc';
 import { pullModel } from '../brain/ollama';
 import { DEFAULT_MODEL_SPECS } from './bootstrapPlan';
 import { isAllowedExternalUrl } from './openExternalGuard';
@@ -31,6 +34,7 @@ import { getMicStatus, ensureMicAccess } from './mic';
 import { runTurn, runTask, cancelTask, resolveDestructiveConfirm } from './orchestrator';
 import { loadBrain, loadMemory, loadVision } from './siblings';
 import { getOwnerId } from './identity';
+import { hydrateWorkdirConfig, persistWorkdirChoice } from './configStore';
 
 /** Coerce a renderer-supplied agent arg to a valid AgentKind (default codex). */
 function asAgentKind(v: unknown): AgentKind {
@@ -80,6 +84,26 @@ export function registerIpcHandlers(): void {
     (_e, arg: { runId: string; approved: boolean }): void =>
       resolveDestructiveConfirm(arg.runId, Boolean(arg.approved)),
   );
+
+  // ---- Packaged-app config / onboarding ----
+  ipcMain.handle(CH.configGet, (): Promise<WorkdirConfigMsg> => hydrateWorkdirConfig());
+  ipcMain.handle(CH.configChooseWorkdir, async (event): Promise<WorkdirConfigMsg> => {
+    const options: OpenDialogOptions = {
+      title: 'Choose the project Roro should work on',
+      buttonLabel: 'Choose Project',
+      properties: ['openDirectory'],
+    };
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return hydrateWorkdirConfig();
+    }
+
+    return persistWorkdirChoice(app.getPath('userData'), result.filePaths[0], process.env);
+  });
 
   // ---- Brain (sibling: src/brain) ----
   ipcMain.handle(

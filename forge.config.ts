@@ -10,7 +10,14 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
-import { macSigningConfig, MAC_NATIVE_UNPACK_GLOB, assertSigningIdentity } from './src/build/macSigning';
+import {
+  macSigningConfig,
+  MAC_NATIVE_UNPACK_GLOB,
+  assertSigningIdentity,
+  shouldEnableCookieEncryption,
+} from './src/build/macSigning';
+
+const macSigning = macSigningConfig(process.env);
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -26,7 +33,7 @@ const config: ForgeConfig = {
     },
     // macOS code signing + notarization — gated on the Apple creds being present in the environment
     // (no creds -> unsigned dev/CI build keeps working; partial creds -> fail loud). See src/build/macSigning.ts.
-    ...macSigningConfig(process.env),
+    ...macSigning,
   },
   rebuildConfig: {},
   hooks: {
@@ -56,7 +63,7 @@ const config: ForgeConfig = {
     // That cross-update stability is exactly what the Developer-ID (stable team identity) build provides.
     postPackage: async (_forgeConfig, options) => {
       if (options.platform !== 'darwin') return;
-      if (macSigningConfig(process.env).osxSign) return; // Developer ID build — leave its signature intact
+      if (macSigning.osxSign) return; // Developer ID build — leave its signature intact
       for (const dir of options.outputPaths) {
         execFileSync('codesign', ['--force', '--deep', '--sign', '-', join(dir, 'Roro.app')], { stdio: 'inherit' });
       }
@@ -101,7 +108,10 @@ const config: ForgeConfig = {
     new FusesPlugin({
       version: FuseVersion.V1,
       [FuseV1Options.RunAsNode]: false,
-      [FuseV1Options.EnableCookieEncryption]: true,
+      // Cookie encryption opens macOS Keychain from Chromium profile startup, before Roro can create
+      // the renderer. Ad-hoc rebuilds have a different cdhash, so stale profile Keychain ACLs can hang
+      // that pre-JS path. Roro stores no product state in cookies; memory encryption stays in src/memory2.
+      [FuseV1Options.EnableCookieEncryption]: shouldEnableCookieEncryption(macSigning),
       [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
       [FuseV1Options.EnableNodeCliInspectArguments]: false,
       [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,

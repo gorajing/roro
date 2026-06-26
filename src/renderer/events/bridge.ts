@@ -7,7 +7,7 @@
 // component's tsc is green in isolation.
 
 import type { ActionEvent } from '../../shared/events';
-import type { TurnInput, MicStatus, BootstrapStatusMsg, ModelPullProgressMsg } from '../../shared/ipc';
+import type { TurnInput, MicStatus, BootstrapStatusMsg, ModelPullProgressMsg, WorkdirConfigMsg } from '../../shared/ipc';
 
 /** The slice of window.companion this component consumes. */
 interface CompanionBridgeLike {
@@ -38,6 +38,10 @@ interface CompanionBridgeLike {
   openExternal?(url: string): Promise<void>;
   pullModels?(models: string[]): Promise<void>;
   onPullProgress?(cb: (p: ModelPullProgressMsg) => void): () => void;
+  /** Current effective working repo source (env, persisted config, or unset). */
+  getWorkdirConfig?(): Promise<WorkdirConfigMsg>;
+  /** Open the native folder picker and persist the selected working repo. */
+  chooseWorkdir?(): Promise<WorkdirConfigMsg>;
 }
 
 /** The slice of window.brain this component consumes. */

@@ -5,6 +5,7 @@ import {
   MAC_ENTITLEMENTS_PATH,
   MAC_NATIVE_UNPACK_GLOB,
   assertSigningIdentity,
+  shouldEnableCookieEncryption,
 } from './macSigning';
 
 // minimatch 3.x (the exact matcher @electron/asar uses to apply the unpack glob) is CommonJS with no
@@ -64,6 +65,16 @@ describe('macSigningConfig', () => {
     expect(() =>
       macSigningConfig({ APPLE_ID: 'dev@example.com', APPLE_PASSWORD: 'pw' }),
     ).toThrowError(/APPLE_TEAM_ID/);
+  });
+});
+
+describe('shouldEnableCookieEncryption', () => {
+  it('keeps Electron cookie encryption off for ad-hoc dev/CI packages', () => {
+    expect(shouldEnableCookieEncryption(macSigningConfig({}))).toBe(false);
+  });
+
+  it('enables Electron cookie encryption only when Developer-ID signing is configured', () => {
+    expect(shouldEnableCookieEncryption(macSigningConfig(FULL))).toBe(true);
   });
 });
 

@@ -20,6 +20,8 @@ import { mountConfirmChip } from './confirm/confirmChip';
 import { mountForgetPanel } from './memory/forgetPanel';
 import { mountCosmeticsStore } from './cosmetics/cosmeticsStore';
 import { mountBootstrapBanner } from './bootstrap/bootstrapBanner';
+import { mountWorkdirBanner } from './bootstrap/workdirBanner';
+import { ensureWorkdirReady, notifyWorkdirConfigured } from './bootstrap/workdirSetup';
 import { getCompanion } from './events/bridge';
 import { runState } from './events/runState';
 import { mountLocalVoiceMode } from './voice/mountLocalVoiceMode';
@@ -107,6 +109,14 @@ export async function bootstrap(): Promise<void> {
       const unsub = getCompanion()?.onPullProgress?.(onProgress) ?? (() => undefined);
       return (getCompanion()?.pullModels?.(models) ?? Promise.resolve()).finally(unsub);
     },
+  });
+
+  // Phase 1 onboarding spine: a packaged app has no .env, so the working repo must be chosen once and
+  // persisted by MAIN in userData/config.json. The native folder picker lives behind the preload bridge.
+  mountWorkdirBanner({
+    getConfig: () => getCompanion()?.getWorkdirConfig?.() ?? Promise.resolve({ source: 'unset' }),
+    chooseWorkdir: () => getCompanion()?.chooseWorkdir?.() ?? Promise.resolve({ source: 'unset' }),
+    onStatus: setStatus,
   });
 
   // M8: the transparency + Forget panel — see + delete the facts Roro knows about you (the trust
@@ -253,6 +263,13 @@ export async function bootstrap(): Promise<void> {
       setStatus('Roro bridge unavailable (window.companion.turnRun missing).');
       return;
     }
+    const workdirReady = await ensureWorkdirReady({
+      getConfig: () => companion.getWorkdirConfig?.() ?? Promise.resolve({ source: 'unset' }),
+      chooseWorkdir: () => companion.chooseWorkdir?.() ?? Promise.resolve({ source: 'unset' }),
+      onStatus: setStatus,
+      onConfigured: notifyWorkdirConfigured,
+    });
+    if (!workdirReady) return;
 
     // Keep the typed task on screen for the whole run (cleared on runEnd).
     turnInFlight = true;
