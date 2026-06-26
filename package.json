@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "eval:brain": "tsx src/brain/eval/runEval.ts",
     "verify:floating": "node scripts/smoke-floating-ask.mjs",
+    "verify:epipe": "node scripts/smoke-packaged-epipe.mjs",
     "verify:packaged-onboarding": "node scripts/smoke-packaged-onboarding.mjs",
     "stage:voice-assets": "node scripts/stage-voice-assets.mjs",
     "prestart": "node scripts/stage-voice-assets.mjs",
