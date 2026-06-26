@@ -67,6 +67,43 @@ This is an engineering persistence smoke for the real `.app`. It does **not** re
 moment validation in [`PUBLIC.md`](../PUBLIC.md), because it writes an observation directly through the memory bridge
 rather than proving a complete brain-extract-recall user turn lands for a stranger.
 
+## Developer-ID signing readiness doctor
+
+```sh
+npm run release:doctor
+npm run verify:signing-readiness
+```
+
+`scripts/verify-signing-readiness.ts` is the release doctor for the human-owned Apple gate. In `release:doctor` mode it
+allows the no-secret unsigned/ad-hoc path, which is why CI can run it. In strict `verify:signing-readiness` mode it
+checks that the host is macOS, `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` are all present, the keychain contains a
+`Developer ID Application` certificate matching `APPLE_TEAM_ID`, `xcrun` can find `notarytool` and `stapler`, and the
+hardened-runtime entitlements file exists.
+
+The strict command intentionally fails on machines where the Apple env vars are not set. Neither mode prints the
+password, authenticates against Apple's notary service, produces a signed artifact, staples a ticket, or validates
+Gatekeeper on a clean Mac. Those remain the `npm run make` + clean-second-Mac gates.
+
+After a Developer-ID `npm run make`, run:
+
+```sh
+npm run verify:release-artifact:signed
+```
+
+This reuses the default release-artifact structure checks, then requires a non-ad-hoc `Developer ID Application`
+signature, hardened runtime metadata, a `TeamIdentifier` (matching `APPLE_TEAM_ID` when set), a passing local
+Gatekeeper assessment, and a valid stapled notarization ticket. It is still not a substitute for installing the
+downloaded artifact on a clean second Mac.
+
+Run this before `npm run make`, and after changes to:
+
+- `src/build/macSigning.ts`
+- `forge.config.ts` signing/notarization config
+- `build/entitlements.mac.plist`
+- `scripts/verify-release-artifact.mjs`
+- local Apple Developer certificate/keychain setup
+- release docs that instruct the Developer-ID flow
+
 ## On-screen floating Ask + Stop
 
 The floating Ask (`#floating-ask`) and Stop pill (`#floating-stop`) carry their decision logic in pure

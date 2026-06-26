@@ -5,7 +5,7 @@
 //
 // Run after `npm run package`: npm run verify:release-artifact
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { access, readFile, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,9 +21,9 @@ for (let i = 2; i < process.argv.length; i += 1) {
 }
 
 const mode = args.get('mode') ?? 'default';
-if (mode !== 'default') {
+if (!['default', 'signed'].includes(mode)) {
   console.error(`[verify] unsupported mode: ${mode}`);
-  console.error('[verify] currently supported: --mode default');
+  console.error('[verify] currently supported: --mode default, --mode signed');
   process.exit(1);
 }
 
@@ -40,6 +40,10 @@ if (
 if (process.platform !== 'darwin' && !args.get('app')) {
   console.error('[verify] default app path targets the darwin .app bundle.');
   console.error('[verify] set --app /absolute/path/to/Roro.app to inspect another packaged app.');
+  process.exit(1);
+}
+if (mode === 'signed' && process.platform !== 'darwin') {
+  console.error('[verify] signed artifact verification requires macOS codesign/spctl/stapler.');
   process.exit(1);
 }
 
@@ -82,6 +86,15 @@ function plistJson() {
 function iconResourceFilename(rawIconFile) {
   if (typeof rawIconFile !== 'string' || rawIconFile.length === 0) return null;
   return rawIconFile.endsWith('.icns') ? rawIconFile : `${rawIconFile}.icns`;
+}
+
+function commandOutput(command, args) {
+  const result = spawnSync(command, args, { encoding: 'utf8' });
+  const output = `${result.stdout || ''}${result.stderr || ''}`;
+  if (result.status !== 0) {
+    throw new Error((output || result.error?.message || `${command} exited ${result.status}`).trim());
+  }
+  return output;
 }
 
 check('Roro.app exists', await exists(appPath), appPath);
@@ -192,12 +205,56 @@ if (process.platform === 'darwin') {
   } catch (err) {
     check('Info.plist release metadata is readable', false, err.stderr?.toString().trim() || err.message);
   }
+
+  if (mode === 'signed') {
+    try {
+      const codeSignInfo = commandOutput('codesign', ['-dv', '--verbose=4', appPath]);
+      check('signature is Developer ID Application', /Authority=Developer ID Application:/.test(codeSignInfo));
+      check('signature is not ad-hoc', !/Signature=adhoc/i.test(codeSignInfo));
+      check('hardened runtime is enabled', /Runtime Version=/.test(codeSignInfo));
+
+      const requestedTeamId = process.env.APPLE_TEAM_ID?.trim();
+      const teamMatch = /TeamIdentifier=([A-Z0-9]+)/.exec(codeSignInfo);
+      check('signed artifact has a TeamIdentifier', Boolean(teamMatch), codeSignInfo);
+      if (requestedTeamId) {
+        check(
+          `signed artifact TeamIdentifier matches APPLE_TEAM_ID=${requestedTeamId}`,
+          teamMatch?.[1] === requestedTeamId,
+          teamMatch?.[1] ? `TeamIdentifier=${teamMatch[1]}` : 'missing TeamIdentifier',
+        );
+      }
+    } catch (err) {
+      check('signed codesign metadata is readable', false, err.message);
+    }
+
+    try {
+      commandOutput('spctl', ['--assess', '--type', 'execute', '--verbose=4', appPath]);
+      check('Gatekeeper assessment accepts the app', true);
+    } catch (err) {
+      check('Gatekeeper assessment accepts the app', false, err.message);
+    }
+
+    try {
+      commandOutput('xcrun', ['stapler', 'validate', appPath]);
+      check('notarization ticket is stapled/valid', true);
+    } catch (err) {
+      check('notarization ticket is stapled/valid', false, err.message);
+    }
+  }
 }
 
 if (failures.length) {
-  console.error(`\n[verify] FAILED - default release artifact is not v0-clean:`);
+  const summary =
+    mode === 'signed'
+      ? 'signed release artifact is not Developer-ID signed/notarized'
+      : 'default release artifact is not v0-clean';
+  console.error(`\n[verify] FAILED - ${summary}:`);
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
 
-console.log('\n[verify] PASS - default release artifact is typed-only and structurally complete.');
+const passSummary =
+  mode === 'signed'
+    ? 'signed release artifact is Developer-ID signed/notarized and structurally complete'
+    : 'default release artifact is typed-only and structurally complete';
+console.log(`\n[verify] PASS - ${passSummary}.`);
