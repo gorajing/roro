@@ -11,7 +11,7 @@ import { CH } from './shared/ipc';
 import type { MicStatus, TurnInput, BootstrapStatusMsg, ModelPullProgressMsg, WorkdirConfigMsg } from './shared/ipc';
 import type { ActionEvent } from './shared/events';
 import type { Decision, DecideInput } from './shared/brain';
-import type { RememberInput, MemoryRow, MemoryMatch } from './shared/memory';
+import type { RememberInput, MemoryRow, MemoryMatch, ProfileFactSourceView, ProfileFactView } from './shared/memory';
 
 type AgentKindArg = 'codex' | 'claude';
 
@@ -104,8 +104,14 @@ const memory = {
     k?: number;
     sessionId?: string;
   }): Promise<MemoryMatch[]> => ipcRenderer.invoke(CH.memoryRecall, input),
-  // Transparency + Forget (M8): see the facts roro knows, and hard-delete one (owner-scoped MAIN-side).
-  profile: (): Promise<MemoryRow[]> => ipcRenderer.invoke(CH.memoryProfile),
+  // Memory trust loop: see, fix, verify, source-check, and forget owner-scoped active facts.
+  profile: (): Promise<ProfileFactView[]> => ipcRenderer.invoke(CH.memoryProfile),
+  fixFact: (id: string, value: string): Promise<ProfileFactView> =>
+    ipcRenderer.invoke(CH.memoryFixFact, { id, value }),
+  verifyFact: (id: string): Promise<ProfileFactView> =>
+    ipcRenderer.invoke(CH.memoryVerifyFact, id),
+  factSource: (id: string): Promise<ProfileFactSourceView> =>
+    ipcRenderer.invoke(CH.memoryFactSource, id),
   forget: (id: string): Promise<void> => ipcRenderer.invoke(CH.memoryForget, id),
 };
 

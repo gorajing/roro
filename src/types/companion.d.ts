@@ -13,7 +13,13 @@ import type {
   ModelPullProgressMsg,
 } from '../shared/ipc';
 import type { Decision, DecideInput } from '../shared/brain';
-import type { RememberInput, MemoryRow, MemoryMatch } from '../shared/memory';
+import type {
+  RememberInput,
+  MemoryRow,
+  MemoryMatch,
+  ProfileFactSourceView,
+  ProfileFactView,
+} from '../shared/memory';
 
 export interface CompanionBridge {
   mic: {
@@ -79,7 +85,13 @@ export interface MemoryBridge {
   remember(input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow>;
   recall(input: { query: string; k?: number; sessionId?: string }): Promise<MemoryMatch[]>;
   /** Renderer-safe transparency view: active owner-scoped facts only. */
-  profile(): Promise<MemoryRow[]>;
+  profile(): Promise<ProfileFactView[]>;
+  /** Replace one active fact value; MAIN owns owner/key lookup. */
+  fixFact(id: string, value: string): Promise<ProfileFactView>;
+  /** Reinforce one active fact; MAIN owns owner/key lookup. */
+  verifyFact(id: string): Promise<ProfileFactView>;
+  /** Return safe local provenance for one active fact. */
+  factSource(id: string): Promise<ProfileFactSourceView>;
   /** Hard-delete one owner-scoped active fact by id. */
   forget(id: string): Promise<void>;
 }

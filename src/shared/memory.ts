@@ -48,6 +48,7 @@ export interface MemoryRow {
   kind: string;
   text: string;
   payload: unknown;
+  confidence?: number;
   superseded: boolean;
   // Embedding provenance — stamped on write; OPTIONAL because the recall/getProfile reads
   // keep their projection minimal and do not return it.
@@ -71,6 +72,23 @@ export interface FactPayload {
   key: string;
   value: string;
   source: FactSource;
+}
+
+/** Renderer-safe active profile fact view. */
+export interface ProfileFactView {
+  id: string;
+  key: string;
+  value: string;
+  text: string;
+  confidence?: number;
+  created_at: string;
+  source?: FactSource;
+}
+
+/** Renderer-safe provenance response for one active profile fact. */
+export interface ProfileFactSourceView {
+  id: string;
+  source?: FactSource;
 }
 
 /**

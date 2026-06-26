@@ -69,6 +69,20 @@ describe('buildRecallContext (cross-launch: facts survive a session change)', ()
     expect(out.context).toContain('prefers Zustand');
   });
 
+  it('uses the corrected active fact and drops the superseded old value', async () => {
+    const deps = fakeDeps({
+      profile: [
+        factRow('prefers vim', { id: 'old', superseded: true }),
+        factRow('prefers zed', { id: 'new' }),
+      ],
+      matches: [],
+    });
+    const out = await buildRecallContext(deps, { ownerId: OWNER, sessionId: 'launch-B', query: 'editor' });
+    expect(out.factCount).toBe(1);
+    expect(out.context).toContain('prefers zed');
+    expect(out.context).not.toContain('prefers vim');
+  });
+
   it('does NOT leak another owner\'s facts', async () => {
     const deps = fakeDeps({
       profile: [factRow('secret', { owner_id: 'someone-else', session_id: 'x' })],

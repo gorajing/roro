@@ -15,7 +15,15 @@ import { buildSafeStorageWrapper, type SafeStorageLike } from './safeStorageWrap
 import { resolveTracer, type Tracer, type TraceEvent } from './tracer';
 import { resolveOllamaEmbedDim } from '../brain/ollama';
 import type { Cipher } from './cipher';
-import type { RememberInput, ReplaceFactInput, MemoryRow, MemoryMatch, RecallInput } from '../shared/memory';
+import type {
+  RememberInput,
+  ReplaceFactInput,
+  MemoryRow,
+  MemoryMatch,
+  RecallInput,
+  ProfileFactSourceView,
+  ProfileFactView,
+} from '../shared/memory';
 
 declare const process: { env: Record<string, string | undefined>; cwd(): string; platform: string };
 
@@ -137,6 +145,18 @@ export async function recall(input: RecallInput): Promise<MemoryMatch[]> {
 }
 export async function getProfile(ownerId: string): Promise<MemoryRow[]> {
   return (await getAdapter()).getProfile(ownerId);
+}
+export async function profileFacts(ownerId: string): Promise<ProfileFactView[]> {
+  return (await getAdapter()).profileFacts(ownerId);
+}
+export async function fixFact(ownerId: string, id: string, value: string): Promise<ProfileFactView> {
+  return (await getAdapter()).fixFact(ownerId, id, value);
+}
+export async function verifyFact(ownerId: string, id: string): Promise<ProfileFactView> {
+  return (await getAdapter()).verifyFact(ownerId, id);
+}
+export async function factSource(ownerId: string, id: string): Promise<ProfileFactSourceView> {
+  return (await getAdapter()).factSource(ownerId, id);
 }
 export async function supersede(id: string): Promise<void> {
   return (await getAdapter()).supersede(id);

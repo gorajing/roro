@@ -433,12 +433,19 @@ body.floating-window #floating-stop.armed {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
-#project-settings-panel h2 {
+#project-settings-panel h2,
+#memory-panel h2 {
   margin: 0 0 8px;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
   color: rgba(255, 255, 255, 0.65);
+}
+.memory-intro {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.7);
 }
 .project-settings-row {
   display: grid;
@@ -482,36 +489,104 @@ body.floating-window #floating-stop.armed {
   padding: 0;
 }
 .memory-row,
-.memory-empty {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.memory-empty,
+.memory-error {
   font-size: 12px;
   padding: 6px 4px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
-.memory-empty {
+.memory-row {
+  display: block;
+}
+.memory-empty,
+.memory-error {
   color: rgba(255, 255, 255, 0.6);
-  justify-content: center;
+  text-align: center;
+}
+.memory-error,
+.memory-row-error {
+  color: rgba(255, 170, 170, 0.9);
 }
 .memory-text {
-  flex: 1;
+  display: block;
+  margin-bottom: 6px;
   word-break: break-word;
 }
-.memory-forget {
+.memory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.memory-verify,
+.memory-fix,
+.memory-source,
+.memory-forget,
+.memory-save,
+.memory-cancel {
   font: inherit;
   font-size: 11px;
   font-weight: 600;
   border-radius: 999px;
-  padding: 3px 10px;
+  padding: 3px 9px;
   cursor: pointer;
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(80, 80, 90, 0.7);
 }
+.memory-verify,
+.memory-save {
+  background: rgba(72, 124, 92, 0.85);
+  border-color: rgba(150, 220, 170, 0.35);
+}
+.memory-fix,
+.memory-source {
+  background: rgba(80, 96, 125, 0.78);
+  border-color: rgba(150, 180, 230, 0.28);
+}
 .memory-forget.armed {
   background: rgba(150, 40, 40, 0.9);
   border-color: rgba(255, 120, 120, 0.6);
+}
+.memory-verify:disabled,
+.memory-fix:disabled,
+.memory-source:disabled,
+.memory-forget:disabled,
+.memory-save:disabled,
+.memory-cancel:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.memory-edit-label {
+  display: grid;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.72);
+}
+.memory-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 12px;
+  border-radius: 8px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  padding: 6px 8px;
+}
+.memory-row-note,
+.memory-source-detail p {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.62);
+}
+.memory-source-detail {
+  margin-top: 6px;
+  padding-left: 8px;
+  border-left: 2px solid rgba(255, 255, 255, 0.16);
+}
+.memory-source-session {
+  word-break: break-word;
 }
 
 /* M9: the WS5 cosmetics fake-door (flag-gated). Same overlay/control language as the memory panel. */

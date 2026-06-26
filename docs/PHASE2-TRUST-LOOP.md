@@ -6,7 +6,7 @@
 
 Expose memory correction as a MAIN-owned trust loop in the existing Memory panel:
 
-- See what Roro knows.
+- See what Roro remembers.
 - Fix a wrong fact.
 - Verify a correct fact.
 - Inspect safe source metadata.
@@ -14,7 +14,7 @@ Expose memory correction as a MAIN-owned trust loop in the existing Memory panel
 
 Reason: the moat is not "the model guessed a preference once." The moat is user-confirmed, owner-scoped, encrypted local memory that improves because the user can correct it. Correction must be structural, not prompt-dependent.
 
-Evidence: `factStore` already reinforces exact same key/value and replaces changed values through `replaceFact`; `memory2` already has files-as-truth, owner-scoped active facts, confidence, hard forget, WAL-style replace, and reindex/reopen durability. The renderer currently exposes only `profile()` and `forget(id)`.
+Evidence: `factStore` already reinforces exact same key/value and replaces changed values through `replaceFact`; `memory2` already has files-as-truth, owner-scoped active facts, confidence, hard forget, WAL-style replace, and reindex/reopen durability. The first correction slice now exposes `profile()`, `fixFact(id,value)`, `verifyFact(id)`, `factSource(id)`, and `forget(id)` through MAIN-owned IPC.
 
 Rejected: do not ask the user to say "actually, remember X" and hope extraction fixes the row. Do not let the renderer write `kind: 'fact'`, supply an owner id, or supply a trusted fact key. Do not implement correction as forget-then-add.
 
@@ -32,9 +32,12 @@ Gate: a stale or wrong-owner fact id cannot mutate memory; a failed replacement 
    - new key or changed value -> `replaceFact`
 6. The renderer can currently call:
    - `window.memory.profile()`
+   - `window.memory.fixFact(id, value)`
+   - `window.memory.verifyFact(id)`
+   - `window.memory.factSource(id)`
    - `window.memory.forget(id)`
 
-The missing user agency is correction/verification/source, not storage primitives.
+The remaining Phase 2 work is broader trust framing and clarify behavior, not new storage primitives.
 
 ## Minimal API
 
@@ -59,7 +62,7 @@ interface ProfileFactView {
 }
 ```
 
-`memory:profile` can return this view, or a new `memory:profileFacts` channel can preserve the old `MemoryRow[]` shape. Prefer a new view if renderer work becomes more than a small extension.
+`memory:profile` returns this view. Raw `MemoryRow` payloads stay out of the renderer panel.
 
 ### Fix
 
@@ -67,10 +70,10 @@ interface ProfileFactView {
 memory.fixFact(id: string, value: string): Promise<ProfileFactView>
 ```
 
-MAIN flow:
+Implemented flow:
 
 1. Load active profile facts for `getOwnerId()`.
-2. Find the active fact by `id`; if missing, no-op or throw a user-actionable stale-row error.
+2. Find the active fact by `id`; if missing, throw a user-actionable stale-row error.
 3. Read the existing `key` from the active fact payload.
 4. Call `replaceFact({ owner_id, key, text: value, payload: { key, value, source } })`.
 5. Return the refreshed fact view.
@@ -83,7 +86,7 @@ Do not support key editing in the first slice. If key editing becomes necessary,
 memory.verifyFact(id: string): Promise<ProfileFactView>
 ```
 
-MAIN flow:
+Implemented flow:
 
 1. Load active profile facts for `getOwnerId()`.
 2. Find the active fact by `id`.
@@ -102,7 +105,7 @@ memory.factSource(id: string): Promise<{
 }>
 ```
 
-Start with safe local provenance only. Do not dump raw transcripts into the renderer until there is a deliberate local-only source viewer with its own privacy copy.
+Start with safe local provenance only. Do not dump raw transcripts into the renderer until there is a deliberate local-only source viewer with its own privacy copy. The first slice shows session/time metadata and explicitly says no transcript is shown.
 
 ### Forget
 
@@ -112,45 +115,41 @@ Keep existing `memory.forget(id)`. Forget is deletion, not ordinary correction. 
 
 Evolve `src/renderer/memory/forgetPanel.ts` into the Memory panel in place. Do not add correction to first-run onboarding and do not add another top banner.
 
-Expected row actions:
+Implemented row actions:
 
 - `Fix`: inline input, Save, Cancel.
-- `Verify`: one-click confidence confirmation with retryable failure state.
+- `Looks right`: one-click confidence confirmation with retryable failure state.
 - `Source`: small provenance popover/expansion with session/time metadata.
 - `Forget`: existing two-step irreversible delete.
 
 Keep the existing good behaviors:
 
-- refetch on open and after mutation
+- refetch on open; update the changed row from the returned fact after mutation
 - render user-authored text with `textContent`
 - destructive actions require confirmation
 - failed actions keep the row and expose a retryable state
 
-Accessibility polish for the same slice:
+Accessibility status:
 
-- `aria-expanded` and `aria-controls` on the Memory toggle
-- region/heading semantics for the panel
-- focus restore after close/save/cancel
-- Escape closes edit/source states
-- visible `:focus-visible` styles for Memory actions
+- Implemented: `aria-expanded` and `aria-controls` on the Memory toggle; region/heading semantics for the panel; Escape closes edit mode.
+- Remaining polish: focus restore after close/save/cancel, Escape for source detail, visible `:focus-visible` styles for Memory actions.
 
 ## Tests
 
-Add or extend these gates:
+Implemented gates:
 
-- `memory2/adapter` or `memoryStore`: `fixFact` hides the old value from profile and recall context.
-- `memoryStore`: embed failure during fix leaves the old value active.
-- `memoryStore`: fixed and forgotten facts stay fixed/forgotten after reindex/reopen.
-- `main/ipc`: `fixFact`, `verifyFact`, and `factSource` inject owner id MAIN-side and reject/stale no-op wrong-owner ids.
+- `memory2/profileFacts.test.ts`: safe projection, snake/camel source tolerance, owner-scoped fix/verify/source, stale ids, failed replacement keeps old active.
+- `memory2/adapter.test.ts`: `profileFacts`, `fixFact`, `verifyFact`, and `factSource`; blank/wrong-owner rejection; fix persists across reopen; embed failure leaves old active.
+- `main/ipc.memory.test.ts`: `fixFact`, `verifyFact`, and `factSource` inject owner id MAIN-side; malicious extra owner/key fields are ignored; stale ids do not fall back to another mutation.
 - `preload` / ambient types: `window.memory` shape matches the actual bridge.
-- `forgetPanel.test.ts`: fix success refetches or updates the row; failed fix/verify keeps the row; source renders via `textContent`; forget remains two-step.
+- `forgetPanel.test.ts`: fix success updates the row; failed fix/verify/source keeps the row retryable; source renders via `textContent`; forget remains two-step.
 - `memoryContext.test.ts`: corrected value appears in the facts-first recall context; old value does not.
 
 Before calling Phase 2 done:
 
 ```sh
 npx tsc --noEmit -p tsconfig.json
-npx vitest run --no-file-parallelism src/main/factStore.test.ts src/main/ipc*.test.ts src/memory2/adapter.test.ts src/memory2/memoryStore*.test.ts src/renderer/memory/forgetPanel.test.ts src/main/memoryContext.test.ts
+npx vitest run --no-file-parallelism src/main/factStore.test.ts src/main/ipc*.test.ts src/memory2/profileFacts.test.ts src/memory2/adapter.test.ts src/memory2/memoryStore*.test.ts src/renderer/memory/forgetPanel.test.ts src/main/memoryContext.test.ts
 npm run verify:packaged-onboarding
 ```
 
