@@ -14,11 +14,23 @@
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const PORT = process.env.RORO_DEBUG_PORT || String(await freePort());
 const BOOT_TIMEOUT_MS = 180_000;
 const SHOT = 'docs/verification/floating-ask.png';
+const root = await mkdtemp(join(tmpdir(), 'roro-floating-ask-'));
+const appEnv = {
+  ...process.env,
+  RORO_DEBUG_PORT: PORT,
+  RORO_FLOATING_WINDOW: '1',
+  RORO_FLOATING_SMOKE: '1',
+  RORO_DB_DIR: join(root, 'memory'),
+};
+delete appEnv.RORO_DEBUG_BRIDGE;
 
 let nextId = 1;
 const failures = [];
@@ -115,7 +127,7 @@ function cdpClient(url) {
 }
 
 const child = spawn('npm', ['start'], {
-  env: { ...process.env, RORO_DEBUG_PORT: PORT, RORO_FLOATING_WINDOW: '1', RORO_FLOATING_SMOKE: '1' },
+  env: appEnv,
   stdio: 'inherit',
   detached: true,
 });
@@ -212,6 +224,7 @@ try {
 } finally {
   cdp?.close();
   await stopProcessGroup(child);
+  await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
 if (failures.length) {

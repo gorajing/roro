@@ -17,13 +17,15 @@ import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorT
 import { cancelAllRuns } from './main/orchestrator';
 import { initOwnerId } from './main/identity';
 import { hydrateWorkdirConfig } from './main/configStore';
-import { loadBrain } from './main/siblings';
+import { loadBrain, loadMemory } from './main/siblings';
 import { bootstrapFailureMessage, bootstrapStatusFor, type OllamaProbe } from './main/bootstrapPlan';
 import type { BootstrapStatusMsg } from './shared/ipc';
 import { ollamaTags } from './brain/ollama';
 import { CH } from './shared/ipc';
 import { sendToWindow } from './main/safeSend';
 import { getBootstrapStatus, setBootstrapStatus } from './main/bootstrapStatusStore';
+
+const STARTUP_MEMORY_WARMUP_DELAY_MS = 3000;
 
 /**
  * Startup self-check for the (local-first) brain: confirm the provider is reachable and the models are
@@ -80,6 +82,16 @@ async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
   }
 }
 
+async function warmMemoryAtStartup(ownerId: string): Promise<void> {
+  try {
+    const memory = await loadMemory();
+    await memory.profileFacts(ownerId);
+    console.log('[main] memory warmup OK');
+  } catch (err) {
+    console.error(`[main] memory warmup FAILED — ${(err as Error).message}`);
+  }
+}
+
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
@@ -102,7 +114,7 @@ app.whenReady().then(async () => {
   //    PGlite store lives beside owner.json in userData (single-writer, owned by main only).
   process.env.RORO_DB_DIR ||= join(app.getPath('userData'), 'memory');
   await hydrateWorkdirConfig();
-  await initOwnerId();
+  const ownerId = await initOwnerId();
 
   // 1. Chromium-level media permission grant for the renderer's getUserMedia (request+check).
   //    Cheap + promptless, so it is always installed; it only matters if voice later opens the mic.
@@ -125,7 +137,19 @@ app.whenReady().then(async () => {
   startCursorTracking(win);
   registerSummonShortcut();
 
-  // 4. Brain self-check (local-first): verify Ollama/models up-front. Non-blocking — never gates the
+  // 4. Memory warmup: initialize keychain/PGlite shortly after first paint, off the first-turn path.
+  //    Non-blocking — a very fast first turn still degrades independently if memory is unavailable, while
+  //    the common path gets a warmed store without delaying the packaged renderer target.
+  const warmMemory = (): void => {
+    setTimeout(() => { void warmMemoryAtStartup(ownerId); }, STARTUP_MEMORY_WARMUP_DELAY_MS);
+  };
+  if (!win.isDestroyed() && !win.webContents.isDestroyed() && win.webContents.isLoading()) {
+    win.webContents.once('did-finish-load', warmMemory);
+  } else {
+    warmMemory();
+  }
+
+  // 5. Brain self-check (local-first): verify Ollama/models up-front. Non-blocking — never gates the
   //    window; logs + surfaces a renderer diagnostic on failure (see verifyBrainAtStartup).
   void verifyBrainAtStartup(win);
 

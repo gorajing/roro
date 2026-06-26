@@ -140,6 +140,8 @@ authoritative fallback and what to run when changing `floatingAsk.ts` or `src/in
 
 ```sh
 npm run verify:floating
+npm run verify:floating-live-turn
+RORO_FLOATING_LIVE_USE_REAL_OLLAMA=1 npm run verify:floating-live-turn # optional model-quality pass
 ```
 
 `scripts/smoke-floating-ask.mjs` launches the real Electron renderer over the Chrome DevTools Protocol
@@ -153,6 +155,14 @@ It is opt-in (needs a display + a vite build) and not in CI. Checks: `#floating-
 pill copy; universal `runEnd` collapses answer/clarify turns with no `run.started`; `run.started` arms
 and visibly shows Stop; `run.failed` disarms Stop, shows actionable error copy, hides raw spawn text,
 and the error remains visible after `runEnd` collapse until the next summon clears it.
+
+`scripts/smoke-floating-live-turn.mjs` is the opt-in live counterpart. It launches the dev app in
+floating mode, leaves `RORO_FLOATING_SMOKE` and `RORO_DEBUG_BRIDGE` off, drives the visible Ask form,
+and verifies a real `window.companion.turnRun` answer turn emits `ActionEvent`s, reaches `runEnd`,
+does not start the coding executor, and collapses the floating Ask from the real push stream. By
+default it uses a tiny local fake Ollama server so the product-loop proof is deterministic; set
+`RORO_FLOATING_LIVE_USE_REAL_OLLAMA=1` when you specifically want to validate the local model path.
+Keep it out of CI unless the runner has a reliable display.
 
 ## Manual checklist
 
