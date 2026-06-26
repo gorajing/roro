@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actionableErrorCopy, typedTurnEndStatus } from './errorCopy';
+import { actionableErrorCopy, isStoppedTerminalError, typedTurnEndStatus } from './errorCopy';
 
 describe('actionableErrorCopy', () => {
   it('turns a missing Codex CLI spawn error into an install/override action', () => {
@@ -46,5 +46,19 @@ describe('typedTurnEndStatus', () => {
 
   it('keeps the success copy when no terminal error was seen', () => {
     expect(typedTurnEndStatus(false, null)).toBe('Done — type another task.');
+  });
+});
+
+describe('isStoppedTerminalError', () => {
+  it('recognizes stopped/cancelled executor terminal failures as user cancellation', () => {
+    expect(isStoppedTerminalError('stopped')).toBe(true);
+    expect(isStoppedTerminalError('aborted')).toBe(true);
+    expect(isStoppedTerminalError('cancelled by user')).toBe(true);
+    expect(isStoppedTerminalError('canceled by user')).toBe(true);
+  });
+
+  it('does not classify ordinary failures as stopped turns', () => {
+    expect(isStoppedTerminalError('spawn codex ENOENT')).toBe(false);
+    expect(isStoppedTerminalError('')).toBe(false);
   });
 });

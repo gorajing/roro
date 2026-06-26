@@ -254,10 +254,9 @@ export async function bootstrap(): Promise<void> {
   let cancelRequested = false;
   let terminalError: string | null = null;
 
-  // Arm Stop ONLY once the coding agent actually starts: cancelTask can abort a
-  // run only after the executor registers it. The pre-executor phase (Nebius
-  // decide / vision) is bounded by the brain's own 60s timeout, so there's
-  // nothing to abort there — enabling Stop then would be a lie.
+  // The main cancel channel can preempt a turn before the executor registers, but this full-window
+  // typed form keeps its existing executor-run button flow. Floating Ask owns the immediate
+  // accepted-turn Stop affordance for the cat-only surface.
   getCompanion()?.onActionEvent((e) => {
     if (e.kind === 'run.started') {
       terminalError = null;

@@ -33,13 +33,14 @@ describe('askMachine', () => {
     }
   });
 
-  it('non-empty submit sets the thinking pose FIRST, then starts the turn, then shows tasked (trimmed)', () => {
+  it('non-empty submit sets thinking, starts the turn, shows tasked, and arms Stop (trimmed)', () => {
     const r = askReduce('expanded', { type: 'submit', text: '  add a logout route  ' });
     expect(r.state).toBe('tasked');
     expect(r.effects).toEqual([
       { type: 'setThinkingPose' },
       { type: 'startTurn', text: 'add a logout route' },
       { type: 'showTasked', text: 'add a logout route' },
+      { type: 'armStop' },
     ]);
     expect(r.effects[0]).toEqual({ type: 'setThinkingPose' }); // shell sets the pose before awaiting turnRun
   });

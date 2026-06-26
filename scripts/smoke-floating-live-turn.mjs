@@ -23,6 +23,7 @@ const TURN_TIMEOUT_MS = Number(process.env.RORO_FLOATING_LIVE_TURN_TIMEOUT_MS ||
 const CDP_COMMAND_TIMEOUT_MS = Number(process.env.RORO_FLOATING_LIVE_CDP_TIMEOUT_MS || 60_000);
 const USE_REAL_OLLAMA = process.env.RORO_FLOATING_LIVE_USE_REAL_OLLAMA === '1';
 const EXPECTED = 'roro live turn ok';
+const STOP_TRANSCRIPT = 'roro stop before executor ok';
 const EXECUTOR_FILE = 'roro-floating-executor-smoke.txt';
 const EXECUTOR_CONTENT = 'executor turn ok\n';
 
@@ -94,16 +95,30 @@ async function startFakeOllama() {
         const prompt = Array.isArray(body.messages)
           ? body.messages.map((message) => message?.content ?? '').join('\n')
           : '';
-        const decision = JSON.stringify(prompt.includes(EXECUTOR_FILE)
-          ? {
-              narration: 'On it. I will create the smoke file.',
-              command: 'run_agent',
-              args: {
-                task: `Create ${EXECUTOR_FILE} with exactly ${JSON.stringify(EXECUTOR_CONTENT)} as its contents.`,
-                cwd: null,
-              },
-            }
-          : { narration: EXPECTED, command: 'answer', args: {} });
+        const isExecutorTurn = prompt.includes(EXECUTOR_FILE);
+        const isStoppedTurn = !isExecutorTurn && prompt.includes(STOP_TRANSCRIPT);
+        if (isStoppedTurn) await sleep(3000);
+        const decision = JSON.stringify(
+          isStoppedTurn
+            ? {
+                narration: 'On it. I will start the stopped smoke task.',
+                command: 'run_agent',
+                args: {
+                  task: 'This task should be stopped before the executor starts.',
+                  cwd: null,
+                },
+              }
+            : isExecutorTurn
+              ? {
+                  narration: 'On it. I will create the smoke file.',
+                  command: 'run_agent',
+                  args: {
+                    task: `Create ${EXECUTOR_FILE} with exactly ${JSON.stringify(EXECUTOR_CONTENT)} as its contents.`,
+                    cwd: null,
+                  },
+                }
+              : { narration: EXPECTED, command: 'answer', args: {} },
+        );
         if (body.stream) {
           res.writeHead(200, { 'content-type': 'application/x-ndjson' });
           res.write(`${JSON.stringify({ message: { content: decision }, done: false })}\n`);
@@ -132,7 +147,7 @@ async function startFakeOllama() {
 
 async function writeFakeCodexBin(path, argsFile) {
   await writeFile(path, `#!/usr/bin/env node
-const { writeFileSync } = require('node:fs');
+const { readFileSync, writeFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 const args = process.argv.slice(2);
@@ -145,7 +160,16 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const emit = (event) => console.log(JSON.stringify(event));
 
 (async () => {
-  writeFileSync(argsFile, JSON.stringify({ args, repo }, null, 2), 'utf8');
+  const invocations = (() => {
+    try {
+      const existing = JSON.parse(readFileSync(argsFile, 'utf8'));
+      return Array.isArray(existing) ? existing : [];
+    } catch {
+      return [];
+    }
+  })();
+  invocations.push({ args, repo });
+  writeFileSync(argsFile, JSON.stringify(invocations, null, 2), 'utf8');
   emit({ type: 'thread.started', thread_id: 'fake-codex-thread' });
   emit({ type: 'turn.started' });
   await sleep(100);
@@ -490,7 +514,104 @@ try {
   check('floating Stop remains hidden for answer turn', await evaluate(cdp, `!document.getElementById('floating-stop')?.classList.contains('armed')`, {}, 'Stop hidden check'));
   check('floating error remains hidden for successful answer turn', await evaluate(cdp, `document.getElementById('floating-error')?.hidden === true`, {}, 'error hidden check'));
 
+  if (!USE_REAL_OLLAMA) {
+    const stoppedTranscript = `${STOP_TRANSCRIPT}. Start a coding task that should be stopped before the executor starts.`;
+    const eventCountBeforeStopped = await evaluate(
+      cdp,
+      `window.__roroFloatingLiveTurn?.events?.length ?? 0`,
+      {},
+      'event count before stopped turn',
+    );
+    await evaluate(cdp, `document.getElementById('ask-pill').click()`, {}, 'stopped Ask pill click');
+    await waitFor(
+      cdp,
+      `document.getElementById('floating-ask')?.classList.contains('expanded')`,
+      5000,
+      'stopped Ask expansion',
+    );
+    const stoppedSubmit = await evaluate(cdp, `(() => {
+      const input = document.getElementById('ask-input');
+      const form = document.getElementById('floating-ask');
+      input.value = ${JSON.stringify(stoppedTranscript)};
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const notCanceled = form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      return { defaultPrevented: !notCanceled, value: input.value };
+    })()`, {}, 'stopped Ask form submit');
+    check('stopped Ask form submit listener prevents native navigation', stoppedSubmit.defaultPrevented === true, JSON.stringify(stoppedSubmit));
+    await waitFor(
+      cdp,
+      `document.getElementById('floating-ask')?.classList.contains('tasked')`,
+      5000,
+      'stopped Ask tasked state',
+    );
+    check(
+      'stopped Ask pill shows the submitted task',
+      await evaluate(cdp, `document.getElementById('ask-pill')?.textContent?.includes(${JSON.stringify(STOP_TRANSCRIPT)})`, {}, 'stopped tasked text check'),
+    );
+    check('floating Stop arms immediately for accepted stopped turn', await evaluate(cdp, `document.getElementById('floating-stop')?.classList.contains('armed')`, {}, 'stopped Stop armed check'));
+    await waitFor(
+      cdp,
+      `window.__roroFloatingLiveTurn?.events?.slice(${JSON.stringify(eventCountBeforeStopped)})
+        .some((event) => event?.kind === 'message' && event.text?.includes('planning'))`,
+      10_000,
+      'stopped turn entered main planning before Stop',
+    );
+    await evaluate(cdp, `document.getElementById('floating-stop').click()`, {}, 'stopped Stop click');
+    check('floating Stop shows Stopping feedback before run.started', await evaluate(cdp, `document.getElementById('floating-stop')?.textContent === 'Stopping...'`, {}, 'stopped Stop feedback check'));
+
+    const stoppedTurn = await waitFor(
+      cdp,
+      `(() => {
+        const probe = window.__roroFloatingLiveTurn;
+        if ((probe?.runEnds?.length ?? 0) < 2) return false;
+        const runEnd = probe.runEnds[probe.runEnds.length - 1];
+        const events = probe.events.filter((event) => event?.runId === runEnd.runId);
+        return { runEnd, events, allEvents: probe.events };
+      })()`,
+      TURN_TIMEOUT_MS,
+      'stopped turn runEnd',
+    );
+    const stoppedEvents = Array.isArray(stoppedTurn.events) ? stoppedTurn.events : [];
+    check('stopped turn produced scoped events', stoppedEvents.length > 0, JSON.stringify(stoppedTurn.allEvents ?? []));
+    check('stopped turn emitted run.failed stopped', stoppedEvents.some((event) => event?.kind === 'run.failed' && event.error === 'stopped'), JSON.stringify(stoppedEvents));
+    check('stopped turn never emitted run.started', !stoppedEvents.some((event) => event?.kind === 'run.started'), JSON.stringify(stoppedEvents));
+    const invocationsAfterStopped = await readFile(fakeCodexArgsFile, 'utf8')
+      .then((text) => JSON.parse(text))
+      .catch(() => []);
+    check('stopped turn did not launch fake Codex', Array.isArray(invocationsAfterStopped) && invocationsAfterStopped.length === 0, JSON.stringify(invocationsAfterStopped));
+    await waitFor(
+      cdp,
+      `document.getElementById('floating-ask')?.classList.contains('collapsed')`,
+      5000,
+      'stopped Ask collapse after runEnd',
+    );
+    check('floating Ask is collapsed after stopped runEnd', await evaluate(cdp, `document.getElementById('floating-ask')?.classList.contains('collapsed')`, {}, 'stopped Ask collapse check'));
+    check('floating Stop disarms after stopped turn', await evaluate(cdp, `!document.getElementById('floating-stop')?.classList.contains('armed')`, {}, 'stopped Stop disarmed check'));
+    check('floating stopped copy is neutral', await evaluate(cdp, `document.getElementById('floating-error')?.textContent === 'Stopped.' && document.getElementById('floating-error')?.classList.contains('neutral')`, {}, 'stopped neutral copy check'));
+    check('floating stopped copy is not a task problem', await evaluate(cdp, `!document.getElementById('floating-error')?.textContent?.includes('Task hit a problem')`, {}, 'stopped copy wording check'));
+    await evaluate(cdp, `document.getElementById('ask-pill').click()`, {}, 'clear stopped notice Ask pill click');
+    await waitFor(
+      cdp,
+      `document.getElementById('floating-ask')?.classList.contains('expanded') && document.getElementById('floating-error')?.hidden === true`,
+      5000,
+      'stopped notice cleared on next summon',
+    );
+    await evaluate(cdp, `document.getElementById('ask-input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`, {}, 'clear stopped notice Escape');
+    await waitFor(
+      cdp,
+      `document.getElementById('floating-ask')?.classList.contains('collapsed')`,
+      5000,
+      'Ask collapse after clearing stopped notice',
+    );
+  }
+
   const executorTranscript = `Create ${EXECUTOR_FILE} with ${EXECUTOR_CONTENT.trim()} as its contents.`;
+  const runEndCountBeforeExecutor = await evaluate(
+    cdp,
+    `window.__roroFloatingLiveTurn?.runEnds?.length ?? 0`,
+    {},
+    'runEnd count before executor turn',
+  );
   await evaluate(cdp, `document.getElementById('ask-pill').click()`, {}, 'executor Ask pill click');
   await waitFor(
     cdp,
@@ -529,7 +650,7 @@ try {
     cdp,
     `(() => {
       const probe = window.__roroFloatingLiveTurn;
-      if ((probe?.runEnds?.length ?? 0) < 2) return false;
+      if ((probe?.runEnds?.length ?? 0) <= ${JSON.stringify(runEndCountBeforeExecutor)}) return false;
       const runEnd = probe.runEnds[probe.runEnds.length - 1];
       const events = probe.events.filter((event) => event?.runId === runEnd.runId);
       return { runEnd, events, allEvents: probe.events };
@@ -554,16 +675,24 @@ try {
   check('floating Ask is collapsed after executor runEnd', await evaluate(cdp, `document.getElementById('floating-ask')?.classList.contains('collapsed')`, {}, 'executor Ask collapse check'));
   check('floating Stop disarms after executor completion', await evaluate(cdp, `!document.getElementById('floating-stop')?.classList.contains('armed')`, {}, 'executor Stop disarmed check'));
   check('floating error remains hidden for successful executor turn', await evaluate(cdp, `document.getElementById('floating-error')?.hidden === true`, {}, 'executor error hidden check'));
-  const codexInvocation = await readFile(fakeCodexArgsFile, 'utf8')
+  const codexInvocations = await readFile(fakeCodexArgsFile, 'utf8')
     .then((text) => JSON.parse(text))
-    .catch(() => null);
+    .catch(() => []);
   const expectedCodexPrefix = ['exec', '--json', '--skip-git-repo-check', '-s', 'workspace-write', '-C', projectDir];
-  const receivedCodexArgs = Array.isArray(codexInvocation?.args) ? codexInvocation.args : [];
+  const receivedCodexArgs = Array.isArray(codexInvocations)
+    ? codexInvocations.map((invocation) => invocation?.args).filter(Array.isArray)
+    : [];
   check(
     'fake Codex received the executor CLI shape',
-    JSON.stringify(receivedCodexArgs.slice(0, expectedCodexPrefix.length)) === JSON.stringify(expectedCodexPrefix) &&
-      receivedCodexArgs.at(-1)?.includes(EXECUTOR_FILE),
-    JSON.stringify(codexInvocation),
+    receivedCodexArgs.some((args) =>
+      JSON.stringify(args.slice(0, expectedCodexPrefix.length)) === JSON.stringify(expectedCodexPrefix) &&
+      args.at(-1)?.includes(EXECUTOR_FILE)),
+    JSON.stringify(codexInvocations),
+  );
+  check(
+    'fake Codex never received the stopped task',
+    !receivedCodexArgs.some((args) => args.at(-1)?.includes('stopped before the executor')),
+    JSON.stringify(codexInvocations),
   );
   check(
     'fake Codex wrote the requested project file',

@@ -152,20 +152,23 @@ the rendered DOM **and computed CSS visibility**, then writes `docs/verification
 It is opt-in (needs a display + a vite build) and not in CI. Checks: `#floating-ask` exists + starts
 `collapsed`; pill reads "Ask Roro…"; `#floating-stop` exists and is not `armed`; clicking the pill →
 `expanded` with the input actually visible; the memory profile bridge responds before teardown; Escape
-→ `collapsed`; smoke submit → `tasked` with trimmed pill copy; universal `runEnd` collapses
-answer/clarify turns with no `run.started`; `run.started` arms and visibly shows Stop; `run.failed`
-disarms Stop, shows actionable error copy, hides raw spawn text, and the error remains visible after
-`runEnd` collapse until the next summon clears it.
+→ `collapsed`; smoke submit → `tasked` with trimmed pill copy and visible Stop before `run.started`;
+pre-run Stop calls the no-id cancel path and shows neutral `Stopped.` copy; universal `runEnd`
+collapses answer/clarify turns with no `run.started`; `run.started` keeps Stop visibly armed and
+targets the captured run id; real `run.failed` disarms Stop, shows actionable error copy, hides raw
+spawn text, and the error remains visible after `runEnd` collapse until the next summon clears it.
 
 `scripts/smoke-floating-live-turn.mjs` is the opt-in live counterpart. It launches the dev app in
 floating mode, leaves `RORO_FLOATING_SMOKE` and `RORO_DEBUG_BRIDGE` off, drives the visible Ask form,
 and verifies real `window.companion.turnRun` answer and executor turns over the public push stream.
 The answer turn must emit `ActionEvent`s, reach `runEnd`, avoid the coding executor, and collapse the
-floating Ask. The executor turn must arm Stop from `run.started`, launch Codex with the expected
-`exec --json --skip-git-repo-check -s workspace-write -C <project>` shape, emit a completed
-`file_change` and `run.completed`, write inside the selected test project (disposable by default),
-disarm Stop, and collapse from `runEnd`. By default it uses tiny local fake Ollama and Codex
-servers/binaries so the product-loop proof is deterministic; set
+floating Ask. In the deterministic fake-Ollama path, a delayed `run_agent` decision is stopped before
+`run.started`; it must emit neutral stopped copy, collapse from `runEnd`, and never launch fake Codex.
+The executor success turn must launch Codex with the expected
+`exec --json --skip-git-repo-check -s workspace-write -C <project>` shape, keep Stop armed for the
+accepted/running turn, emit a completed `file_change` and `run.completed`, write inside the selected
+test project (disposable by default), disarm Stop, and collapse from `runEnd`. By default it uses tiny
+local fake Ollama and Codex servers/binaries so the product-loop proof is deterministic; set
 `RORO_FLOATING_LIVE_USE_REAL_OLLAMA=1` when you specifically want to validate the local model path.
 Keep it out of CI unless the runner has a reliable display.
 
@@ -178,14 +181,15 @@ Start the app (`ollama serve` first if you want a real turn): `npm start`.
 | 1 | App boots | Collapsed "Ask Roro…" pill visible; no Stop pill; cat idle |
 | 2 | Click the pill (or ⌘⇧Space) | Input expands and is focused; pill chrome hidden |
 | 3 | Press Enter on an **empty** input | Nothing happens — no thinking flash, stays expanded |
-| 4 | Type "add a logout route" + Enter | Cat snaps to *thinking* immediately (<100ms); pill shows `tasked: add a logout route` |
-| 5 | While a `run_agent` turn runs | `#floating-stop` appears with the `armed` class (visible) |
-| 6 | Click Stop | Run cancels; Stop disarms/hides; Ask collapses back to the pill |
+| 4 | Type "add a logout route" + Enter | Cat snaps to *thinking* immediately (<100ms); pill shows `tasked: add a logout route`; Stop appears before any executor event |
+| 5 | While a `run_agent` turn runs | `#floating-stop` remains visible with the `armed` class |
+| 6 | Click Stop | Run cancels; Stop shows `Stopping...`, then disarms/hides; Ask collapses and shows neutral `Stopped.` copy |
 | 7 | An answer/clarify turn (no executor run) | Ask still collapses when the turn ends (universal `runEnd`) |
 | 8 | Press Esc while expanded | Collapses back to the "Ask Roro…" pill |
 
 A CSS regression shows up as: a state that doesn't visually change (e.g. input stays hidden when
-`expanded`), the Stop pill not appearing when `armed`, or the pill text not updating to `tasked: …`.
+`expanded`), the Stop pill not appearing once a task is accepted, stopped copy looking like a red
+failure, or the pill text not updating to `tasked: …`.
 
 > **Environment note:** the automated smoke needs a GUI session; it cannot run on a headless CI box.
 > When verifying from a non-GUI context, use the manual checklist on a machine with a display.

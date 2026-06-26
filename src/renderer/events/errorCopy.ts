@@ -42,6 +42,11 @@ export function actionableErrorCopy(error: string): string {
   return clip(clean);
 }
 
+export function isStoppedTerminalError(error: string): boolean {
+  const clean = compact(error);
+  return /\b(stopped|aborted|cancelled|canceled)\b/i.test(clean);
+}
+
 export function typedTurnEndStatus(cancelRequested: boolean, terminalError: string | null): string {
   if (cancelRequested) return 'Stopped.';
   if (terminalError) return `Task hit a problem: ${actionableErrorCopy(terminalError)}`;

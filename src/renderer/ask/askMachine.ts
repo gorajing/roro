@@ -53,7 +53,14 @@ export function askReduce(state: AskState, event: AskEvent): AskResult {
       return {
         state: 'tasked',
         // Pose FIRST so the shell sets it synchronously before awaiting turnRun (≤16ms budget).
-        effects: [{ type: 'setThinkingPose' }, { type: 'startTurn', text }, { type: 'showTasked', text }],
+        // Arm Stop once the turn has been accepted; before run.started, the shell cancels by
+        // calling cancelTask(undefined), which MAIN resolves to the latest minted turn.
+        effects: [
+          { type: 'setThinkingPose' },
+          { type: 'startTurn', text },
+          { type: 'showTasked', text },
+          { type: 'armStop' },
+        ],
       };
     }
 
