@@ -37,10 +37,11 @@ npm run verify:packaged-live-memory-turn   # optional; requires local Ollama + r
 `scripts/smoke-packaged-memory.mjs` launches the real packaged app with disposable `cwd` and `--user-data-dir`. On macOS
 it also installs a temporary unlocked user keychain for the run, then restores the original keychain defaults; this keeps
 the smoke from mutating or blocking on stale ad-hoc `Roro Safe Storage` items in the login keychain while still exercising
-Electron `safeStorage`. It writes a unique `observation` through `window.memory.remember`, terminates the app, relaunches
-the same profile, and proves `window.memory.recall` returns that row under the same owner. It also checks that the default
-memory root is `userData/memory/memory2`, that the cwd fallback `.roro-memory2` was not created, that the memory store is
-marked encrypted, and that the smoke token is not present as plaintext under the memory store.
+Electron `safeStorage`. This harness explicitly opts into `RORO_DEBUG_BRIDGE=1`, writes a unique `observation` through
+the debug-only `window.memory.remember`, terminates the app, relaunches the same profile, and proves debug-only
+`window.memory.recall` returns that row under the same owner. It also checks that the default memory root is
+`userData/memory/memory2`, that the cwd fallback `.roro-memory2` was not created, that the memory store is marked
+encrypted, and that the smoke token is not present as plaintext under the memory store.
 
 By default this smoke forces local Ollama to an unreachable port. That makes it a deterministic persistence gate and
 proves recall degrades to recency when embeddings are unavailable. `npm run verify:packaged-live-memory-turn` flips on
@@ -102,9 +103,9 @@ npm run verify:release-artifact:signed
 
 `verify:release-artifact:dmg` reuses the default release-artifact structure checks, then requires a versioned DMG under
 `out/make`, verifies it with `hdiutil`, mounts it read-only, and confirms the mounted image contains a structurally
-complete `Roro.app`. The default release-artifact checks intentionally fail if deferred-feature dev flags
-(`LIVE2D_MODEL_URL`, `RORO_FAKE_VOICE`, `RORO_*_VOICE`, `RORO_VOICE_PACK`, `RORO_WS5_STORE`) are set in
-the release shell.
+complete `Roro.app`. The default release-artifact checks intentionally fail if deferred-feature or debug-bridge flags
+(`LIVE2D_MODEL_URL`, `RORO_FAKE_VOICE`, `RORO_*_VOICE`, `RORO_VOICE_PACK`, `RORO_WS5_STORE`,
+`RORO_DEBUG_BRIDGE`) are set in the release shell.
 
 When Developer-ID signing is enabled, Forge notarizes/staples the `.app` during package and the `postMake` hook
 notarizes/staples the DMG container after it is created.

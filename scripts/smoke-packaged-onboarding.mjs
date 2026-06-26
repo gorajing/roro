@@ -228,6 +228,14 @@ async function inspectApp({ home, cwd, userDataDir, label }) {
         muteVisible: visible('#mute-btn'),
         cosmeticsVisible: visible('#cosmetics-toggle'),
         roroVoiceType: typeof window.__roroVoice,
+        companionDebugType: typeof window.__companion,
+        runTaskType: typeof window.companion?.runTask,
+        brainReasoningType: typeof window.brain?.onReasoning,
+        brainDecideType: typeof window.brain?.decide,
+        memoryProfileType: typeof window.memory?.profile,
+        memoryRememberType: typeof window.memory?.remember,
+        memoryRecallType: typeof window.memory?.recall,
+        visionType: typeof window.vision,
         bridgeType: typeof window.companion?.getWorkdirConfig,
         bg: getComputedStyle(document.body).backgroundColor,
       }})()`);
@@ -317,6 +325,14 @@ try {
   check('Mute control is hidden in default v0 package', fresh.dom.muteVisible === false);
   check('cosmetics fake-door is absent in default v0 package', fresh.dom.cosmeticsVisible === false);
   check('__roroVoice dev handle is absent in default v0 package', fresh.dom.roroVoiceType === 'undefined');
+  check('__companion debug handle is absent in default v0 package', fresh.dom.companionDebugType === 'undefined');
+  check('direct runTask bridge is absent in default v0 package', fresh.dom.runTaskType === 'undefined');
+  check('brain stream bridge remains available in default v0 package', fresh.dom.brainReasoningType === 'function');
+  check('direct brain decide bridge is absent in default v0 package', fresh.dom.brainDecideType === 'undefined');
+  check('memory profile trust-loop bridge remains available in default v0 package', fresh.dom.memoryProfileType === 'function');
+  check('direct memory remember bridge is absent in default v0 package', fresh.dom.memoryRememberType === 'undefined');
+  check('direct memory recall bridge is absent in default v0 package', fresh.dom.memoryRecallType === 'undefined');
+  check('direct vision bridge is absent in default v0 package', fresh.dom.visionType === 'undefined');
   check('fresh Settings panel opens', fresh.projectSettings.exists && fresh.projectSettings.panelHidden === false);
   check('fresh Settings reports no project', /no project selected/i.test(fresh.projectSettings.current));
   check('getWorkdirConfig bridge exists', fresh.dom.bridgeType === 'function');

@@ -9,20 +9,20 @@
 //   CH.micRequest         -> mic.ensureMicAccess()             (this component)
 //   CH.windowMoveBy       -> current BrowserWindow.setPosition()
 //   CH.turnRun            -> orchestrator.runTurn()            (recall+decide+dispatch)
-//   CH.runTask            -> orchestrator.runTask()            -> executor.getExecutor()
+//   CH.runTask            -> orchestrator.runTask()            -> executor.getExecutor() (debug bridge only)
 //   CH.configGet          -> configStore.hydrateWorkdirConfig()
 //   CH.configChooseWorkdir-> native folder picker + configStore.persistWorkdirChoice()
 //   CH.cancelTask         -> orchestrator.cancelTask()
-//   CH.brainDecide        -> brain.decide()                    (sibling: src/brain)
-//   CH.brainDescribeScreen-> brain.describeScreen()            (sibling: src/brain)
-//   CH.brainEmbed         -> brain.embed()                     (sibling: src/brain)
-//   CH.memoryRemember     -> memory.remember()                 (sibling: src/memory)
-//   CH.memoryRecall       -> memory.recall()                   (sibling: src/memory)
+//   CH.brainDecide        -> brain.decide()                    (sibling: src/brain; debug bridge only)
+//   CH.brainDescribeScreen-> brain.describeScreen()            (sibling: src/brain; debug bridge only)
+//   CH.brainEmbed         -> brain.embed()                     (sibling: src/brain; debug bridge only)
+//   CH.memoryRemember     -> memory.remember()                 (sibling: src/memory; debug bridge only)
+//   CH.memoryRecall       -> memory.recall()                   (sibling: src/memory; debug bridge only)
 //   CH.memoryProfile      -> memory.profileFacts()             (main-owned trust loop)
 //   CH.memoryFixFact      -> memory.fixFact()                  (main-owned trust loop)
 //   CH.memoryVerifyFact   -> memory.verifyFact()               (main-owned trust loop)
 //   CH.memoryFactSource   -> memory.factSource()               (main-owned trust loop)
-//   CH.visionAsk          -> vision.askScreen()                (sibling: src/vision)
+//   CH.visionAsk          -> vision.askScreen()                (sibling: src/vision; debug bridge only)
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { OpenDialogOptions } from 'electron';
 import { CH } from '../shared/ipc';
@@ -51,7 +51,13 @@ function finitePixelDelta(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : 0;
 }
 
+function debugBridgeEnabled(): boolean {
+  return process.env.RORO_DEBUG_BRIDGE === '1';
+}
+
 export function registerIpcHandlers(): void {
+  const debugBridge = debugBridgeEnabled();
+
   // ---- Mic (this component) ----
   ipcMain.handle(CH.micStatus, (): MicStatus => getMicStatus());
   ipcMain.handle(CH.micRequest, (): Promise<MicStatus> => ensureMicAccess());
@@ -77,11 +83,13 @@ export function registerIpcHandlers(): void {
     CH.turnRun,
     (_e, input: TurnInput): Promise<{ runId: string }> => runTurn(input),
   );
-  ipcMain.handle(
-    CH.runTask,
-    (_e, arg: { prompt: string; agent?: AgentKind }): Promise<{ runId: string }> =>
-      runTask(arg.prompt, asAgentKind(arg.agent)),
-  );
+  if (debugBridge) {
+    ipcMain.handle(
+      CH.runTask,
+      (_e, arg: { prompt: string; agent?: AgentKind }): Promise<{ runId: string }> =>
+        runTask(arg.prompt, asAgentKind(arg.agent)),
+    );
+  }
   ipcMain.handle(CH.cancelTask, (_e, runId?: string): void => cancelTask(runId));
   // Destructive-confirm: the renderer's confirm chip resolves a pending gate. This dedicated
   // invoke channel is the ONLY way to approve — a spoken/typed transcript can never reach it.
@@ -112,47 +120,55 @@ export function registerIpcHandlers(): void {
   });
 
   // ---- Brain (sibling: src/brain) ----
-  ipcMain.handle(
-    CH.brainDecide,
-    async (_e, input: DecideInput): Promise<Decision> => {
-      const brain = await loadBrain();
-      return brain.decide(input);
-    },
-  );
-  ipcMain.handle(
-    CH.brainDescribeScreen,
-    async (_e, input: { b64: string; mime: string }): Promise<string> => {
-      const brain = await loadBrain();
-      return brain.describeScreen(input);
-    },
-  );
-  ipcMain.handle(
-    CH.brainEmbed,
-    async (_e, input: string | string[]): Promise<number[] | number[][]> => {
-      const brain = await loadBrain();
-      return brain.embed(input);
-    },
-  );
+  // Direct brain invokes are a debug bridge. Product turns use CH.turnRun, while reasoning/content
+  // updates are push-only streams emitted by the orchestrator/brain wiring.
+  if (debugBridge) {
+    ipcMain.handle(
+      CH.brainDecide,
+      async (_e, input: DecideInput): Promise<Decision> => {
+        const brain = await loadBrain();
+        return brain.decide(input);
+      },
+    );
+    ipcMain.handle(
+      CH.brainDescribeScreen,
+      async (_e, input: { b64: string; mime: string }): Promise<string> => {
+        const brain = await loadBrain();
+        return brain.describeScreen(input);
+      },
+    );
+    ipcMain.handle(
+      CH.brainEmbed,
+      async (_e, input: string | string[]): Promise<number[] | number[][]> => {
+        const brain = await loadBrain();
+        return brain.embed(input);
+      },
+    );
+  }
 
   // ---- Memory (sibling: src/memory) — owner_id is injected MAIN-side, never trusted from renderer ----
-  ipcMain.handle(
-    CH.memoryRemember,
-    async (_e, input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow> => {
-      assertRendererMemoryKind(input.kind); // facts are derived internally; the renderer can't write them
-      const memory = await loadMemory();
-      return memory.remember({ ...input, owner_id: getOwnerId() });
-    },
-  );
-  ipcMain.handle(
-    CH.memoryRecall,
-    async (
-      _e,
-      input: { query: string; k?: number; sessionId?: string },
-    ): Promise<MemoryMatch[]> => {
-      const memory = await loadMemory();
-      return memory.recall({ ...input, ownerId: getOwnerId() });
-    },
-  );
+  // Direct remember/recall are debug/test harness APIs. Product recall/write paths live in the orchestrator;
+  // the product renderer only gets the trust-loop controls below.
+  if (debugBridge) {
+    ipcMain.handle(
+      CH.memoryRemember,
+      async (_e, input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow> => {
+        assertRendererMemoryKind(input.kind); // facts are derived internally; the renderer can't write them
+        const memory = await loadMemory();
+        return memory.remember({ ...input, owner_id: getOwnerId() });
+      },
+    );
+    ipcMain.handle(
+      CH.memoryRecall,
+      async (
+        _e,
+        input: { query: string; k?: number; sessionId?: string },
+      ): Promise<MemoryMatch[]> => {
+        const memory = await loadMemory();
+        return memory.recall({ ...input, ownerId: getOwnerId() });
+      },
+    );
+  }
   // Transparency: the facts roro remembers about THIS owner (owner injected MAIN-side).
   ipcMain.handle(CH.memoryProfile, async (): Promise<ProfileFactView[]> => {
     const memory = await loadMemory();
@@ -220,10 +236,11 @@ export function registerIpcHandlers(): void {
   });
 
   // ---- Vision (sibling: src/vision) ----
-  // THROWS BlackFrameError up to the renderer (which must catch + show onboarding).
-  // askScreen captures the screen then calls the injected describe callback (brain) to caption.
-  ipcMain.handle(CH.visionAsk, async (_e, prompt: string): Promise<string> => {
-    const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
-    return vision.askScreen(prompt, (img) => brain.describeScreen(img));
-  });
+  // Direct screen capture from the renderer is debug-only. Product capture_screen runs inside the orchestrator.
+  if (debugBridge) {
+    ipcMain.handle(CH.visionAsk, async (_e, prompt: string): Promise<string> => {
+      const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
+      return vision.askScreen(prompt, (img) => brain.describeScreen(img));
+    });
+  }
 }

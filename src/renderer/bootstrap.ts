@@ -473,15 +473,16 @@ export async function bootstrap(): Promise<void> {
     };
   }
 
-  // Expose a tiny dev handle for manual testing in DevTools (drive the avatar
-  // without a model/keys). Non-enumerable-ish; purely a debugging aid.
-  (window as unknown as { __companion?: unknown }).__companion = {
-    driver,
-    setState: (s: Parameters<typeof driver.setState>[0]) => driver.setState(s),
-    setActivity: (cue: Parameters<typeof driver.setActivity>[0]) => driver.setActivity(cue),
-    setMouthOpen: (v: number) => driver.setMouthOpen(v),
-    setMuted: (v: boolean) => setMicMuted(v),
-  };
+  if (config.debugBridge) {
+    // Expose a tiny dev handle for manual testing in DevTools (drive the avatar without a model/keys).
+    (window as unknown as { __companion?: unknown }).__companion = {
+      driver,
+      setState: (s: Parameters<typeof driver.setState>[0]) => driver.setState(s),
+      setActivity: (cue: Parameters<typeof driver.setActivity>[0]) => driver.setActivity(cue),
+      setMouthOpen: (v: number) => driver.setMouthOpen(v),
+      setMuted: (v: boolean) => setMicMuted(v),
+    };
+  }
 }
 
 interface FloatingGestureHandlers {

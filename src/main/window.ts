@@ -42,6 +42,8 @@ export function createWindow(): BrowserWindow {
     voicePack: process.env.RORO_VOICE_PACK ?? '',
     // WS5 validation (M9): the cosmetics fake-door, OFF by default — RORO_WS5_STORE=1 to run the experiment.
     cosmeticsStore: process.env.RORO_WS5_STORE === '1',
+    // Dev/security escape hatch: exposes direct brain/vision/debug handles only when deliberately enabled.
+    debugBridge: process.env.RORO_DEBUG_BRIDGE === '1',
   };
 
   const mainWindow = new BrowserWindow({
@@ -71,8 +73,8 @@ export function createWindow(): BrowserWindow {
     mainWindow.setFullScreenable(false);
   }
 
-  // ---- Security: lock the renderer to its OWN document. The renderer holds the full privileged
-  // bridge (incl. companion.runTask -> a workspace-write coding agent); a navigation or window.open
+  // ---- Security: lock the renderer to its OWN document. The renderer holds a privileged
+  // product bridge; a navigation or window.open
   // to an attacker origin would inherit it. Deny ALL new windows + webviews, and permit navigation
   // only to the app's own document (isSafeNavigation). Set BEFORE load so nothing slips through.
   const indexFile = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);

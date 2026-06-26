@@ -1,6 +1,7 @@
-// src/preload.ts — the ONLY bridge between the sandboxed renderer and MAIN. Exposes four
-// contextBridge namespaces (window.companion / window.brain / window.memory / window.vision)
-// that wrap ipcRenderer.invoke (request/response) and ipcRenderer.on (push streams).
+// src/preload.ts — the ONLY bridge between the sandboxed renderer and MAIN. Exposes product
+// contextBridge namespaces (window.companion / window.brain / window.memory) that wrap
+// ipcRenderer.invoke (request/response) and ipcRenderer.on (push streams). Direct brain/vision
+// invoke handles and debug helpers stay behind RORO_DEBUG_BRIDGE=1.
 //
 // Sandbox rules: this file may import 'electron' and the PURE src/shared/* modules (string
 // consts + types, bundled by plugin-vite) — nothing that pulls Node builtins. NEVER expose
@@ -27,6 +28,7 @@ if (cfgArg) {
     /* ignore malformed cfg — renderer falls back to empty defaults */
   }
 }
+const debugBridge = roroCfg.debugBridge === true || roroCfg.debugBridge === '1' || roroCfg.debugBridge === 'true';
 
 /** Subscribe to a MAIN->renderer push channel; returns an unsubscribe fn. */
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -43,9 +45,6 @@ const companion = {
   // PRIMARY entrypoint: full voice turn (recall -> decide -> dispatch). Events stream back.
   turnRun: (input: TurnInput): Promise<{ runId: string }> =>
     ipcRenderer.invoke(CH.turnRun, input),
-  // Direct executor dispatch (brain already produced a command).
-  runTask: (prompt: string, agent: AgentKindArg): Promise<{ runId: string }> =>
-    ipcRenderer.invoke(CH.runTask, { prompt, agent }),
   cancelTask: (runId?: string): Promise<void> =>
     ipcRenderer.invoke(CH.cancelTask, runId),
   moveWindowBy: (delta: { dx: number; dy: number }): Promise<void> =>
@@ -78,32 +77,62 @@ const companion = {
     subscribe<ModelPullProgressMsg>(CH.modelPullProgress, cb),
   getWorkdirConfig: (): Promise<WorkdirConfigMsg> => ipcRenderer.invoke(CH.configGet),
   chooseWorkdir: (): Promise<WorkdirConfigMsg> => ipcRenderer.invoke(CH.configChooseWorkdir),
+} as {
+  mic: {
+    status: () => Promise<MicStatus>;
+    request: () => Promise<MicStatus>;
+  };
+  turnRun: (input: TurnInput) => Promise<{ runId: string }>;
+  runTask?: (prompt: string, agent: AgentKindArg) => Promise<{ runId: string }>;
+  cancelTask: (runId?: string) => Promise<void>;
+  moveWindowBy: (delta: { dx: number; dy: number }) => Promise<void>;
+  onActionEvent: (cb: (e: ActionEvent) => void) => () => void;
+  onRunEnd: (cb: (p: { runId: string }) => void) => () => void;
+  onMicToggleMute: (cb: () => void) => () => void;
+  onFocusAsk: (cb: () => void) => () => void;
+  onConfirmRequest: (cb: (req: { runId: string; summary: string }) => void) => () => void;
+  confirmResolve: (runId: string, approved: boolean) => Promise<void>;
+  onCursor: (cb: (t: { x: number; y: number }) => void) => () => void;
+  onBootstrapStatus: (cb: (s: BootstrapStatusMsg) => void) => () => void;
+  getBootstrapStatus: () => Promise<BootstrapStatusMsg | null>;
+  openExternal: (url: string) => Promise<void>;
+  pullModels: (models: string[]) => Promise<void>;
+  onPullProgress: (cb: (p: ModelPullProgressMsg) => void) => () => void;
+  getWorkdirConfig: () => Promise<WorkdirConfigMsg>;
+  chooseWorkdir: () => Promise<WorkdirConfigMsg>;
 };
 
+if (debugBridge) {
+  // Direct executor dispatch bypasses the brain. Keep it available for deliberate debug sessions only.
+  companion.runTask = (prompt: string, agent: AgentKindArg): Promise<{ runId: string }> =>
+    ipcRenderer.invoke(CH.runTask, { prompt, agent });
+}
+
 const brain = {
-  decide: (input: DecideInput): Promise<Decision> =>
-    ipcRenderer.invoke(CH.brainDecide, input),
-  describeScreen: (input: { b64: string; mime: string }): Promise<string> =>
-    ipcRenderer.invoke(CH.brainDescribeScreen, input),
-  embed: (input: string | string[]): Promise<number[] | number[][]> =>
-    ipcRenderer.invoke(CH.brainEmbed, input),
   // DeepSeek reasoning_content deltas -> avatar 'thinking'.
   onReasoning: (cb: (delta: string) => void): (() => void) =>
     subscribe<string>(CH.brainReasoning, cb),
   // Optional live JSON-preview content deltas.
   onContent: (cb: (delta: string) => void): (() => void) =>
     subscribe<string>(CH.brainContent, cb),
+} as {
+  decide?: (input: DecideInput) => Promise<Decision>;
+  describeScreen?: (input: { b64: string; mime: string }) => Promise<string>;
+  embed?: (input: string | string[]) => Promise<number[] | number[][]>;
+  onReasoning: (cb: (delta: string) => void) => () => void;
+  onContent: (cb: (delta: string) => void) => () => void;
 };
 
+if (debugBridge) {
+  brain.decide = (input: DecideInput): Promise<Decision> =>
+    ipcRenderer.invoke(CH.brainDecide, input);
+  brain.describeScreen = (input: { b64: string; mime: string }): Promise<string> =>
+    ipcRenderer.invoke(CH.brainDescribeScreen, input);
+  brain.embed = (input: string | string[]): Promise<number[] | number[][]> =>
+    ipcRenderer.invoke(CH.brainEmbed, input);
+}
+
 const memory = {
-  // owner_id is injected MAIN-side from the device identity; the renderer never supplies it.
-  remember: (input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow> =>
-    ipcRenderer.invoke(CH.memoryRemember, input),
-  recall: (input: {
-    query: string;
-    k?: number;
-    sessionId?: string;
-  }): Promise<MemoryMatch[]> => ipcRenderer.invoke(CH.memoryRecall, input),
   // Memory trust loop: see, fix, verify, source-check, and forget owner-scoped active facts.
   profile: (): Promise<ProfileFactView[]> => ipcRenderer.invoke(CH.memoryProfile),
   fixFact: (id: string, value: string): Promise<ProfileFactView> =>
@@ -113,7 +142,26 @@ const memory = {
   factSource: (id: string): Promise<ProfileFactSourceView> =>
     ipcRenderer.invoke(CH.memoryFactSource, id),
   forget: (id: string): Promise<void> => ipcRenderer.invoke(CH.memoryForget, id),
+} as {
+  remember?: (input: Omit<RememberInput, 'owner_id'>) => Promise<MemoryRow>;
+  recall?: (input: { query: string; k?: number; sessionId?: string }) => Promise<MemoryMatch[]>;
+  profile: () => Promise<ProfileFactView[]>;
+  fixFact: (id: string, value: string) => Promise<ProfileFactView>;
+  verifyFact: (id: string) => Promise<ProfileFactView>;
+  factSource: (id: string) => Promise<ProfileFactSourceView>;
+  forget: (id: string) => Promise<void>;
 };
+
+if (debugBridge) {
+  // Test harness/debug-only: product recall and writes go through MAIN/orchestrator, not renderer APIs.
+  memory.remember = (input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow> =>
+    ipcRenderer.invoke(CH.memoryRemember, input);
+  memory.recall = (input: {
+    query: string;
+    k?: number;
+    sessionId?: string;
+  }): Promise<MemoryMatch[]> => ipcRenderer.invoke(CH.memoryRecall, input);
+}
 
 const vision = {
   // May reject with BlackFrameError — the renderer must catch and show onboarding.
@@ -124,6 +172,8 @@ const vision = {
 contextBridge.exposeInMainWorld('companion', companion);
 contextBridge.exposeInMainWorld('brain', brain);
 contextBridge.exposeInMainWorld('memory', memory);
-contextBridge.exposeInMainWorld('vision', vision);
+if (debugBridge) {
+  contextBridge.exposeInMainWorld('vision', vision);
+}
 contextBridge.exposeInMainWorld('RORO_CFG', roroCfg);
 contextBridge.exposeInMainWorld('COMPANION_CFG', roroCfg); // deprecated alias — back-compat
