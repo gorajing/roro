@@ -14,7 +14,7 @@
 - **The product thesis:** the magic moment is **recalled memory** — after a restart, offline, the cat weaves what it remembers about how you work into its response ("I'll set up the signup route *with testing in place*"). Voice/cuteness are the frame; the recalled sentence is the payload.
 - **The strategy (job-first):** lead with the **coding job** (it justifies the install + builds the daily habit); let *being known* be the emergent reward. **job → habit → memory → moat.** The moat is the per-user **encrypted on-device memory** + a **human-in-the-loop correction loop** (un-clonable, model-independent).
 - **State:** the engine is strong and proven. The **biggest launch blocker is fixed** — encrypted memory now works in a packaged build (was a forge signing bug, *not* the cert). The Phase-1 packaged workdir onboarding spine landed, and the first Phase-2 correction loop slice now lets users see, fix, verify, source-check, and forget remembered facts.
-- **Next:** finish the **Path to Public** in [`PUBLIC.md`](./PUBLIC.md). Cheapest next step is a **human confirmation** that a packaged build remembers across quit/relaunch; `npm run verify:packaged-memory` automates the bridge/write/relaunch/recall regression, and `npm run verify:packaged-live-memory-turn` adds a live Ollama turn that speaks recalled memory, but the non-founder magic moment is still the gate. Then run `npm run verify:signing-readiness`, produce the Developer-ID notarized build, and run the small-cohort first-run validation.
+- **Next:** finish the **Path to Public** in [`PUBLIC.md`](./PUBLIC.md). Cheapest next step is a **human confirmation** that a packaged build remembers across quit/relaunch; `npm run verify:packaged-memory` automates the bridge/write/relaunch/recall regression, `npm run verify:packaged-live-memory-turn` adds a live Ollama turn that speaks recalled memory, and `npm run verify:packaged-natural-memory-turn` proves a packaged natural-language teach/relaunch/recall loop, but the non-founder magic moment is still the gate. Then run `npm run verify:signing-readiness`, produce the Developer-ID notarized build, and run the small-cohort first-run validation.
 
 ---
 
@@ -88,6 +88,9 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - **Packaged live-memory turn smoke:** `npm run verify:packaged-live-memory-turn` requires local Ollama and observes the
   real packaged RECALL -> DECIDE -> NARRATE path speaking a bridge-seeded recalled value after relaunch. Still not a
   human, extraction-quality, cross-update, or notarized-build gate.
+- **Packaged natural-memory turn smoke:** `npm run verify:packaged-natural-memory-turn` requires local Ollama and observes
+  a real packaged turn learning a stated preference, writing it as a profile fact, fully relaunching, and using the
+  recalled value in a later turn. Still not a human, cross-update, or notarized-build gate.
 - **Developer-ID signing readiness doctor:** `npm run verify:signing-readiness` checks macOS, Apple env shape,
   matching Developer ID Application cert, `notarytool`, `stapler`, and entitlements before `npm run make`. It does not
   authenticate with Apple or replace clean-Mac Gatekeeper validation. `npm run release:doctor` runs the same doctor in
@@ -151,7 +154,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 ---
 
 ## 8. What to do next (concrete first moves)
-1. **(Recommended, cheapest) Human-confirm Phase 0:** `npm run package`, `npm run verify:packaged-memory`, `npm run verify:packaged-live-memory-turn`, then run a short non-founder/clean-profile session, **fully quit**, relaunch the *same* build, and watch it remember. The smokes prove packaged persistence + live-brain recall use; the person proves the moment lands.
+1. **(Recommended, cheapest) Human-confirm Phase 0:** `npm run package`, `npm run verify:packaged-memory`, `npm run verify:packaged-live-memory-turn`, `npm run verify:packaged-natural-memory-turn`, then run a short non-founder/clean-profile session, **fully quit**, relaunch the *same* build, and watch it remember. The smokes prove packaged persistence, live-brain recall use, and natural-language fact extraction; the person proves the moment lands.
 2. **Produce the Developer-ID notarized build:** export `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID`, and app-specific `APPLE_PASSWORD` in the same shell, then run `npm run verify:signing-readiness`, `npm run make`, `npm run verify:release-artifact:dmg`, and `npm run verify:release-artifact:signed`; validate install + memory recall on a clean second Mac.
 3. **Validate Phase 2 trust on real first turns:** the Memory panel can see/fix/verify/source/forget facts, referent-less requests clarify before dispatch, the README leads with the job/privacy promise, and screen reads show a bounded one-snapshot tell.
 
@@ -176,7 +179,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - **Commit footer:** `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` + `Claude-Session: <url>`. **PR footer:** `🤖 Generated with [Claude Code]` + the session URL.
 - **Don't commit `.env`** (gitignored). The **frozen `gorajing/companion` repo** must not be touched.
 - **Verify before claiming done** — "the types check" is not done; "I observed it working" is.
-- **Key commands:** `npm test`, `npm run lint`, `npx tsc --noEmit -p tsconfig.json`, `npm run release:doctor` (CI-safe release/signing doctor), `npm run package` (.app), `npm run verify:packaged-memory` (packaged write/relaunch/recall), `npm run verify:packaged-live-memory-turn` (packaged relaunch + live Ollama turn uses recalled memory), `npm run verify:signing-readiness` (strict Developer-ID env/cert/tool doctor), `npm run make` (+ distributables + signing), `npm run verify:release-artifact:dmg` (post-make DMG verifier), `npm run verify:release-artifact:signed` (post-make signed/notarized artifact verifier), `npm start` (dev — memory works here), `OLLAMA_AVAILABLE=1 npx vitest run crosslaunch.live` (live magic-moment smoke), `npm run eval:brain` (scorecard), `EVAL_SET=behavioral npm run eval:brain`.
+- **Key commands:** `npm test`, `npm run lint`, `npx tsc --noEmit -p tsconfig.json`, `npm run release:doctor` (CI-safe release/signing doctor), `npm run package` (.app), `npm run verify:packaged-memory` (packaged write/relaunch/recall), `npm run verify:packaged-live-memory-turn` (packaged relaunch + live Ollama turn uses recalled memory), `npm run verify:packaged-natural-memory-turn` (packaged natural-language teach/relaunch/recall), `npm run verify:signing-readiness` (strict Developer-ID env/cert/tool doctor), `npm run make` (+ distributables + signing), `npm run verify:release-artifact:dmg` (post-make DMG verifier), `npm run verify:release-artifact:signed` (post-make signed/notarized artifact verifier), `npm start` (dev — memory works here), `OLLAMA_AVAILABLE=1 npx vitest run crosslaunch.live` (live magic-moment smoke), `npm run eval:brain` (scorecard), `EVAL_SET=behavioral npm run eval:brain`.
 - **State lives in:** memory + owner.json + packaged config → `app.getPath('userData')` (override `RORO_DB_DIR`). The agent's working repo resolves from explicit `RORO_WORKDIR`, then persisted `userData/config.json`, then the explicit `RORO_ALLOW_CWD=1` dev fallback.
 
 ---

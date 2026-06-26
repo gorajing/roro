@@ -183,6 +183,7 @@ npm run make
 npm run verify:release-artifact:dmg # after npm run make, verifies the mounted DMG contains Roro.app
 npm run verify:packaged-memory   # packaged memory write -> quit -> relaunch -> recall smoke
 npm run verify:packaged-live-memory-turn  # packaged relaunch -> live Ollama turn uses recalled memory
+npm run verify:packaged-natural-memory-turn # packaged natural-language teach -> relaunch -> recall turn
 npm run verify:packaged-onboarding
 npm run verify:signing-readiness # strict Developer-ID env/cert/tool doctor before npm run make
 npm run verify:release-artifact:signed # after Developer-ID npm run make
@@ -198,6 +199,7 @@ What is working:
 - packaged workdir onboarding: native project picker, persisted `userData/config.json`, and typed/floating Ask gates
 - packaged same-build memory persistence smoke: a real packaged app writes and recalls an observation across relaunch
 - packaged live-memory turn smoke: with local Ollama ready, a real packaged turn narrates a recalled value after relaunch
+- packaged natural-memory turn smoke: with local Ollama ready, a real packaged turn learns a stated preference, relaunches, and uses it
 - release/signing doctor: CI checks the unsigned path, and a strict local doctor fails loud before Developer-ID `make`
 - DMG release artifact: macOS CI builds a versioned `.dmg` and verifies it mounts with `Roro.app`
 - **local Ollama brain** (decide/vision/embeddings) — verified end-to-end against a

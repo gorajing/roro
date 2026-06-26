@@ -55,6 +55,10 @@ required. The **two roles of the Developer-ID cert are now clear and separate:**
 > RECALL → DECIDE → NARRATE path can speak a bridge-seeded recalled value after relaunch. This narrows the engineering
 > risk, but still is not natural-language extraction proof, Developer-ID/notarized clean-Mac validation, or non-founder
 > validation.
+> Natural-language preflight: `npm run verify:packaged-natural-memory-turn` also requires local Ollama and proves a real
+> packaged turn can learn a plainly stated preference, write it as a profile fact, fully relaunch, and use that fact in a
+> later turn. This narrows the extraction-quality engineering risk; it still does not replace the signed/notarized
+> clean-Mac gate or the non-founder "does this feel correct and useful?" test.
 
 ---
 
@@ -94,6 +98,10 @@ VALID + `safeStorage.isEncryptionAvailable()=true` + creates its keychain item �
 - ✅ **Live packaged turn smoke:** `npm run verify:packaged-live-memory-turn` keeps local Ollama enabled and asserts a
   packaged relaunch feeds recalled memory into `turnRun` narration. It is a stronger local preflight, not a replacement
   for the human, extraction-quality, or notarized-build gates.
+- ✅ **Natural-language packaged turn smoke:** `npm run verify:packaged-natural-memory-turn` keeps local Ollama enabled,
+  teaches a stated preference through the packaged `turnRun` path, waits for a profile fact sourced to that teach
+  session, fully relaunches, and asserts a later turn narrates the remembered value. It is still not the non-founder or
+  signed/notarized clean-Mac gate.
 - **Human confirmation (the real Phase-0 exit):** a non-founder runs a build, has a short session, **fully quits**,
   relaunches the **same build**, and observes the fact recalled. (Within-build quit/relaunch works under ad-hoc; this is
   doable today without the cert.)
@@ -203,7 +211,7 @@ validation, provable in an afternoon.
 
 ## The first thing to do
 
-**Preflight packaged memory (`npm run package && npm run verify:packaged-memory && npm run verify:packaged-live-memory-turn`),
+**Preflight packaged memory (`npm run package && npm run verify:packaged-memory && npm run verify:packaged-live-memory-turn && npm run verify:packaged-natural-memory-turn`),
 then preflight signing (`npm run verify:signing-readiness`) and produce the first Developer-ID signed + notarized build**
 to test on a clean second Mac:
 
