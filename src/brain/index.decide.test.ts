@@ -39,4 +39,35 @@ describe('decide — one-shot JSON repair (local 3B robustness)', () => {
     expect(d.command).toBe('answer');
     expect(chat).toHaveBeenCalledTimes(1);
   });
+
+  it('clarifies a referent-less request before asking the model', async () => {
+    const d = await decide({ transcript: 'fix it' });
+
+    expect(d.command).toBe('clarify');
+    expect(d.narration).toMatch(/what should i fix/i);
+    expect(chat).not.toHaveBeenCalled();
+  });
+
+  it('clarifies before provider setup, even when Nebius has no API key', async () => {
+    const savedApiKey = process.env.NEBIUS_API_KEY;
+    process.env.BRAIN_PROVIDER = 'nebius';
+    delete process.env.NEBIUS_API_KEY;
+    try {
+      const d = await decide({ transcript: 'fix it' });
+      expect(d.command).toBe('clarify');
+      expect(chat).not.toHaveBeenCalled();
+    } finally {
+      if (savedApiKey === undefined) delete process.env.NEBIUS_API_KEY;
+      else process.env.NEBIUS_API_KEY = savedApiKey;
+    }
+  });
+
+  it('does not steal concrete coding tasks from the model', async () => {
+    chat.mockResolvedValueOnce('{"narration":"on it","command":"run_agent","args":{"task":"fix the failing test in calc.py"}}');
+
+    const d = await decide({ transcript: 'fix the failing test in calc.py' });
+
+    expect(d.command).toBe('run_agent');
+    expect(chat).toHaveBeenCalledTimes(1);
+  });
 });
