@@ -15,7 +15,7 @@ import { getCompanion } from '../events/bridge';
 import { ensureWorkdirReady, notifyWorkdirConfigured } from '../bootstrap/workdirSetup';
 import type { ActionEvent } from '../../shared/events';
 
-export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: string }): () => void {
+export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: string; canStartTurn?: () => boolean }): () => void {
   const { driver, sessionId } = opts;
   const host = document.getElementById('app') ?? document.body;
 
@@ -42,6 +42,7 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
 
   let ask: AskState = INITIAL_ASK_STATE;
   let run: RunLifecycle = INITIAL_RUN_LIFECYCLE;
+  let submitPending = false;
 
   function render(): void {
     form.classList.remove('collapsed', 'expanded', 'tasked');
@@ -70,22 +71,7 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
           queueMicrotask(() => dispatch({ type: 'runEnded' }));
           break;
         }
-        void (async () => {
-          const getWorkdirConfig = companion.getWorkdirConfig;
-          const chooseWorkdir = companion.chooseWorkdir;
-          if (getWorkdirConfig && chooseWorkdir) {
-            const ready = await ensureWorkdirReady({
-              getConfig: getWorkdirConfig,
-              chooseWorkdir,
-              onConfigured: notifyWorkdirConfigured,
-            });
-            if (!ready) {
-              dispatch({ type: 'runEnded' });
-              return;
-            }
-          }
-          await companion.turnRun({ transcript: eff.text, sessionId });
-        })().catch(() => {
+        void companion.turnRun({ transcript: eff.text, sessionId }).catch(() => {
           // turnRun returns {runId} even on a decide failure (it pushes run.failed + runEnd); a
           // reject is an IPC-level failure, so no runEnd will arrive — recover the surface here.
           dispatch({ type: 'runEnded' });
@@ -115,11 +101,44 @@ export function mountFloatingAsk(opts: { driver: CharacterDriver; sessionId: str
     for (const eff of result.effects) applyEffect(eff);
   }
 
+  async function submitIfReady(rawText: string): Promise<void> {
+    const text = rawText.trim();
+    if (!text || ask !== 'expanded') {
+      dispatch({ type: 'submit', text: rawText });
+      return;
+    }
+    if (submitPending) return;
+
+    const companion = getCompanion();
+    if (!companion?.turnRun) return;
+
+    submitPending = true;
+    try {
+      const getWorkdirConfig = companion.getWorkdirConfig;
+      const chooseWorkdir = companion.chooseWorkdir;
+      if (getWorkdirConfig && chooseWorkdir) {
+        const ready = await ensureWorkdirReady({
+          getConfig: getWorkdirConfig,
+          chooseWorkdir,
+          onConfigured: notifyWorkdirConfigured,
+        });
+        if (!ready) return;
+      }
+
+      if (opts.canStartTurn?.() === false) return;
+
+      if (ask !== 'expanded' || input.value.trim() !== text) return;
+      dispatch({ type: 'submit', text });
+    } finally {
+      submitPending = false;
+    }
+  }
+
   // ---- DOM bindings ----
   pill.addEventListener('click', () => dispatch({ type: 'summon' }));
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
-    dispatch({ type: 'submit', text: input.value });
+    void submitIfReady(input.value);
   });
   input.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') {

@@ -23,6 +23,7 @@ import type { BootstrapStatusMsg } from './shared/ipc';
 import { ollamaTags } from './brain/ollama';
 import { CH } from './shared/ipc';
 import { sendToWindow } from './main/safeSend';
+import { getBootstrapStatus, setBootstrapStatus } from './main/bootstrapStatusStore';
 
 /**
  * Startup self-check for the (local-first) brain: confirm the provider is reachable and the models are
@@ -31,17 +32,23 @@ import { sendToWindow } from './main/safeSend';
  * dead and couples startup to Ollama being up). On failure we log loudly AND push a diagnostic caption
  * to the renderer once it's loaded, so the user sees WHY turns won't work (e.g. run `ollama serve`).
  */
-// The last computed first-run readiness — served on demand via CH.bootstrapStatusGet so the renderer can
-// RECOVER a push it missed (it subscribes only after its async character load; the push fires on
-// did-finish-load, which can land first). Registered in whenReady.
-let lastBootstrapStatus: BootstrapStatusMsg | null = null;
+function notReadyStatus(message: string, status: BootstrapStatusMsg | null = null): BootstrapStatusMsg {
+  return {
+    needsOllamaInstall: false,
+    missing: [],
+    essentialBytes: 0,
+    ...status,
+    ready: false,
+    message,
+  };
+}
 
 async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
   try {
     const brain = await loadBrain();
     const result = await brain.preflight();
     console.log(`[main] brain preflight OK — ${brain.describeBrain()}; models:`, result.required);
-    lastBootstrapStatus = { ready: true, needsOllamaInstall: false, missing: [], essentialBytes: 0 };
+    setBootstrapStatus({ ready: true, needsOllamaInstall: false, missing: [], essentialBytes: 0 });
   } catch (err) {
     const baseMessage = `Local brain unavailable: ${(err as Error).message}`;
     console.error(`[main] brain preflight FAILED — ${baseMessage}`);
@@ -62,10 +69,11 @@ async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
       message = bootstrapFailureMessage(baseMessage, 'ollama', probe);
       status = bootstrapStatusFor(probe); // structured status → the renderer's one-click download banner (M7b)
     }
-    lastBootstrapStatus = status; // serve it on demand (race recovery), in addition to the push below
+    status = notReadyStatus(message, status);
+    setBootstrapStatus(status); // serve it on demand (race recovery), in addition to the push below
     const send = (): void => {
       sendToWindow(win, CH.actionEvent, { kind: 'message', runId: 'preflight', text: `⚠️ ${message}`, ts: Date.now() });
-      if (status) sendToWindow(win, CH.bootstrapStatus, status);
+      sendToWindow(win, CH.bootstrapStatus, status);
     };
     if (!win.isDestroyed() && !win.webContents.isDestroyed() && win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
     else send();
@@ -87,7 +95,7 @@ if (process.env.RORO_DEBUG_PORT) {
 // IPC handlers are stateless and safe to register before windows exist.
 registerIpcHandlers();
 // Serve the last bootstrap status on demand (M7b) so a renderer that subscribed late can recover it.
-ipcMain.handle(CH.bootstrapStatusGet, (): BootstrapStatusMsg | null => lastBootstrapStatus);
+ipcMain.handle(CH.bootstrapStatusGet, (): BootstrapStatusMsg | null => getBootstrapStatus());
 
 app.whenReady().then(async () => {
   // 0. Device-stable owner_id — the memory spine. Must exist before any turn runs. The local

@@ -96,6 +96,7 @@ export function mountBootstrapBanner(deps: BootstrapBannerDeps): () => void {
       return;
     }
     if (status.missing.length > 0) { renderMissing(status); return; }
+    if (status.message) { show(status.message); return; }
     banner.hidden = true;
   }
 

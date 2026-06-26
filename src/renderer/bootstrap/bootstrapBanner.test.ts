@@ -95,6 +95,21 @@ describe('mountBootstrapBanner — one-click first-run model download (M7b UI)',
     expect((q('#bootstrap-download') as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('shows a startup diagnostic for not-ready states with no one-click action', () => {
+    const t = setup();
+    t.emit({
+      ready: false,
+      needsOllamaInstall: false,
+      missing: [],
+      essentialBytes: 0,
+      message: 'Local brain unavailable: Ollama timed out',
+    });
+    expect((q('#bootstrap-banner') as HTMLElement).hidden).toBe(false);
+    expect(q('#bootstrap-banner')?.textContent).toMatch(/timed out/);
+    expect(q('#bootstrap-download')).toBeNull();
+    expect(q('#bootstrap-get-ollama')).toBeNull();
+  });
+
   it('RECOVERS a status pushed before subscribe by fetching it on mount (the startup-race fix)', async () => {
     // Simulate the race: the push was missed (emit never called); getStatus() returns the missed status.
     const t = setup({ getStatus: vi.fn(async () => MISSING) });

@@ -106,8 +106,9 @@ the happy packaged first-run workdir flow.
 - ✅ Raw "Roro has no working repo set" is no longer the normal user path; the UI asks for a project before dispatch.
 - ✅ Branded `appBundleId` is set in `forge.config.ts` (`com.jinchoi.roro`).
 - ✅ Real app icon in Dock/Launchpad: `assets/roro-icon.icns` from the 1024px pixel-cat PNG.
-- Remaining: a Settings entry to change the repo later and stronger "brain not ready" gating before the first coding
-  turn.
+- ✅ Stronger brain-readiness gate: typed and floating Ask block a coding turn when the startup preflight reports
+  Ollama/models are not ready.
+- Remaining: a Settings entry to change the repo later.
 
 **Exit:** a stranger who has never touched a terminal launches → is guided to pick a repo → sees honest model status with
 one-click download → types a task the executor runs to completion. Dock shows the cat icon.

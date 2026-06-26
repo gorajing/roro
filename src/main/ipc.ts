@@ -23,9 +23,10 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { OpenDialogOptions } from 'electron';
 import { CH } from '../shared/ipc';
 import type { MicStatus, TurnInput, ModelPullProgressMsg, WorkdirConfigMsg } from '../shared/ipc';
-import { pullModel } from '../brain/ollama';
-import { DEFAULT_MODEL_SPECS } from './bootstrapPlan';
+import { ollamaTags, pullModel } from '../brain/ollama';
+import { bootstrapStatusFor, DEFAULT_MODEL_SPECS } from './bootstrapPlan';
 import { isAllowedExternalUrl } from './openExternalGuard';
+import { setBootstrapStatus } from './bootstrapStatusStore';
 import type { Decision, DecideInput } from '../shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch } from '../shared/memory';
 import { assertRendererMemoryKind } from '../shared/memory';
@@ -185,6 +186,9 @@ export function registerIpcHandlers(): void {
         await pullModel(model, (p) => tick({ model, status: p.status, percent: p.percent }), ac.signal);
       }
       tick({ model: '', status: 'success', done: true });
+      const refreshed = bootstrapStatusFor({ kind: 'reachable', models: await ollamaTags() });
+      setBootstrapStatus(refreshed);
+      if (refreshed && !e.sender.isDestroyed()) e.sender.send(CH.bootstrapStatus, refreshed);
     } catch (err) {
       tick({ model: '', status: 'error', error: err instanceof Error ? err.message : String(err) });
       throw err;

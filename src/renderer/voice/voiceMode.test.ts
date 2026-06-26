@@ -84,6 +84,19 @@ describe('createVoiceMode (local-voice integration core)', () => {
     expect(mode.state.mode).toBe('listening');
   });
 
+  it('a brain-not-ready final is NOT routed to turnRun and returns to listening', async () => {
+    const backend = fakeBackend();
+    const deps = makeDeps();
+    const canStartTurn = vi.fn(() => false);
+    const mode = createVoiceMode({ backend, deps, driver: driver(), canStartTurn });
+    await mode.summon();
+    backend.emit!.onSpeechStart();
+    backend.emit!.onFinalTranscript('add a logout route');
+    expect(canStartTurn).toHaveBeenCalledTimes(1);
+    expect(deps.turnRun).not.toHaveBeenCalled();
+    expect(mode.state.mode).toBe('listening');
+  });
+
   it('returns to listening when the routed turn ends', async () => {
     const backend = fakeBackend();
     const deps = makeDeps();

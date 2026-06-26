@@ -11,6 +11,7 @@ function setCompanion(stub: unknown): void {
 function setup(over: {
   getWorkdirConfig?: ReturnType<typeof vi.fn>;
   chooseWorkdir?: ReturnType<typeof vi.fn>;
+  canStartTurn?: ReturnType<typeof vi.fn>;
 } = {}) {
   document.body.innerHTML = '<div id="app"></div>';
   const driver = { poke: vi.fn(), setState: vi.fn() };
@@ -29,7 +30,11 @@ function setup(over: {
     onRunEnd: (cb: () => void): (() => void) => { runEndCb = cb; return unsub; },
     onFocusAsk: (cb: () => void): (() => void) => { focusAskCb = cb; return unsub; },
   });
-  const unmount = mountFloatingAsk({ driver: driver as unknown as CharacterDriver, sessionId: 'sess' });
+  const unmount = mountFloatingAsk({
+    driver: driver as unknown as CharacterDriver,
+    sessionId: 'sess',
+    canStartTurn: over.canStartTurn,
+  });
   return {
     driver, turnRun, cancelTask, unmount,
     form: document.getElementById('floating-ask') as HTMLElement,
@@ -76,12 +81,13 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.driver.setState).not.toHaveBeenCalled();
   });
 
-  it('non-empty submit → tasked, sets the thinking pose, calls turnRun (trimmed)', () => {
+  it('non-empty submit → tasked, sets the thinking pose, calls turnRun (trimmed)', async () => {
     h.pill.click();
     h.input.value = '  add a logout route  ';
     submit(h.form);
     expect(h.form.classList.contains('tasked')).toBe(true);
     expect(h.driver.setState).toHaveBeenCalledWith('thinking');
+    await flush();
     expect(h.turnRun).toHaveBeenCalledWith({ transcript: 'add a logout route', sessionId: 'sess' });
   });
 
@@ -128,7 +134,7 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.turnRun).toHaveBeenCalledWith({ transcript: 'do it', sessionId: 'sess' });
   });
 
-  it('recovers without dispatch when project setup is canceled', async () => {
+  it('keeps the draft expanded without dispatch when project setup is canceled', async () => {
     h.unmount();
     const getWorkdirConfig = vi.fn(async () => ({ source: 'unset' as const }));
     const chooseWorkdir = vi.fn(async () => ({ source: 'unset' as const }));
@@ -138,6 +144,25 @@ describe('floatingAsk shell (jsdom)', () => {
     submit(h.form);
     await flush();
     expect(h.turnRun).not.toHaveBeenCalled();
-    expect(h.form.classList.contains('collapsed')).toBe(true);
+    expect(h.form.classList.contains('expanded')).toBe(true);
+    expect(h.input.value).toBe('do it');
+  });
+
+  it('keeps the draft expanded without dispatch when the local brain is not ready', async () => {
+    h.unmount();
+    const getWorkdirConfig = vi.fn(async () => ({ workdir: '/chosen/repo', source: 'config' as const }));
+    const canStartTurn = vi.fn(() => false);
+    h = setup({ getWorkdirConfig, canStartTurn });
+    h.pill.click();
+    h.driver.setState.mockClear();
+    h.input.value = 'do it';
+    submit(h.form);
+    await flush();
+    expect(canStartTurn).toHaveBeenCalledTimes(1);
+    expect(h.turnRun).not.toHaveBeenCalled();
+    expect(h.driver.setState).not.toHaveBeenCalled();
+    expect(h.form.classList.contains('expanded')).toBe(true);
+    expect(h.input.value).toBe('do it');
+    expect(h.stop.classList.contains('armed')).toBe(false);
   });
 });

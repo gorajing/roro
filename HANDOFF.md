@@ -102,7 +102,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 **Weak / failed / open:**
 - **3B behavioral-extraction ceiling (~40%).** Fix is the **correction loop** (model-independent), **not a bigger brain.** The loop is **not yet exposed to the UI** (only `profile()`/`forget()` reach the renderer; `reinforceFact`/`replaceFact`/`supersede` exist in the store, unwired).
 - **DECIDE clarify (1/5)** — prompt-only fixable, not done.
-- **Packaged-app config / onboarding spine landed in PR #69.** Remaining Phase-1 polish: Settings/change-project entry and stronger brain-readiness gate before the first coding turn.
+- **Packaged-app config / onboarding spine landed in PR #69.** Remaining Phase-1 polish: Settings/change-project entry.
 - **Ad-hoc cross-build memory** — the #67 fix makes a *single* build work, but ad-hoc `cdhash` changes per build → the keychain ACL doesn't survive a rebuild/update. **Developer-ID (stable team identity) is needed for update durability + a Gatekeeper-clean install.**
 - **App icon is real now** — `assets/roro-icon.icns` is wired through Forge; voice + Live2D half-baked (**cut from v0**).
 
@@ -125,7 +125,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ## 7. The plan → see [`PUBLIC.md`](./PUBLIC.md) (authoritative)
 **Definition of done:** a stranger installs a signed build (no Gatekeeper warning), runnable without a terminal, and observes a *correct* recalled fact across a full quit/relaunch.
-**Phases:** **0** prove-the-moment-on-a-packaged-build (the `safeStorage` half is **DONE**; remaining = human confirmation + the Developer-ID build for Gatekeeper/durability) → **1** runnable-without-a-terminal (workdir spine **landed**; settings/readiness polish remain) → **2** trust (expose the **correction loop** per [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md) + clarify nudge + README job+privacy-first + screen-capture tell) → **3** debut to a small cohort, measure week-2 reopen.
+**Phases:** **0** prove-the-moment-on-a-packaged-build (the `safeStorage` half is **DONE**; remaining = human confirmation + the Developer-ID build for Gatekeeper/durability) → **1** runnable-without-a-terminal (workdir spine **landed**; Settings/change-project remains) → **2** trust (expose the **correction loop** per [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md) + clarify nudge + README job+privacy-first + screen-capture tell) → **3** debut to a small cohort, measure week-2 reopen.
 **Cut from v0:** voice, Live2D, cosmetics store, Windows/Linux, the cloud-brain option, ambient/clipboard.
 
 ---
@@ -133,7 +133,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 ## 8. What to do next (concrete first moves)
 1. **(Recommended, cheapest) Human-confirm Phase 0:** `npm run package`, short session, **fully quit**, relaunch the *same* build, watch it remember. Unblocked, no cert.
 2. **Produce the Developer-ID notarized build:** `APPLE_TEAM_ID=GNG2M47BD7` + `APPLE_ID` + app-specific `APPLE_PASSWORD` + `npm run make`, then validate install + memory recall on a clean second Mac.
-3. **Finish Phase-1 polish:** Settings/change-project entry and stronger model-readiness gate before the first coding turn.
+3. **Finish Phase-1 polish:** Settings/change-project entry.
 4. **Phase 2 trust loop:** expose `fixFact` / `verifyFact` / `factSource` through MAIN-owned IPC and evolve the Memory panel into see/fix/verify/forget — see [`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md). Plus the DECIDE clarify few-shot.
 
 ---

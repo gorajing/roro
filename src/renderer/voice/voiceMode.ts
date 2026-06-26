@@ -26,6 +26,8 @@ export interface CreateVoiceModeOptions {
   onState?: (state: VoiceModeState) => void;
   /** Hard demo/presentation mute — a muted committed utterance never reaches turnRun. */
   isMuted?: () => boolean;
+  /** Brain-readiness gate: a blocked local brain must not make voice enter working. */
+  canStartTurn?: () => boolean;
 }
 
 export interface VoiceMode {
@@ -41,7 +43,7 @@ export interface VoiceMode {
 }
 
 export function createVoiceMode(opts: CreateVoiceModeOptions): VoiceMode {
-  const { backend, deps, driver, captions, onState, isMuted } = opts;
+  const { backend, deps, driver, captions, onState, isMuted, canStartTurn } = opts;
   let state = INITIAL_VOICE_MODE_STATE;
 
   const router = makeVoiceTurnRouter({
@@ -81,6 +83,10 @@ export function createVoiceMode(opts: CreateVoiceModeOptions): VoiceMode {
       // Hard mute gate BEFORE the router: a muted committed utterance never reaches turnRun.
       if (isMuted?.()) {
         apply({ type: 'turnEnded' }); // drop it, fall back to listening
+        return;
+      }
+      if (canStartTurn?.() === false) {
+        apply({ type: 'turnEnded' });
         return;
       }
       router.onFinalTranscript(text);
