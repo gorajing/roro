@@ -1,3 +1,5 @@
+import { isStoppedTerminalError } from '../../shared/stopped';
+
 const MAX_GENERIC_ERROR_CHARS = 240;
 
 function compact(text: string): string {
@@ -42,10 +44,7 @@ export function actionableErrorCopy(error: string): string {
   return clip(clean);
 }
 
-export function isStoppedTerminalError(error: string): boolean {
-  const clean = compact(error);
-  return /\b(stopped|aborted|cancelled|canceled)\b/i.test(clean);
-}
+export { isStoppedTerminalError };
 
 export function typedTurnEndStatus(cancelRequested: boolean, terminalError: string | null): string {
   if (cancelRequested) return 'Stopped.';

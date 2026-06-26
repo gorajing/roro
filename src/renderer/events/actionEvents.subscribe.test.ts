@@ -79,6 +79,29 @@ describe('subscribeActionEvents — local brain content stream', () => {
     expect(lines).toHaveLength(0);
   });
 
+  it('surfaces stopped terminal events without an error pose or stale planning caption', () => {
+    let actionCb: ((e: ActionEvent) => void) | undefined;
+    w().companion = {
+      onActionEvent: (cb: (e: ActionEvent) => void) => {
+        actionCb = cb;
+        return () => {};
+      },
+    };
+    w().brain = {};
+    const { character, states, activities } = fakeCharacter();
+    const lines: Array<{ who: string; text: string }> = [];
+    const captions = { update: (who: string, text: string) => lines.push({ who, text }) } as unknown as CaptionSink;
+
+    subscribeActionEvents({ character, timeline: noopTimeline, captions });
+    if (!actionCb) throw new Error('missing action-event subscription');
+    actionCb({ kind: 'run.failed', runId: 'r', ok: false, error: 'aborted', ts: 0 });
+
+    expect(states).toContain('done');
+    expect(states).not.toContain('error');
+    expect(activities).toContainEqual({ kind: 'success', text: 'stopped' });
+    expect(lines).toEqual([{ who: 'assistant', text: 'Stopped.' }]);
+  });
+
   it('shows proof of life for reasoning deltas without exposing raw provider reasoning', () => {
     w().brain = { onReasoning: (cb: (d: string) => void) => { reasoningCb = cb; return () => {}; } };
     const { character, states } = fakeCharacter();

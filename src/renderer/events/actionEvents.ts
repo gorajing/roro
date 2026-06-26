@@ -10,6 +10,7 @@
 
 import { eventToAvatarState } from '../../shared/avatar';
 import { SCREEN_CAPTURE_STATUS_TEXT, type ActionEvent } from '../../shared/events';
+import { isStoppedTerminalError } from '../../shared/stopped';
 import type { ActivityCue, CharacterDriver, CaptionSink } from '../character/types';
 import type { ActionTimeline } from '../character/captions';
 import { getCompanion, getBrain } from './bridge';
@@ -82,6 +83,7 @@ export function activityForEvent(e: ActionEvent): ActivityCue | null {
     case 'run.completed':
       return { kind: 'success', text: 'done' };
     case 'run.failed':
+      if (isStoppedTerminalError(e.error)) return { kind: 'success', text: 'stopped' };
       return { kind: 'error', text: 'stuck' };
     case 'message.delta':
       return null;
@@ -113,6 +115,8 @@ export function subscribeActionEvents(opts: SubscribeOptions): () => void {
             captions.update('assistant', e.text, true);
           } else if (e.kind === 'run.completed' && e.finalText) {
             captions.update('assistant', e.finalText, true);
+          } else if (e.kind === 'run.failed' && isStoppedTerminalError(e.error)) {
+            captions.update('assistant', 'Stopped.', true);
           }
         }
       }),

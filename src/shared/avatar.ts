@@ -1,6 +1,7 @@
 // src/shared/avatar.ts — the 6 avatar states + the ONE mapper the renderer uses.
 // No other component invents states; the renderer drives the character off eventToAvatarState() only.
 import type { ActionEvent } from './events';
+import { isStoppedTerminalError } from './stopped';
 
 export type AvatarState = 'idle' | 'listening' | 'thinking' | 'working' | 'done' | 'error';
 
@@ -19,6 +20,7 @@ export function eventToAvatarState(e: ActionEvent): AvatarState | null {
     case 'run.completed':
       return 'done';
     case 'run.failed':
+      if (isStoppedTerminalError(e.error)) return 'done';
       return 'error';
     case 'run.started':
     case 'turn.started':

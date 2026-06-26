@@ -29,8 +29,11 @@ const CDP_COMMAND_TIMEOUT_MS = Number(process.env.RORO_LIVE_CDP_TIMEOUT_MS || pr
 const USE_REAL_OLLAMA = (process.env.RORO_LIVE_USE_REAL_OLLAMA || process.env.RORO_FLOATING_LIVE_USE_REAL_OLLAMA) === '1';
 const EXPECTED = 'roro live turn ok';
 const STOP_TRANSCRIPT = IS_TYPED ? 'roro typed stop before executor ok' : 'roro stop before executor ok';
+const ACTIVE_STOP_TRANSCRIPT = IS_TYPED ? 'roro typed active executor stop ok' : 'roro active executor stop ok';
 const EXECUTOR_FILE = 'roro-floating-executor-smoke.txt';
 const EXECUTOR_CONTENT = 'executor turn ok\n';
+const ACTIVE_STOP_FILE = 'roro-active-stop-should-not-exist.txt';
+const ACTIVE_STOP_CONTENT = 'active executor stop should not write this\n';
 
 let nextId = 1;
 const failures = [];
@@ -118,31 +121,43 @@ async function startFakeOllama() {
           ? body.messages.map((message) => message?.content ?? '').join('\n')
           : '';
         const transcript = currentTranscriptFromPrompt(prompt);
-        const isExecutorTurn = transcript.includes(EXECUTOR_FILE);
+        const isActiveStopTurn = transcript.includes(ACTIVE_STOP_TRANSCRIPT);
+        const isExecutorTurn = !isActiveStopTurn && transcript.includes(EXECUTOR_FILE);
         const isAnswerTurn = !isExecutorTurn && transcript.includes(EXPECTED);
-        const isStoppedTurn = !isExecutorTurn && !isAnswerTurn && transcript.includes(STOP_TRANSCRIPT);
-        if (isStoppedTurn) await sleep(3000);
-        const decision = JSON.stringify(
-          isStoppedTurn
-            ? {
-                narration: 'On it. I will start the stopped smoke task.',
-                command: 'run_agent',
-                args: {
-                  task: 'This task should be stopped before the executor starts.',
-                  cwd: null,
-                },
-              }
-            : isExecutorTurn
-              ? {
-                  narration: 'On it. I will create the smoke file.',
-                  command: 'run_agent',
-                  args: {
-                    task: `Create ${EXECUTOR_FILE} with exactly ${JSON.stringify(EXECUTOR_CONTENT)} as its contents.`,
-                    cwd: null,
-                  },
-                }
-              : { narration: EXPECTED, command: 'answer', args: {} },
-        );
+        const isStoppedTurn = !isActiveStopTurn && !isExecutorTurn && !isAnswerTurn && transcript.includes(STOP_TRANSCRIPT);
+        let decisionPayload;
+        if (isStoppedTurn) {
+          await sleep(3000);
+          decisionPayload = {
+            narration: 'On it. I will start the stopped smoke task.',
+            command: 'run_agent',
+            args: {
+              task: 'This task should be stopped before the executor starts.',
+              cwd: null,
+            },
+          };
+        } else if (isActiveStopTurn) {
+          decisionPayload = {
+            narration: 'On it. I will start the active stop smoke task.',
+            command: 'run_agent',
+            args: {
+              task: `Start creating ${ACTIVE_STOP_FILE} but wait before writing it so Stop can abort the active executor.`,
+              cwd: null,
+            },
+          };
+        } else if (isExecutorTurn) {
+          decisionPayload = {
+            narration: 'On it. I will create the smoke file.',
+            command: 'run_agent',
+            args: {
+              task: `Create ${EXECUTOR_FILE} with exactly ${JSON.stringify(EXECUTOR_CONTENT)} as its contents.`,
+              cwd: null,
+            },
+          };
+        } else {
+          decisionPayload = { narration: EXPECTED, command: 'answer', args: {} };
+        }
+        const decision = JSON.stringify(decisionPayload);
         if (body.stream) {
           res.writeHead(200, { 'content-type': 'application/x-ndjson' });
           res.write(`${JSON.stringify({ message: { content: decision }, done: false })}\n`);
@@ -169,7 +184,7 @@ async function startFakeOllama() {
   };
 }
 
-async function writeFakeCodexBin(path, argsFile) {
+async function writeFakeCodexBin(path, argsFile, activeStopMarkerFile) {
   await writeFile(path, `#!/usr/bin/env node
 const { readFileSync, writeFileSync } = require('node:fs');
 const { join } = require('node:path');
@@ -179,7 +194,10 @@ const cwdIndex = args.indexOf('-C');
 const repo = cwdIndex >= 0 ? args[cwdIndex + 1] : process.cwd();
 const file = join(repo, ${JSON.stringify(EXECUTOR_FILE)});
 const content = ${JSON.stringify(EXECUTOR_CONTENT)};
+const activeStopFile = join(repo, ${JSON.stringify(ACTIVE_STOP_FILE)});
+const activeStopContent = ${JSON.stringify(ACTIVE_STOP_CONTENT)};
 const argsFile = ${JSON.stringify(argsFile)};
+const activeStopMarkerFile = ${JSON.stringify(activeStopMarkerFile)};
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const emit = (event) => console.log(JSON.stringify(event));
 
@@ -194,6 +212,42 @@ const emit = (event) => console.log(JSON.stringify(event));
   })();
   invocations.push({ args, repo });
   writeFileSync(argsFile, JSON.stringify(invocations, null, 2), 'utf8');
+
+  const prompt = args.at(-1) || '';
+  const isActiveStop = prompt.includes(${JSON.stringify(ACTIVE_STOP_FILE)});
+  if (isActiveStop) {
+    const markStopped = () => {
+      writeFileSync(activeStopMarkerFile, JSON.stringify({ signal: 'SIGTERM', args, repo, ts: Date.now() }, null, 2), 'utf8');
+      process.exit(0);
+    };
+    process.on('SIGTERM', markStopped);
+    emit({ type: 'thread.started', thread_id: 'fake-codex-active-stop-thread' });
+    emit({ type: 'turn.started' });
+    await sleep(100);
+    emit({
+      type: 'item.started',
+      item: {
+        id: 'fake-active-stop-file',
+        type: 'file_change',
+        changes: [{ path: activeStopFile, kind: 'add' }],
+        status: 'in_progress',
+      },
+    });
+    await sleep(30000);
+    writeFileSync(activeStopFile, activeStopContent, 'utf8');
+    emit({
+      type: 'item.completed',
+      item: {
+        id: 'fake-active-stop-file',
+        type: 'file_change',
+        changes: [{ path: activeStopFile, kind: 'add' }],
+        status: 'completed',
+      },
+    });
+    emit({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } });
+    return;
+  }
+
   emit({ type: 'thread.started', thread_id: 'fake-codex-thread' });
   emit({ type: 'turn.started' });
   await sleep(100);
@@ -369,8 +423,9 @@ const projectDir = process.env.RORO_LIVE_WORKDIR || process.env.RORO_FLOATING_LI
 const dbDir = join(root, 'memory');
 const fakeCodexBin = join(root, 'fake-codex');
 const fakeCodexArgsFile = join(root, 'fake-codex-args.json');
+const fakeCodexActiveStopMarkerFile = join(root, 'fake-codex-active-stop-sigterm.json');
 await mkdir(projectDir, { recursive: true });
-await writeFakeCodexBin(fakeCodexBin, fakeCodexArgsFile);
+await writeFakeCodexBin(fakeCodexBin, fakeCodexArgsFile, fakeCodexActiveStopMarkerFile);
 const fakeOllama = USE_REAL_OLLAMA ? null : await startFakeOllama();
 const appEnv = stripV0DeferredEnv({
   ...process.env,
@@ -615,6 +670,129 @@ try {
     );
     check('typed stopped copy is neutral', stoppedUi.statusText === 'Stopped.', JSON.stringify(stoppedUi));
     check('typed stopped copy is not a task problem', !stoppedUi.statusText.includes('Task hit a problem'), JSON.stringify(stoppedUi));
+    const stoppedVisibleCopy = await evaluate(cdp, `(() => ({
+      captionText: document.getElementById('caption-final')?.textContent ?? '',
+      timelineText: document.getElementById('timeline')?.textContent ?? '',
+    }))()`, {}, 'typed stopped caption/timeline check');
+    check('typed stopped caption releases planning copy', stoppedVisibleCopy.captionText === 'Roro: Stopped.', JSON.stringify(stoppedVisibleCopy));
+    check('typed stopped timeline is neutral', stoppedVisibleCopy.timelineText.includes('Run stopped') && !stoppedVisibleCopy.timelineText.includes('Run needs attention'), JSON.stringify(stoppedVisibleCopy));
+
+    const activeStopTranscript = `${ACTIVE_STOP_TRANSCRIPT}. Start a coding task, wait until it has started, then Stop should abort the active executor.`;
+    const runEndCountBeforeActiveStop = await evaluate(
+      cdp,
+      `window.__roroTypedLiveTurn?.runEnds?.length ?? 0`,
+      {},
+      'runEnd count before typed active-stop turn',
+    );
+    const activeStopSubmit = await evaluate(cdp, `(() => {
+      const input = document.getElementById('prompt-input');
+      const form = document.getElementById('prompt-form');
+      input.value = ${JSON.stringify(activeStopTranscript)};
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const notCanceled = form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      return { defaultPrevented: !notCanceled, value: input.value };
+    })()`, {}, 'typed active-stop form submit');
+    check('typed active-stop submit listener prevents native navigation', activeStopSubmit.defaultPrevented === true, JSON.stringify(activeStopSubmit));
+
+    const activeStopStarted = await waitFor(
+      cdp,
+      `(() => {
+        const events = window.__roroTypedLiveTurn?.events ?? [];
+        const runStarted = events.find((event) =>
+          event?.kind === 'run.started' &&
+          event.threadId === 'fake-codex-active-stop-thread');
+        if (!runStarted) return false;
+        const scoped = events.filter((event) => event?.runId === runStarted.runId);
+        const startedFile = scoped.some((event) =>
+          event?.kind === 'file_change' &&
+          event.status === 'started' &&
+          event.files?.some((file) => file.path?.endsWith(${JSON.stringify(ACTIVE_STOP_FILE)})));
+        if (!startedFile) return false;
+        return {
+          runId: runStarted.runId,
+          agent: runStarted.agent,
+          threadId: runStarted.threadId,
+          events: scoped,
+          cancelText: document.getElementById('cancel-btn')?.textContent ?? '',
+          cancelDisabled: document.getElementById('cancel-btn')?.disabled ?? null,
+          statusText: document.getElementById('status')?.textContent ?? '',
+        };
+      })()`,
+      10_000,
+      'typed active-stop run.started + file_change started',
+    );
+    check('typed active-stop turn emitted run.started from fake Codex', activeStopStarted.agent === 'codex' && activeStopStarted.threadId === 'fake-codex-active-stop-thread', JSON.stringify(activeStopStarted));
+    check('typed active-stop Stop is armed after run.started', activeStopStarted.cancelDisabled === false && activeStopStarted.cancelText === 'Stop' && /Working on it/.test(activeStopStarted.statusText), JSON.stringify(activeStopStarted));
+    await evaluate(cdp, `document.getElementById('cancel-btn').click()`, {}, 'typed active-stop Stop click');
+    const activeStopFeedback = await evaluate(cdp, `(() => ({
+      cancelText: document.getElementById('cancel-btn')?.textContent ?? '',
+      statusText: document.getElementById('status')?.textContent ?? '',
+    }))()`, {}, 'typed active-stop feedback check');
+    check('typed active-stop shows Stopping feedback after run.started', activeStopFeedback.cancelText === 'Stopping...' && activeStopFeedback.statusText === 'Stopping...', JSON.stringify(activeStopFeedback));
+
+    const activeStopTurn = await waitFor(
+      cdp,
+      `(() => {
+        const probe = window.__roroTypedLiveTurn;
+        const runId = ${JSON.stringify(activeStopStarted.runId)};
+        const runEnd = probe?.runEnds?.find((end) => end?.runId === runId);
+        if (!runEnd || (probe?.runEnds?.length ?? 0) <= ${JSON.stringify(runEndCountBeforeActiveStop)}) return false;
+        const events = probe.events.filter((event) => event?.runId === runId);
+        return { runEnd, events, allEvents: probe.events };
+      })()`,
+      TURN_TIMEOUT_MS,
+      'typed active-stop turn runEnd',
+    );
+    const activeStopEvents = Array.isArray(activeStopTurn.events) ? activeStopTurn.events : [];
+    const activeStopFileEvents = activeStopEvents.filter((event) => event?.kind === 'file_change' && event.files?.some((file) => file.path?.endsWith(ACTIVE_STOP_FILE)));
+    check('typed active-stop produced scoped events', activeStopEvents.length > 0, JSON.stringify(activeStopTurn.allEvents ?? []));
+    check('typed active-stop emitted exactly one run.started', activeStopEvents.filter((event) => event?.kind === 'run.started').length === 1, JSON.stringify(activeStopEvents));
+    check('typed active-stop emitted run.failed aborted', activeStopEvents.some((event) => event?.kind === 'run.failed' && event.error === 'aborted'), JSON.stringify(activeStopEvents));
+    check('typed active-stop never emitted run.completed', !activeStopEvents.some((event) => event?.kind === 'run.completed'), JSON.stringify(activeStopEvents));
+    check('typed active-stop never completed the file_change', !activeStopFileEvents.some((event) => event.status === 'completed'), JSON.stringify(activeStopEvents));
+    const typedActiveStopMarker = await readFile(fakeCodexActiveStopMarkerFile, 'utf8')
+      .then((text) => JSON.parse(text))
+      .catch(() => null);
+    check('typed active-stop fake Codex recorded SIGTERM', typedActiveStopMarker?.signal === 'SIGTERM', JSON.stringify(typedActiveStopMarker));
+    check(
+      'typed active-stop fake Codex did not write the aborted file',
+      await readFile(join(projectDir, ACTIVE_STOP_FILE), 'utf8').then(() => false).catch(() => true),
+    );
+    const typedActiveStopInvocations = await readFile(fakeCodexArgsFile, 'utf8')
+      .then((text) => JSON.parse(text))
+      .catch(() => []);
+    const expectedCodexPrefix = ['exec', '--json', '--skip-git-repo-check', '-s', 'workspace-write', '-C', projectDir];
+    const typedActiveStopArgs = Array.isArray(typedActiveStopInvocations)
+      ? typedActiveStopInvocations.map((invocation) => invocation?.args).filter(Array.isArray)
+      : [];
+    check(
+      'typed active-stop fake Codex received the executor CLI shape',
+      typedActiveStopArgs.some((args) =>
+        JSON.stringify(args.slice(0, expectedCodexPrefix.length)) === JSON.stringify(expectedCodexPrefix) &&
+        args.at(-1)?.includes(ACTIVE_STOP_FILE)),
+      JSON.stringify(typedActiveStopInvocations),
+    );
+    const activeStoppedUi = await waitFor(
+      cdp,
+      `(() => {
+        const input = document.getElementById('prompt-input');
+        const send = document.getElementById('send-btn');
+        const cancel = document.getElementById('cancel-btn');
+        const status = document.getElementById('status');
+        if (send?.disabled || !cancel?.disabled || cancel?.textContent !== 'Stop' || input?.value !== '') return false;
+        return { statusText: status?.textContent ?? '', sendDisabled: send.disabled, cancelDisabled: cancel.disabled, cancelText: cancel.textContent, inputValue: input.value };
+      })()`,
+      5000,
+      'typed active-stop UI release',
+    );
+    check('typed active-stop stopped copy is neutral', activeStoppedUi.statusText === 'Stopped.', JSON.stringify(activeStoppedUi));
+    check('typed active-stop stopped copy is not a task problem', !activeStoppedUi.statusText.includes('Task hit a problem'), JSON.stringify(activeStoppedUi));
+    const activeStoppedVisibleCopy = await evaluate(cdp, `(() => ({
+      captionText: document.getElementById('caption-final')?.textContent ?? '',
+      timelineText: document.getElementById('timeline')?.textContent ?? '',
+    }))()`, {}, 'typed active-stop caption/timeline check');
+    check('typed active-stop caption releases planning copy', activeStoppedVisibleCopy.captionText === 'Roro: Stopped.', JSON.stringify(activeStoppedVisibleCopy));
+    check('typed active-stop timeline is neutral', activeStoppedVisibleCopy.timelineText.includes('Run stopped') && !activeStoppedVisibleCopy.timelineText.includes('Run needs attention') && !activeStoppedVisibleCopy.timelineText.includes('aborted'), JSON.stringify(activeStoppedVisibleCopy));
 
     const answerTranscript = `${EXPECTED}. Answer with exactly that phrase and no extra words.`;
     const runEndCountBeforeAnswer = await evaluate(
@@ -890,6 +1068,141 @@ try {
       `document.getElementById('floating-ask')?.classList.contains('collapsed')`,
       5000,
       'Ask collapse after clearing stopped notice',
+    );
+
+    const activeStopTranscript = `${ACTIVE_STOP_TRANSCRIPT}. Start a coding task, wait until it has started, then Stop should abort the active executor.`;
+    const runEndCountBeforeActiveStop = await evaluate(
+      cdp,
+      `window.__roroFloatingLiveTurn?.runEnds?.length ?? 0`,
+      {},
+      'runEnd count before active-stop turn',
+    );
+    await evaluate(cdp, `document.getElementById('ask-pill').click()`, {}, 'active-stop Ask pill click');
+    await waitFor(
+      cdp,
+      `document.getElementById('floating-ask')?.classList.contains('expanded')`,
+      5000,
+      'active-stop Ask expansion',
+    );
+    const activeStopSubmit = await evaluate(cdp, `(() => {
+      const input = document.getElementById('ask-input');
+      const form = document.getElementById('floating-ask');
+      input.value = ${JSON.stringify(activeStopTranscript)};
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const notCanceled = form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      return { defaultPrevented: !notCanceled, value: input.value };
+    })()`, {}, 'active-stop Ask form submit');
+    check('active-stop Ask form submit listener prevents native navigation', activeStopSubmit.defaultPrevented === true, JSON.stringify(activeStopSubmit));
+    await waitFor(
+      cdp,
+      `document.getElementById('floating-ask')?.classList.contains('tasked')`,
+      5000,
+      'active-stop Ask tasked state',
+    );
+    check(
+      'active-stop Ask pill shows the submitted task',
+      await evaluate(cdp, `document.getElementById('ask-pill')?.textContent?.includes(${JSON.stringify(ACTIVE_STOP_TRANSCRIPT)})`, {}, 'active-stop tasked text check'),
+    );
+
+    const activeStopStarted = await waitFor(
+      cdp,
+      `(() => {
+        const events = window.__roroFloatingLiveTurn?.events ?? [];
+        const runStarted = events.find((event) =>
+          event?.kind === 'run.started' &&
+          event.threadId === 'fake-codex-active-stop-thread');
+        if (!runStarted) return false;
+        const scoped = events.filter((event) => event?.runId === runStarted.runId);
+        const startedFile = scoped.some((event) =>
+          event?.kind === 'file_change' &&
+          event.status === 'started' &&
+          event.files?.some((file) => file.path?.endsWith(${JSON.stringify(ACTIVE_STOP_FILE)})));
+        if (!startedFile) return false;
+        const stop = document.getElementById('floating-stop');
+        const stopRect = stop?.getBoundingClientRect();
+        return {
+          runId: runStarted.runId,
+          agent: runStarted.agent,
+          threadId: runStarted.threadId,
+          stopText: stop?.textContent ?? '',
+          stopArmed: stop?.classList.contains('armed') ?? false,
+          stopVisible: !!stopRect && stopRect.width > 0 && stopRect.height > 0,
+          events: scoped,
+        };
+      })()`,
+      10_000,
+      'active-stop run.started + file_change started',
+    );
+    check('active-stop turn emitted run.started from fake Codex', activeStopStarted.agent === 'codex' && activeStopStarted.threadId === 'fake-codex-active-stop-thread', JSON.stringify(activeStopStarted));
+    check('floating Stop remains visible and armed after active run.started', activeStopStarted.stopArmed === true && activeStopStarted.stopVisible === true && activeStopStarted.stopText === 'Stop', JSON.stringify(activeStopStarted));
+    await evaluate(cdp, `document.getElementById('floating-stop').click()`, {}, 'active-stop Stop click');
+    check('floating active-stop shows Stopping feedback after run.started', await evaluate(cdp, `document.getElementById('floating-stop')?.textContent === 'Stopping...'`, {}, 'active-stop Stop feedback check'));
+
+    const activeStopTurn = await waitFor(
+      cdp,
+      `(() => {
+        const probe = window.__roroFloatingLiveTurn;
+        const runId = ${JSON.stringify(activeStopStarted.runId)};
+        const runEnd = probe?.runEnds?.find((end) => end?.runId === runId);
+        if (!runEnd || (probe?.runEnds?.length ?? 0) <= ${JSON.stringify(runEndCountBeforeActiveStop)}) return false;
+        const events = probe.events.filter((event) => event?.runId === runId);
+        return { runEnd, events, allEvents: probe.events };
+      })()`,
+      TURN_TIMEOUT_MS,
+      'active-stop turn runEnd',
+    );
+    const activeStopEvents = Array.isArray(activeStopTurn.events) ? activeStopTurn.events : [];
+    const activeStopFileEvents = activeStopEvents.filter((event) => event?.kind === 'file_change' && event.files?.some((file) => file.path?.endsWith(ACTIVE_STOP_FILE)));
+    check('active-stop turn produced scoped events', activeStopEvents.length > 0, JSON.stringify(activeStopTurn.allEvents ?? []));
+    check('active-stop turn emitted exactly one run.started', activeStopEvents.filter((event) => event?.kind === 'run.started').length === 1, JSON.stringify(activeStopEvents));
+    check('active-stop turn emitted run.failed aborted', activeStopEvents.some((event) => event?.kind === 'run.failed' && event.error === 'aborted'), JSON.stringify(activeStopEvents));
+    check('active-stop turn never emitted run.completed', !activeStopEvents.some((event) => event?.kind === 'run.completed'), JSON.stringify(activeStopEvents));
+    check('active-stop turn never completed the file_change', !activeStopFileEvents.some((event) => event.status === 'completed'), JSON.stringify(activeStopEvents));
+    const activeStopMarker = await readFile(fakeCodexActiveStopMarkerFile, 'utf8')
+      .then((text) => JSON.parse(text))
+      .catch(() => null);
+    check('active-stop fake Codex recorded SIGTERM', activeStopMarker?.signal === 'SIGTERM', JSON.stringify(activeStopMarker));
+    check(
+      'active-stop fake Codex did not write the aborted file',
+      await readFile(join(projectDir, ACTIVE_STOP_FILE), 'utf8').then(() => false).catch(() => true),
+    );
+    const activeStopInvocations = await readFile(fakeCodexArgsFile, 'utf8')
+      .then((text) => JSON.parse(text))
+      .catch(() => []);
+    const activeExpectedCodexPrefix = ['exec', '--json', '--skip-git-repo-check', '-s', 'workspace-write', '-C', projectDir];
+    const activeStopArgs = Array.isArray(activeStopInvocations)
+      ? activeStopInvocations.map((invocation) => invocation?.args).filter(Array.isArray)
+      : [];
+    check(
+      'active-stop fake Codex received the executor CLI shape',
+      activeStopArgs.some((args) =>
+        JSON.stringify(args.slice(0, activeExpectedCodexPrefix.length)) === JSON.stringify(activeExpectedCodexPrefix) &&
+        args.at(-1)?.includes(ACTIVE_STOP_FILE)),
+      JSON.stringify(activeStopInvocations),
+    );
+    await waitFor(
+      cdp,
+      `document.getElementById('floating-ask')?.classList.contains('collapsed')`,
+      5000,
+      'active-stop Ask collapse after runEnd',
+    );
+    check('floating Ask is collapsed after active-stop runEnd', await evaluate(cdp, `document.getElementById('floating-ask')?.classList.contains('collapsed')`, {}, 'active-stop Ask collapse check'));
+    check('floating Stop disarms after active-stop turn', await evaluate(cdp, `!document.getElementById('floating-stop')?.classList.contains('armed')`, {}, 'active-stop Stop disarmed check'));
+    check('floating active-stop copy is neutral', await evaluate(cdp, `document.getElementById('floating-error')?.textContent === 'Stopped.' && document.getElementById('floating-error')?.classList.contains('neutral')`, {}, 'active-stop neutral copy check'));
+    check('floating active-stop copy is not a task problem', await evaluate(cdp, `!document.getElementById('floating-error')?.textContent?.includes('Task hit a problem')`, {}, 'active-stop copy wording check'));
+    await evaluate(cdp, `document.getElementById('ask-pill').click()`, {}, 'clear active-stop notice Ask pill click');
+    await waitFor(
+      cdp,
+      `document.getElementById('floating-ask')?.classList.contains('expanded') && document.getElementById('floating-error')?.hidden === true`,
+      5000,
+      'active-stop notice cleared on next summon',
+    );
+    await evaluate(cdp, `document.getElementById('ask-input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`, {}, 'clear active-stop notice Escape');
+    await waitFor(
+      cdp,
+      `document.getElementById('floating-ask')?.classList.contains('collapsed')`,
+      5000,
+      'Ask collapse after clearing active-stop notice',
     );
   }
 

@@ -10,6 +10,7 @@
 
 import type { CaptionSink } from './types';
 import type { ActionEvent } from '../../shared/events';
+import { isStoppedTerminalError } from '../../shared/stopped';
 import { actionableErrorCopy } from '../events/errorCopy';
 
 export class CaptionPanel implements CaptionSink {
@@ -82,6 +83,9 @@ function summarizeEvent(e: ActionEvent): { label: string; detail: string; status
     case 'run.completed':
       return { label: 'Run finished', detail: e.finalText ?? '', status: 'completed' };
     case 'run.failed':
+      if (isStoppedTerminalError(e.error)) {
+        return { label: 'Run stopped', detail: 'Stopped.' };
+      }
       return { label: 'Run needs attention', detail: actionableErrorCopy(e.error), status: 'failed' };
     default: {
       // Exhaustiveness guard: if a new ActionEvent kind is added, this errors.
