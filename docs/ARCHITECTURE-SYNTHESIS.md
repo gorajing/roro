@@ -1,18 +1,21 @@
 <!-- Generated 2026-06-22 by a 12-agent architecture-synthesis workflow (8 subsystem maps -> 3 lenses -> synthesis), grounded in the merged main. -->
-<!-- PARTIALLY SUPERSEDED (2026-06-24): the legacy Vapi cloud-voice path has since been DELETED — voice is now a single on-device stack (Silero VAD + whisper STT + Kokoro TTS). Navigation/window-open hardening (isSafeNavigation) has since landed. Treat HANDOFF.md as the living current-state doc; the §Voice and the navigation/voice-stack security findings below are kept as a point-in-time record. -->
+<!-- HISTORICAL / PARTIALLY SUPERSEDED: the legacy Vapi cloud-voice path has since been DELETED, navigation/window-open hardening has landed, memory2 replaced the older memory description, and the public strategy moved to job-first/trust-first. Treat HANDOFF.md and PUBLIC.md as the living current-state docs; this file is a point-in-time architecture synthesis. -->
 
 
-> **Status note (2026-06-24):** This is a point-in-time synthesis. Two findings below have since been addressed: the **legacy Vapi cloud-voice path was deleted** (voice is now one on-device stack), and **navigation hardening landed** (`isSafeNavigation`). See `HANDOFF.md` for current state.
+> **Status note:** This is a point-in-time synthesis, not the canonical current-state doc. Several findings below have
+> since been addressed or reframed: the legacy Vapi cloud-voice path was deleted, navigation hardening landed
+> (`isSafeNavigation`), memory2 became the durable memory spine, and the launch strategy is now job-first/trust-first. See
+> `HANDOFF.md` and `PUBLIC.md` for current state.
 
 # Roro — Architecture Synthesis
 
-*The canonical document. A new senior engineer should be able to read this and understand how the whole system fits together, where the invariants live in code, and which seams are load-bearing.*
+*Historical synthesis. A new senior engineer can still use this to understand many load-bearing seams, but must reconcile it against `HANDOFF.md`, `PUBLIC.md`, and the latest code before treating any claim as current.*
 
 ---
 
 ## 1. What Roro is
 
-Roro is an open-source, local-first Electron desktop pet — a procedurally-drawn 16-bit pixel cat — that drives a *real* coding agent (`codex` or `claude`) on the user's own API keys, remembers the user across sessions via an owner-scoped local vector store, and (later) talks. The product thesis is a deliberate inversion of the SaaS-agent model: instead of renting intelligence behind a subscription, Roro is a companion you *own* — it runs on your machine, uses your keys, persists a durable memory of you as its moat ("remembers-you-across-launches"), and is monetized by cosmetics (`-ro`-named pet variants) rather than recurring fees. The cat is not a mascot bolted onto a CLI; it is the legible surface of an agent loop where every reasoning token, file edit, and shell command animates the character in real time, and where a hard safety boundary guarantees that no spoken or typed word can ever approve a destructive command.
+Roro is an open-source, local-first Electron desktop coding companion — embodied as a procedurally-drawn 16-bit pixel cat — that drives a *real* coding agent (`codex` or `claude`) in the user's chosen repo, remembers the user across sessions via owner-scoped encrypted local memory, and (later) talks. The current product thesis is a deliberate inversion of the SaaS-agent model: instead of renting intelligence behind a subscription, Roro is a companion you *own* — it runs on your machine, uses your local models or optional keys, persists a durable memory of you as its moat ("remembers-you-across-launches"), and treats monetization layers like cosmetics as future validation hypotheses rather than the v0 wedge. The cat is not a mascot bolted onto a CLI; it is the legible surface of an agent loop where every reasoning token, file edit, and shell command animates the character in real time, and where a hard safety boundary guarantees that no spoken or typed word can ever approve a destructive command.
 
 ---
 

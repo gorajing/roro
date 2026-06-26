@@ -21,6 +21,8 @@ const macSigning = macSigningConfig(process.env);
 
 const config: ForgeConfig = {
   packagerConfig: {
+    appBundleId: 'com.jinchoi.roro',
+    appCategoryType: 'public.app-category.developer-tools',
     // asar bundles the app, but native LIBRARIES must stay on disk for dlopen. The unpack glob covers
     // sharp's libvips .dylib (a separate package the AutoUnpackNatives plugin's .node-only glob misses);
     // forge merges this with the plugin's .node glob so BOTH the addon and its .dylib land unpacked.
@@ -29,7 +31,7 @@ const config: ForgeConfig = {
     // touches the microphone without it crashes (pairs with the audio-input entitlement).
     extendInfo: {
       NSMicrophoneUsageDescription:
-        'Roro listens only while you hold to talk, and transcribes your speech on-device.',
+        'Roro listens only after you start Voice Mode, and transcribes your speech on-device.',
     },
     // macOS code signing + notarization — gated on the Apple creds being present in the environment
     // (no creds -> unsigned dev/CI build keeps working; partial creds -> fail loud). See src/build/macSigning.ts.

@@ -5,7 +5,13 @@
 // The canonical ActionEvent is the 11-kind union from src/shared/events.ts (the flat
 // electron-shell union in the BUILD_GUIDE prose is deleted per the central design decision).
 import type { ActionEvent } from '../shared/events';
-import type { MicStatus, TurnInput, WorkdirConfigMsg } from '../shared/ipc';
+import type {
+  MicStatus,
+  TurnInput,
+  WorkdirConfigMsg,
+  BootstrapStatusMsg,
+  ModelPullProgressMsg,
+} from '../shared/ipc';
 import type { Decision, DecideInput } from '../shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch } from '../shared/memory';
 
@@ -40,6 +46,16 @@ export interface CompanionBridge {
   onConfirmRequest(cb: (req: { runId: string; summary: string }) => void): () => void;
   /** Resolve a destructive-confirm — the ONLY approval path (never a spoken/typed word). */
   confirmResolve(runId: string, approved: boolean): Promise<void>;
+  /** Cursor position pushed by MAIN for gaze tracking. */
+  onCursor(cb: (target: { x: number; y: number }) => void): () => void;
+  /** Latest first-run brain/model readiness snapshot. */
+  getBootstrapStatus(): Promise<BootstrapStatusMsg | null>;
+  /** Open a MAIN-allowlisted external URL in the default browser. */
+  openExternal(url: string): Promise<void>;
+  /** Pull known local Ollama models; progress streams through onPullProgress. */
+  pullModels(models: string[]): Promise<void>;
+  /** Subscribe to local model-pull progress ticks; returns an unsubscribe fn. */
+  onPullProgress(cb: (p: ModelPullProgressMsg) => void): () => void;
   /** Current effective working repo source (env, persisted config, or unset). */
   getWorkdirConfig(): Promise<WorkdirConfigMsg>;
   /** Open the native project-folder picker and persist the chosen working repo. */
@@ -62,6 +78,10 @@ export interface MemoryBridge {
   // owner_id is injected MAIN-side from the device identity; the renderer never supplies it.
   remember(input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow>;
   recall(input: { query: string; k?: number; sessionId?: string }): Promise<MemoryMatch[]>;
+  /** Renderer-safe transparency view: active owner-scoped facts only. */
+  profile(): Promise<MemoryRow[]>;
+  /** Hard-delete one owner-scoped active fact by id. */
+  forget(id: string): Promise<void>;
 }
 
 export interface VisionBridge {

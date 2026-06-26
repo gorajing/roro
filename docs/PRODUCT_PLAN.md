@@ -1,5 +1,9 @@
 # Roro Product Plan
 
+> Status: long-term companion/pet vision, not the v0 launch plan. For current public-readiness and engineering truth,
+> trust [`../PUBLIC.md`](../PUBLIC.md) and [`../HANDOFF.md`](../HANDOFF.md). The v0 launch strategy is job-first:
+> coding work earns daily use, and the companion feeling emerges from memory and continuity.
+
 ## Thesis
 
 Roro should become the best desktop AI pet, not another productivity agent with
@@ -94,13 +98,13 @@ The correct default is gentle. Roro earns attention; he does not demand it.
 
 The user should understand Roro through simple pet-like gestures.
 
-Initial interaction map:
+Current interaction law:
 
-- click: start talking to Roro
-- right-click or shortcut: mute / unmute
-- drag: pick him up and move him
+- tap or hold the cat: pet / affection animation
+- drag the cat: move the floating window
+- right-click or `M`: mute / unmute
+- floating Ask pill or shortcut: give Roro a task
 - hover: Roro looks at the cursor
-- double click: pet / affection animation
 - long idle: Roro chooses an autonomous idle behavior
 
 Future interactions:
