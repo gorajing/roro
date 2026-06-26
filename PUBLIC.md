@@ -126,7 +126,8 @@ Phase 0 confirms memory persists signed.)*
 - ✅ Nudge DECIDE toward **clarify** on referent-less requests ("fix it", "make it better") via a deterministic pre-model
   trust gate plus prompt guidance. Live eval now has all clarify rows passing without concrete-task regressions.
 - ✅ Rewrite the README to lead with the **job + privacy promise** + a `RORO_WORKDIR` troubleshooting line.
-- A visible **"Roro is looking at your screen"** tell before the first vision capture (the creepy↔care line).
+- ✅ Show a visible **"Taking one screen snapshot."** status tell before the first on-demand vision capture (the
+  creepy↔care line, framed as a bounded snapshot instead of ongoing watching).
 
 **Exit:** a stranger's first turn lands a *correct* recalled fact or honestly asks to clarify (never a confident wrong
 guess); a wrong fact is fixable in-UI in one action; the README describes the job + privacy, not a feature list.
@@ -188,5 +189,5 @@ validation, provable in an afternoon.
 **Produce the first Developer-ID signed + notarized build**, then test it on a clean second Mac:
 `APPLE_TEAM_ID=GNG2M47BD7 APPLE_ID=<paid Apple ID> APPLE_PASSWORD=<app-specific password> npm run make`.
 Nothing else on the path can be *truly validated* until this build exists. In parallel, build Phase 2 from
-[`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md): correction, clarify, and README framing are landed; the
-screen capture tell remains.
+[`docs/PHASE2-TRUST-LOOP.md`](./docs/PHASE2-TRUST-LOOP.md): correction, clarify, README framing, and the bounded
+screen-capture tell are landed.

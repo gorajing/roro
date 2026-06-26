@@ -14,7 +14,7 @@
 - **The product thesis:** the magic moment is **recalled memory** — after a restart, offline, the cat weaves what it remembers about how you work into its response ("I'll set up the signup route *with testing in place*"). Voice/cuteness are the frame; the recalled sentence is the payload.
 - **The strategy (job-first):** lead with the **coding job** (it justifies the install + builds the daily habit); let *being known* be the emergent reward. **job → habit → memory → moat.** The moat is the per-user **encrypted on-device memory** + a **human-in-the-loop correction loop** (un-clonable, model-independent).
 - **State:** the engine is strong and proven. The **biggest launch blocker is fixed** — encrypted memory now works in a packaged build (was a forge signing bug, *not* the cert). The Phase-1 packaged workdir onboarding spine landed, and the first Phase-2 correction loop slice now lets users see, fix, verify, source-check, and forget remembered facts.
-- **Next:** finish the **Path to Public** in [`PUBLIC.md`](./PUBLIC.md). Cheapest next step is a **human confirmation** that a packaged build remembers across quit/relaunch; then produce the Developer-ID notarized build and finish the remaining Phase-2 trust work: the screen-capture tell.
+- **Next:** finish the **Path to Public** in [`PUBLIC.md`](./PUBLIC.md). Cheapest next step is a **human confirmation** that a packaged build remembers across quit/relaunch; then produce the Developer-ID notarized build and run the small-cohort first-run validation.
 
 ---
 
@@ -100,7 +100,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - Encrypted memory **works in a packaged build** — `codesign --verify` valid + `safeStorage` true + keychain item created, **no cert** (after #67).
 
 **Weak / failed / open:**
-- **3B behavioral-extraction ceiling (~40%).** Fix is the **correction loop** (model-independent), **not a bigger brain.** The first loop slice is exposed in the Memory panel (`profile` / `fixFact` / `verifyFact` / `factSource` / `forget`), and the remaining Phase-2 trust nudge is the screen-capture tell.
+- **3B behavioral-extraction ceiling (~40%).** Fix is the **correction loop** (model-independent), **not a bigger brain.** The first loop slice is exposed in the Memory panel (`profile` / `fixFact` / `verifyFact` / `factSource` / `forget`), and the vision path now gives a bounded one-snapshot status tell before capture.
 - **DECIDE clarify** — the first trust nudge is landed: referent-less requests (`fix it`, `make it better`, `update it`, `change the color`, `do that thing`) clarify before dispatch.
 - **Packaged-app config / onboarding spine landed in PR #69.** Phase-1 polish is now complete: icon, brain-readiness gate, and Project Settings/change-project entry.
 - **Ad-hoc cross-build memory** — the #67 fix makes a *single* build work, but ad-hoc `cdhash` changes per build → the keychain ACL doesn't survive a rebuild/update. **Developer-ID (stable team identity) is needed for update durability + a Gatekeeper-clean install.**
@@ -125,7 +125,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ## 7. The plan → see [`PUBLIC.md`](./PUBLIC.md) (authoritative)
 **Definition of done:** a stranger installs a signed build (no Gatekeeper warning), runnable without a terminal, and observes a *correct* recalled fact across a full quit/relaunch.
-**Phases:** **0** prove-the-moment-on-a-packaged-build (the `safeStorage` half is **DONE**; remaining = human confirmation + the Developer-ID build for Gatekeeper/durability) → **1** runnable-without-a-terminal (**landed**) → **2** trust (correction loop + clarify gate + README job/privacy framing landed; remaining = screen-capture tell) → **3** debut to a small cohort, measure week-2 reopen.
+**Phases:** **0** prove-the-moment-on-a-packaged-build (the `safeStorage` half is **DONE**; remaining = human confirmation + the Developer-ID build for Gatekeeper/durability) → **1** runnable-without-a-terminal (**landed**) → **2** trust (correction loop + clarify gate + README job/privacy framing + bounded screen-capture tell landed) → **3** debut to a small cohort, measure week-2 reopen.
 **Cut from v0:** voice, Live2D, cosmetics store, Windows/Linux, the cloud-brain option, ambient/clipboard.
 
 ---
@@ -133,7 +133,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 ## 8. What to do next (concrete first moves)
 1. **(Recommended, cheapest) Human-confirm Phase 0:** `npm run package`, short session, **fully quit**, relaunch the *same* build, watch it remember. Unblocked, no cert.
 2. **Produce the Developer-ID notarized build:** `APPLE_TEAM_ID=GNG2M47BD7` + `APPLE_ID` + app-specific `APPLE_PASSWORD` + `npm run make`, then validate install + memory recall on a clean second Mac.
-3. **Finish Phase 2 trust:** the Memory panel can now see/fix/verify/source/forget facts, referent-less requests clarify before dispatch, and the README leads with the job/privacy promise. Next is a visible first vision-capture tell.
+3. **Validate Phase 2 trust on real first turns:** the Memory panel can see/fix/verify/source/forget facts, referent-less requests clarify before dispatch, the README leads with the job/privacy promise, and screen reads show a bounded one-snapshot tell.
 
 ---
 

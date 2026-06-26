@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { subscribeActionEvents } from './actionEvents';
 import type { CharacterDriver, CaptionSink } from '../character/types';
 import type { ActionTimeline } from '../character/captions';
+import { SCREEN_CAPTURE_STATUS_TEXT, type ActionEvent } from '../../shared/events';
 
 // Under the local Ollama default, decide() streams CONTENT only — onReasoning never fires (Ollama
 // has no reasoning_content channel). The decide phase was therefore going dark (no thinking pose,
@@ -52,6 +53,27 @@ describe('subscribeActionEvents — local brain content stream', () => {
     const captions = { update: (who: string, text: string) => lines.push({ who, text }) } as unknown as CaptionSink;
     subscribeActionEvents({ character, timeline: noopTimeline, captions });
     contentCb!('{"narration":"on it","command":"run_agent"}');
+    expect(lines).toHaveLength(0);
+  });
+
+  it('surfaces the screen-capture tell as activity without treating it as assistant speech', () => {
+    let actionCb: ((e: ActionEvent) => void) | undefined;
+    w().companion = {
+      onActionEvent: (cb: (e: ActionEvent) => void) => {
+        actionCb = cb;
+        return () => {};
+      },
+    };
+    w().brain = {};
+    const { character, activities } = fakeCharacter();
+    const lines: Array<{ who: string; text: string }> = [];
+    const captions = { update: (who: string, text: string) => lines.push({ who, text }) } as unknown as CaptionSink;
+
+    subscribeActionEvents({ character, timeline: noopTimeline, captions });
+    if (!actionCb) throw new Error('missing action-event subscription');
+    actionCb({ kind: 'status', runId: 'r', text: SCREEN_CAPTURE_STATUS_TEXT, ts: 0 });
+
+    expect(activities).toContainEqual({ kind: 'read', text: SCREEN_CAPTURE_STATUS_TEXT });
     expect(lines).toHaveLength(0);
   });
 });

@@ -35,6 +35,7 @@ Roro makes the agent loop visible and social:
 - the brain's decide phase appears as the "thinking" layer
 - executor output becomes a normalized action timeline
 - local memory recall is surfaced as a visible memory beat
+- optional screen reads show a visible "Taking one screen snapshot." beat before capture
 - the same character layer can run inside the full app or as a transparent
   floating desktop agent
 

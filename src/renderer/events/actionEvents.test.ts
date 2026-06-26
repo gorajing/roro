@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { activityForEvent } from './actionEvents';
-import type { ActionEvent } from '../../shared/events';
+import { SCREEN_CAPTURE_STATUS_TEXT, type ActionEvent } from '../../shared/events';
 
 // The memory recall beat is a `status` event (C1's one union addition), not assistant text.
 const status = (text: string): ActionEvent => ({ kind: 'status', runId: 'r', text, ts: 0 });
@@ -18,5 +18,9 @@ describe('activityForEvent — memory beat cue', () => {
   it('ignores a non-memory status and plain assistant messages', () => {
     expect(activityForEvent(status('some other status'))).toBeNull();
     expect(activityForEvent(msg('qwen2.5:3b (local Ollama) is planning the task…'))).toBeNull();
+  });
+
+  it('shows the screen-capture tell as a reading activity cue', () => {
+    expect(activityForEvent(status(SCREEN_CAPTURE_STATUS_TEXT))).toEqual({ kind: 'read', text: SCREEN_CAPTURE_STATUS_TEXT });
   });
 });
