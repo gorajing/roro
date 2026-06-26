@@ -102,7 +102,9 @@ npm run verify:release-artifact:signed
 
 `verify:release-artifact:dmg` reuses the default release-artifact structure checks, then requires a versioned DMG under
 `out/make`, verifies it with `hdiutil`, mounts it read-only, and confirms the mounted image contains a structurally
-complete `Roro.app`.
+complete `Roro.app`. The default release-artifact checks intentionally fail if deferred-feature dev flags
+(`LIVE2D_MODEL_URL`, `RORO_FAKE_VOICE`, `RORO_*_VOICE`, `RORO_VOICE_PACK`, `RORO_WS5_STORE`) are set in
+the release shell.
 
 When Developer-ID signing is enabled, Forge notarizes/staples the `.app` during package and the `postMake` hook
 notarizes/staples the DMG container after it is created.

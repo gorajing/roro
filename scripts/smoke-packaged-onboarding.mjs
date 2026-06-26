@@ -16,6 +16,7 @@ import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { stripV0DeferredEnv } from './v0-deferred-env.mjs';
 
 const APP_BIN = resolve(
   process.env.RORO_PACKAGED_APP || 'out/Roro-darwin-arm64/Roro.app/Contents/MacOS/Roro',
@@ -56,7 +57,7 @@ function smokeEnv(home, port) {
   delete env.RORO_ALLOW_CWD;
   delete env.RORO_DB_DIR;
   delete env.DOTENV_CONFIG_PATH;
-  return env;
+  return stripV0DeferredEnv(env);
 }
 
 function launchApp({ home, cwd, userDataDir, port, label }) {
@@ -210,22 +211,26 @@ async function inspectApp({ home, cwd, userDataDir, label }) {
           rect.width > 0 && rect.height > 0;
       };
       return {
-      title: document.title,
-      href: location.href,
-      bodyText: document.body.innerText.slice(0, 800),
-      hasTopbar: !!document.querySelector('#topbar'),
-      hasOverlay: !!document.querySelector('#overlay'),
-      hasPromptForm: !!document.querySelector('#prompt-form'),
-      hasWorkdirBanner: !!document.querySelector('#workdir-banner'),
-      workdirHidden: document.querySelector('#workdir-banner')?.hidden ?? null,
-      workdirText: document.querySelector('#workdir-banner')?.textContent ?? '',
-      workdirBannerVisible: visible('#workdir-banner'),
-      workdirChooseVisible: visible('#workdir-choose'),
-      hasProjectSettings: !!document.querySelector('#project-settings-toggle'),
-      projectSettingsVisible: visible('#project-settings-toggle'),
-      bridgeType: typeof window.companion?.getWorkdirConfig,
-      bg: getComputedStyle(document.body).backgroundColor,
-    }})()`);
+        title: document.title,
+        href: location.href,
+        bodyText: document.body.innerText.slice(0, 800),
+        hasTopbar: !!document.querySelector('#topbar'),
+        hasOverlay: !!document.querySelector('#overlay'),
+        hasPromptForm: !!document.querySelector('#prompt-form'),
+        hasWorkdirBanner: !!document.querySelector('#workdir-banner'),
+        workdirHidden: document.querySelector('#workdir-banner')?.hidden ?? null,
+        workdirText: document.querySelector('#workdir-banner')?.textContent ?? '',
+        workdirBannerVisible: visible('#workdir-banner'),
+        workdirChooseVisible: visible('#workdir-choose'),
+        hasProjectSettings: !!document.querySelector('#project-settings-toggle'),
+        projectSettingsVisible: visible('#project-settings-toggle'),
+        voiceModeVisible: visible('#voice-mode-btn'),
+        muteVisible: visible('#mute-btn'),
+        cosmeticsVisible: visible('#cosmetics-toggle'),
+        roroVoiceType: typeof window.__roroVoice,
+        bridgeType: typeof window.companion?.getWorkdirConfig,
+        bg: getComputedStyle(document.body).backgroundColor,
+      }})()`);
     const projectSettings = await evaluate(
       `new Promise((resolve) => {
         const visible = (selector) => {
@@ -308,6 +313,10 @@ try {
   check('#workdir-banner asks for a project', /choose a project/i.test(fresh.dom.workdirText));
   check('#project-settings-toggle exists', fresh.dom.hasProjectSettings);
   check('#project-settings-toggle is visibly rendered', fresh.dom.projectSettingsVisible);
+  check('Voice Mode control is hidden in default v0 package', fresh.dom.voiceModeVisible === false);
+  check('Mute control is hidden in default v0 package', fresh.dom.muteVisible === false);
+  check('cosmetics fake-door is absent in default v0 package', fresh.dom.cosmeticsVisible === false);
+  check('__roroVoice dev handle is absent in default v0 package', fresh.dom.roroVoiceType === 'undefined');
   check('fresh Settings panel opens', fresh.projectSettings.exists && fresh.projectSettings.panelHidden === false);
   check('fresh Settings reports no project', /no project selected/i.test(fresh.projectSettings.current));
   check('getWorkdirConfig bridge exists', fresh.dom.bridgeType === 'function');

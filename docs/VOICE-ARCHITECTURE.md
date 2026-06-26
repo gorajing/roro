@@ -1,5 +1,9 @@
 # Roro On-Device Voice — Architecture & Build Plan (plan of record)
 
+> **Current v0 status:** voice is an internal dev seam, not a public-release surface.
+> Default typed-only builds hide Voice Mode/Mute, release verification rejects the
+> voice dev flags, and `PUBLIC.md` / `HANDOFF.md` are authoritative for v0 scope.
+>
 > The on-device voice adapter replaces the Vapi cloud facade with a local pipeline. The **seam, FSM,
 > turn-router, mic IPC, and lipsync are already built + tested** (`src/renderer/voice/*`, Phase D / WS3);
 > this plan adds the real engine + the two missing glue pieces, behind the existing `available` gate.

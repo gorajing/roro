@@ -13,10 +13,12 @@ import { decideSummonAction } from './summon';
 import { withCrossOriginIsolation } from './crossOriginIsolation';
 import { isSafeNavigation } from './navigation';
 import { sendToWindow } from './safeSend';
+import { voiceRuntimeEnabled } from './voiceFlags';
 
 const SUMMON_ACCELERATOR = 'CommandOrControl+Shift+Space';
 const MUTE_ACCELERATOR = 'CommandOrControl+Shift+M';
 const FLOATING_WINDOW_FLAG = process.env.RORO_FLOATING_WINDOW === '1';
+const VOICE_RUNTIME_ENABLED = voiceRuntimeEnabled(process.env);
 const FLOATING_WINDOW_SIZE = {
   width: 380,
   height: 400,
@@ -28,7 +30,7 @@ export function createWindow(): BrowserWindow {
   // Only non-secret values cross into the renderer; private keys stay in MAIN. Passed via additionalArguments
   // (a single argv element — these values contain no spaces).
   const roroCfg = {
-    modelUrl: process.env.LIVE2D_MODEL_URL ?? '/live2d/model.model3.json',
+    modelUrl: process.env.LIVE2D_MODEL_URL ?? '',
     floatingWindow: FLOATING_WINDOW_FLAG,
     // On-device voice dev flags — the renderer's only activation path (config.ts reads window.RORO_CFG, and
     // its viteEnv() is a deliberate no-op). RORO_STT_VOICE=1 npm start → real VAD + whisper STT; RORO_VAD_VOICE
@@ -166,15 +168,17 @@ export function registerSummonShortcut(): void {
     );
   }
 
-  const muteOk = globalShortcut.register(MUTE_ACCELERATOR, () => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      sendToWindow(win, CH.micToggleMute);
+  if (VOICE_RUNTIME_ENABLED) {
+    const muteOk = globalShortcut.register(MUTE_ACCELERATOR, () => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        sendToWindow(win, CH.micToggleMute);
+      }
+    });
+    if (!muteOk) {
+      console.error(
+        `[main] globalShortcut '${MUTE_ACCELERATOR}' registration failed (already taken)`,
+      );
     }
-  });
-  if (!muteOk) {
-    console.error(
-      `[main] globalShortcut '${MUTE_ACCELERATOR}' registration failed (already taken)`,
-    );
   }
 }
 

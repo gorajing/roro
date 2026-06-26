@@ -41,6 +41,10 @@ export interface RoroConfig {
   cosmeticsStore: boolean;
 }
 
+export function voiceSurfaceEnabled(config: Pick<RoroConfig, 'fakeVoice' | 'vadVoice' | 'sttVoice' | 'ttsVoice'>): boolean {
+  return config.fakeVoice || config.vadVoice || config.sttVoice || config.ttsVoice;
+}
+
 function viteEnv(_key: string): string | undefined {
   // Vite's import.meta.env is omitted here so the shared (commonjs) tsconfig type-checks;
   // inject runtime config via window.RORO_CFG instead (set in index.html / preload).
@@ -68,7 +72,7 @@ function readBool(field: keyof RoroConfig, viteKey: string, fallback: boolean): 
 
 export function loadConfig(): RoroConfig {
   return {
-    modelUrl: read('modelUrl', 'VITE_LIVE2D_MODEL_URL', './live2d/Haru.model3.json'),
+    modelUrl: read('modelUrl', 'VITE_LIVE2D_MODEL_URL', ''),
     floatingWindow: readBool('floatingWindow', 'VITE_RORO_FLOATING_WINDOW', false),
     fakeVoice: readBool('fakeVoice', 'VITE_RORO_FAKE_VOICE', false),
     vadVoice: readBool('vadVoice', 'VITE_RORO_VAD_VOICE', false),

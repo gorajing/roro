@@ -1,21 +1,21 @@
 # Live2D assets (drop-in)
 
-This folder is served verbatim at the web root (`/live2d/...`) by Vite/Electron
-Forge. **Nothing here is bundled** — the files are fetched at runtime by the
-renderer. Roro boots and shows the built-in pixel cat when these assets are
-missing, so you can develop Voice + the event pipeline before a model exists.
+This folder is served at the web root (`/live2d/...`) by Vite and by internal
+Electron packages that explicitly include Live2D. The files are fetched at
+runtime by the renderer. Roro boots and shows the built-in pixel cat when these
+assets are missing, so you can develop Voice + the event pipeline before a model
+exists.
+
+> **Current v0 status:** Live2D is internal dev-only. Default release packages
+> exclude this folder, and release verification rejects `LIVE2D_MODEL_URL`.
 
 To swap Roro to a Live2D avatar, drop in two things:
 
 ## 1. Cubism Core runtime (required for ANY Live2D model)
 
 Cubism Core is **not on npm** and **cannot be bundled** (it attaches a global
-`window.Live2DCubismCore`). It is loaded by a classic `<script>` tag in
-`index.html` BEFORE the renderer bundle:
-
-```html
-<script src="/live2d/live2dcubismcore.min.js"></script>
-```
+`window.Live2DCubismCore`). Roro loads it dynamically from this folder only when
+`LIVE2D_MODEL_URL` / `window.RORO_CFG.modelUrl` is set.
 
 Download it once into this folder:
 
@@ -34,8 +34,8 @@ Drop the WHOLE model folder here. The default path the renderer looks for is:
 public/live2d/Haru.model3.json   (with its textures/, motions/, *.exp3.json, *.physics3.json alongside)
 ```
 
-Override the path via `window.RORO_CFG.modelUrl` or the
-`VITE_LIVE2D_MODEL_URL` build env. Example using the Live2D sample "Haru":
+Set the path via `LIVE2D_MODEL_URL` or `window.RORO_CFG.modelUrl`. Example using
+the Live2D sample "Haru":
 
 ```bash
 # from a checkout of Live2D/CubismWebSamples:
@@ -50,9 +50,10 @@ transparent model with no thrown error. Confirm `Haru.model3.json` lists
 
 `src/renderer/character/avatar.ts`:
 
-1. Checks `typeof window.Live2DCubismCore === 'object'` (core loaded?).
-2. `fetch(modelUrl, { method: 'HEAD' })` — does the model file exist?
-3. If both pass, `Live2DModel.from(modelUrl)`. On any failure it logs a warning
+1. Skips Live2D entirely when no `modelUrl` is configured.
+2. Dynamically loads `/live2d/live2dcubismcore.min.js`.
+3. `fetch(modelUrl, { method: 'HEAD' })` — does the model file exist?
+4. If both pass, `Live2DModel.from(modelUrl)`. On any failure it logs a warning
    and renders the placeholder.
 
 The `CharacterDriver` facade (`setState` / `setMouthOpen` / `setTalking` /

@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { listPackage } from '@electron/asar';
+import { enabledV0DeferredEnv } from './v0-deferred-env.mjs';
 
 const args = new Map();
 for (let i = 2; i < process.argv.length; i += 1) {
@@ -30,13 +31,10 @@ if (!['default', 'signed'].includes(mode)) {
   process.exit(1);
 }
 
-if (
-  process.env.RORO_VAD_VOICE === '1' ||
-  process.env.RORO_STT_VOICE === '1' ||
-  process.env.RORO_TTS_VOICE === '1'
-) {
+const forbiddenReleaseFlags = enabledV0DeferredEnv(process.env);
+if (forbiddenReleaseFlags.length > 0) {
   console.error('[verify] default release artifact verification requires a typed-only v0 build.');
-  console.error('[verify] unset RORO_VAD_VOICE/RORO_STT_VOICE/RORO_TTS_VOICE, rebuild, and rerun.');
+  console.error(`[verify] unset ${forbiddenReleaseFlags.join('/')}, rebuild, and rerun.`);
   process.exit(1);
 }
 
@@ -83,9 +81,18 @@ const forbidden = [
     prefix: '/.vite/renderer/main_window/models',
   },
   {
+    label: 'Live2D model/runtime assets',
+    prefix: '/.vite/renderer/main_window/live2d',
+  },
+  {
     label: 'voice dynamic chunks',
     prefix: '/.vite/renderer/main_window/assets/',
     pattern: /\/(?:sileroVad|whisperTranscribe|kokoroSynthesize|kokoroVoiceEngine|onnxRuntimeEnv)-.*\.js$|\/ort-wasm-simd-threaded\.jsep-.*\.wasm$/,
+  },
+  {
+    label: 'Live2D dynamic chunks',
+    prefix: '/.vite/renderer/main_window/assets/',
+    pattern: /\/[^/]*(?:live2d|cubism)[^/]*$/i,
   },
 ];
 

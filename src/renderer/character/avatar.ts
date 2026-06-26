@@ -1,12 +1,9 @@
 // src/renderer/character/avatar.ts — the canvas/mount layer.
 //
-// createAvatar() tries to load a real Cubism 4 Live2D model from the public dir.
-// If the model file is absent (the repo ships NO model yet) OR Cubism Core failed
-// to load OR Live2DModel.from() throws, we fall back to a PLACEHOLDER: a
-// 16-bit pixel cat whose expression is driven by avatar state. Either way the
-// returned `Avatar` exposes the SAME shape, so the state machine,
-// lip-sync, and the CharacterDriver facade are identical for both — Voice/event
-// code never knows whether a model is present.
+// createAvatar() renders Roro's procedural pixel cat by default. Internal builds
+// can opt into a Cubism 4 Live2D model by supplying modelUrl; if the runtime or
+// model fails to load, we fall back to the same placeholder shape so the state
+// machine, lip-sync, and CharacterDriver facade stay identical.
 
 import '@pixi/unsafe-eval';
 import * as PIXI from 'pixi.js';
@@ -74,6 +71,7 @@ export interface Placeholder {
 }
 
 async function modelExists(url: string): Promise<boolean> {
+  if (!url.trim()) return false;
   try {
     // HEAD avoids downloading the model just to probe. Some static servers don't
     // support HEAD; fall back to a ranged GET on failure.
@@ -88,6 +86,19 @@ async function modelExists(url: string): Promise<boolean> {
     // Network/path error => treat as absent so we render the placeholder.
     return false;
   }
+}
+
+async function loadLive2DCore(): Promise<boolean> {
+  if (typeof (window as unknown as { Live2DCubismCore?: unknown }).Live2DCubismCore !== 'undefined') return true;
+
+  return new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = '/live2d/live2dcubismcore.min.js';
+    script.async = true;
+    script.onload = () => resolve(typeof (window as unknown as { Live2DCubismCore?: unknown }).Live2DCubismCore !== 'undefined');
+    script.onerror = () => resolve(false);
+    document.head.append(script);
+  });
 }
 
 async function loadLive2D(): Promise<Live2DModule | null> {
@@ -775,8 +786,9 @@ function fitModel(app: PIXI.Application, model: Live2DModelType) {
 }
 
 /**
- * Mount the avatar onto `canvas`. Loads a real Live2D model when `modelUrl`
- * resolves; otherwise renders the placeholder. Never throws on a missing model.
+ * Mount the avatar onto `canvas`. Loads a real Live2D model only when `modelUrl`
+ * is explicitly provided and resolves; otherwise renders the placeholder.
+ * Never throws on a missing model.
  */
 export async function createAvatar(canvas: HTMLCanvasElement, modelUrl: string): Promise<Avatar> {
   const app = new PIXI.Application({
@@ -788,7 +800,8 @@ export async function createAvatar(canvas: HTMLCanvasElement, modelUrl: string):
     resolution: window.devicePixelRatio || 1,
   });
 
-  const coreLoaded = typeof (window as unknown as { Live2DCubismCore?: unknown }).Live2DCubismCore !== 'undefined';
+  const wantsLive2D = modelUrl.trim().length > 0;
+  const coreLoaded = wantsLive2D ? await loadLive2DCore() : false;
   const present = coreLoaded && (await modelExists(modelUrl));
 
   if (present) {
@@ -807,9 +820,9 @@ export async function createAvatar(canvas: HTMLCanvasElement, modelUrl: string):
       // Fall through to the placeholder rather than leaving a blank canvas.
       console.warn('[avatar] Live2D model failed to load, using placeholder:', err);
     }
-  } else if (!coreLoaded) {
-    console.warn('[avatar] Live2DCubismCore not loaded; using placeholder. See public/live2d/README.');
-  } else {
+  } else if (wantsLive2D && !coreLoaded) {
+    console.warn('[avatar] Live2DCubismCore not loaded; using pixel cat.');
+  } else if (wantsLive2D) {
     console.warn('[avatar] no model at', modelUrl, '— using placeholder.');
   }
 

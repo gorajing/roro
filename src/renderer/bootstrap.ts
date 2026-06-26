@@ -10,7 +10,7 @@
 // on-device voice path (Silero VAD + whisper STT + Kokoro TTS) mounts only behind
 // RORO_*_VOICE flags. model.speak()/AudioContext still need a user gesture to unlock.
 
-import { loadConfig } from './config';
+import { loadConfig, voiceSurfaceEnabled } from './config';
 import { sessionId } from './session';
 import { createCharacter } from './character/driver';
 import { CaptionPanel, ActionTimeline } from './character/captions';
@@ -77,6 +77,7 @@ async function buildKokoroSpeaker(
 
 export async function bootstrap(): Promise<void> {
   const config = loadConfig();
+  const voiceEnabled = voiceSurfaceEnabled(config);
   document.documentElement.classList.toggle('floating-window', config.floatingWindow);
   document.body.classList.toggle('floating-window', config.floatingWindow);
 
@@ -88,7 +89,7 @@ export async function bootstrap(): Promise<void> {
 
   // 1 + 2: character (resolves even with no model — placeholder path).
   const { driver, hasModel } = await createCharacter(canvas, config.modelUrl);
-  setStatus(hasModel ? 'Model loaded.' : 'No Live2D model — placeholder mode. See public/live2d/README.');
+  setStatus(hasModel ? 'Character model loaded.' : 'Roro is ready.');
 
   // 3: captions + timeline + executor/brain subscriptions.
   const captions = new CaptionPanel();
@@ -170,6 +171,8 @@ export async function bootstrap(): Promise<void> {
   // on-device voice path reads. Start/End-call were the legacy Vapi cloud surface and are gone.
   const muteBtn = el<HTMLButtonElement>('mute-btn');
   const voiceModeBtn = el<HTMLButtonElement>('voice-mode-btn');
+  if (voiceModeBtn) voiceModeBtn.hidden = !voiceEnabled;
+  if (muteBtn) muteBtn.hidden = !voiceEnabled;
 
   let micMuted = false;
   // Set by the local-voice block (below) when the on-device path is mounted, so the mic-mute toggle
@@ -191,34 +194,41 @@ export async function bootstrap(): Promise<void> {
 
   if (config.floatingWindow) {
     canvas.setAttribute('role', 'button');
-    canvas.setAttribute('aria-label', 'Start talking to Roro');
-    canvas.title = 'Click or hold to pet Roro. Drag to move. Right-click or M to mute.';
+    canvas.setAttribute('aria-label', 'Pet or move Roro');
+    canvas.title = voiceEnabled
+      ? 'Click or hold to pet Roro. Drag to move. Right-click or M to mute.'
+      : 'Click or hold to pet Roro. Drag to move.';
     canvas.style.cursor = 'grab';
     // The cat's body carries ONLY affection + move (interaction spec §4.1). Talk
     // is no longer a body gesture — it moves to the menu/console (Phase B/C).
     installFloatingWindowGesture(canvas, {
       onPet: () => { driver.poke?.(); driver.pet?.(); },
     });
-    canvas.addEventListener('contextmenu', (ev) => {
-      ev.preventDefault();
-      setMicMuted(!micMuted);
-    });
-    document.addEventListener('keydown', (ev) => {
-      if (ev.key.toLowerCase() !== 'm' || ev.metaKey || ev.ctrlKey || ev.altKey) return;
-      ev.preventDefault();
-      setMicMuted(!micMuted);
-    });
+    if (voiceEnabled) {
+      canvas.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        setMicMuted(!micMuted);
+      });
+      document.addEventListener('keydown', (ev) => {
+        if (ev.key.toLowerCase() !== 'm' || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+        ev.preventDefault();
+        setMicMuted(!micMuted);
+      });
+    }
   }
 
   getCompanion()?.onMicToggleMute?.(() => {
+    if (!voiceEnabled) return;
     setMicMuted(!micMuted);
   });
 
   muteBtn?.addEventListener('click', () => {
+    if (!voiceEnabled) return;
     setMicMuted(!micMuted);
   });
 
   voiceModeBtn?.addEventListener('click', () => {
+    if (!voiceEnabled) return;
     if (voiceToggle) voiceToggle();
     else setStatus('Voice is not part of this build yet — the typed coding companion is ready.');
   });
@@ -334,7 +344,7 @@ export async function bootstrap(): Promise<void> {
 
   // The ON-DEVICE voice path (mouth-not-brain), behind dev flags until the full whisper/Silero/Kokoro
   // engine lands. Default (all flags off) mounts no voice surface — only the typed prompt path is live.
-  if (config.sttVoice || config.vadVoice || config.ttsVoice || config.fakeVoice) {
+  if (voiceEnabled) {
     const c = getCompanion();
     // The on-device engine is composed from ears + transcript + mouth, each behind its own flag:
     //   vadVoice → REAL Silero VAD (Phase 1: ear-perk); sttVoice → + whisper STT (Phase 2: transcript);

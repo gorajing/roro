@@ -71,7 +71,7 @@ be mounted later behind the same interface.
 
 ```mermaid
 flowchart LR
-  user["User task<br/>voice or text"] --> renderer["Renderer<br/>cat, captions, controls"]
+  user["User task<br/>text by default"] --> renderer["Renderer<br/>cat, captions, controls"]
   renderer --> main["Electron main<br/>typed IPC"]
   main --> memoryRecall["PGlite recall<br/>pgvector (local)"]
   memoryRecall --> brain["Local Ollama brain<br/>qwen2.5 decision"]
@@ -89,7 +89,7 @@ flowchart LR
 | Brain | local Ollama reasoning/vision/embeddings | [`src/brain/`](src/brain/) |
 | Memory | encrypted files-as-truth + PGlite-HNSW hybrid recall (local, owner-scoped) | [`src/memory2/`](src/memory2/) |
 | Executor | Codex and Claude stream adapters | [`src/executor/`](src/executor/) |
-| Voice | on-device VAD + STT + TTS (Silero / whisper / Kokoro), behind dev flags | [`src/renderer/voice/`](src/renderer/voice/) |
+| Voice | internal on-device VAD + STT + TTS seam (Silero / whisper / Kokoro), hidden behind dev flags and cut from v0 | [`src/renderer/voice/`](src/renderer/voice/) |
 | Shared contracts | typed IPC, action events, avatar states | [`src/shared/`](src/shared/) |
 
 The important boundary is the canonical action-event vocabulary in
@@ -130,9 +130,11 @@ RORO_FLOATING_WINDOW=1 npm start
 ```
 
 The floating mode opens a transparent, frameless 380x400 window that hides all
-controls and shows only the cat. **Tap or hold the cat to pet it; drag to move it;
-right-click to mute.** The cat's body carries only affection + move — talk and
-tasking live off the body (see the interaction design spec at
+controls and shows only the cat. **Tap or hold the cat to pet it; drag to move it.**
+When an explicit voice dev flag is enabled, the same surface also reveals the
+Voice Mode/Mute controls and the right-click/M mute affordance. The cat's body
+carries only affection + move — talk and tasking live off the body (see the
+interaction design spec at
 [`docs/superpowers/specs/2026-06-20-nero-interaction-design.md`](docs/superpowers/specs/2026-06-20-nero-interaction-design.md)).
 The floating window stays above normal windows and across macOS Spaces,
 including full-screen apps. The floating Ask pill is the compact task surface;
@@ -163,7 +165,7 @@ ANTHROPIC_API_KEY=...           # optional, only for the Claude executor
 
 Memory is local PGlite + pgvector under the app's userData dir (`RORO_DB_DIR` to
 override) — no external database. See [`RUN.md`](RUN.md) for the on-device voice
-flags, macOS permissions, and the full live-run checklist.
+dev flags, macOS permissions, and the full live-run checklist.
 
 > Migrating from an older checkout: the internal env prefix was renamed
 > `COMPANION_*` → `RORO_*` (and `VITE_COMPANION_FLOATING_WINDOW` →
@@ -210,14 +212,14 @@ What is working:
   live daemon
 - **local PGlite + pgvector memory** (owner-scoped, survives restarts)
 - Codex and Claude executor adapters behind one event stream
-- typed text path + the on-device voice control core/seam
+- typed text path + the on-device voice control core/seam hidden behind dev flags
 
 What needs extra setup or a real device:
 
-- on-device voice (Silero VAD + whisper STT + Kokoro TTS) behind the `RORO_*_VOICE`
-  dev flags + microphone permission — fully local, no cloud/model keys
+- on-device voice (Silero VAD + whisper STT + Kokoro TTS) behind internal
+  `RORO_*_VOICE` dev flags + microphone permission — fully local, no cloud/model keys
 - screen capture permission for vision (the 7B vision model needs substantial RAM)
-- optional Live2D model swap
+- internal optional Live2D model swap
 
 ## Project Shape
 
