@@ -21,6 +21,7 @@ import { mountForgetPanel } from './memory/forgetPanel';
 import { mountProjectSettings } from './settings/projectSettings';
 import { mountCosmeticsStore } from './cosmetics/cosmeticsStore';
 import { mountBootstrapBanner } from './bootstrap/bootstrapBanner';
+import { mountMemoryHealthBanner } from './bootstrap/memoryHealthBanner';
 import { createBrainReadinessGate } from './bootstrap/brainReadiness';
 import { mountWorkdirBanner } from './bootstrap/workdirBanner';
 import { mountTypedPrompt } from './bootstrap/typedPrompt';
@@ -122,6 +123,10 @@ export async function bootstrap(): Promise<void> {
       const unsub = getCompanion()?.onPullProgress?.(onProgress) ?? (() => undefined);
       return (getCompanion()?.pullModels?.(models) ?? Promise.resolve()).finally(unsub);
     },
+  });
+  mountMemoryHealthBanner({
+    subscribe: (cb) => getCompanion()?.onMemoryHealthStatus?.((s) => cb(s)) ?? (() => undefined),
+    getStatus: () => getCompanion()?.getMemoryHealthStatus?.() ?? Promise.resolve(null),
   });
 
   // Phase 1 onboarding spine: a packaged app has no .env, so the working repo must be chosen once and

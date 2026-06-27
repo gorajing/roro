@@ -45,6 +45,7 @@ vi.mock('../brain/ollama', () => ({
 
 import { CH } from '../shared/ipc';
 import { registerIpcHandlers } from './ipc';
+import { setMemoryHealthStatus } from './memoryHealthStatusStore';
 
 function handler<T extends (...args: never[]) => unknown>(channel: string): T {
   const fn = h.handlers.get(channel);
@@ -110,6 +111,7 @@ describe('memory IPC trust loop', () => {
   afterEach(() => {
     if (savedDebugBridge === undefined) delete process.env.RORO_DEBUG_BRIDGE;
     else process.env.RORO_DEBUG_BRIDGE = savedDebugBridge;
+    setMemoryHealthStatus(null);
   });
 
   it('memory:profile injects the MAIN owner and returns the renderer-safe view', async () => {
@@ -163,6 +165,20 @@ describe('memory IPC trust loop', () => {
     await handler<(event: unknown, id: string) => Promise<void>>(CH.memoryForget)({}, 'fact-1');
 
     expect(memory.forgetFact).toHaveBeenCalledWith('owner-test', 'fact-1');
+  });
+
+  it('memory health status is fetchable outside the debug bridge', async () => {
+    const status = {
+      state: 'degraded' as const,
+      checkedAt: 123,
+      reason: 'keychain-unavailable' as const,
+      message: 'Local memory is paused.',
+    };
+    setMemoryHealthStatus(status);
+
+    expect(h.handlers.has(CH.memoryHealthStatusGet)).toBe(true);
+    expect(h.handlers.has(CH.memoryRecall)).toBe(false);
+    expect(await handler<() => unknown>(CH.memoryHealthStatusGet)()).toEqual(status);
   });
 
   it('memory:remember still rejects renderer-authored facts before loading memory', async () => {

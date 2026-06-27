@@ -22,15 +22,17 @@
 //   CH.memoryFixFact      -> memory.fixFact()                  (main-owned trust loop)
 //   CH.memoryVerifyFact   -> memory.verifyFact()               (main-owned trust loop)
 //   CH.memoryFactSource   -> memory.factSource()               (main-owned trust loop)
+//   CH.memoryHealthStatusGet -> current memory/keychain health (non-blocking renderer diagnostic)
 //   CH.visionAsk          -> vision.askScreen()                (sibling: src/vision; debug bridge only)
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { OpenDialogOptions } from 'electron';
 import { CH } from '../shared/ipc';
-import type { MicStatus, TurnInput, ModelPullProgressMsg, WorkdirConfigMsg } from '../shared/ipc';
+import type { MicStatus, TurnInput, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg } from '../shared/ipc';
 import { ollamaTags, pullModel } from '../brain/ollama';
 import { bootstrapStatusFor, DEFAULT_MODEL_SPECS } from './bootstrapPlan';
 import { isAllowedExternalUrl } from './openExternalGuard';
 import { setBootstrapStatus } from './bootstrapStatusStore';
+import { getMemoryHealthStatus } from './memoryHealthStatusStore';
 import type { Decision, DecideInput } from '../shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch, ProfileFactSourceView, ProfileFactView } from '../shared/memory';
 import { assertRendererMemoryKind } from '../shared/memory';
@@ -198,6 +200,7 @@ export function registerIpcHandlers(): void {
     const memory = await loadMemory();
     await memory.forgetFact(getOwnerId(), id);
   });
+  ipcMain.handle(CH.memoryHealthStatusGet, (): MemoryHealthStatusMsg | null => getMemoryHealthStatus());
 
   // Open an external URL in the default browser — STRICTLY allowlisted (https + ollama.com only, see
   // isAllowedExternalUrl) so a renderer can't turn this into an arbitrary shell.openExternal (file://,

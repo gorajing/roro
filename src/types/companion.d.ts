@@ -10,6 +10,7 @@ import type {
   TurnInput,
   WorkdirConfigMsg,
   BootstrapStatusMsg,
+  MemoryHealthStatusMsg,
   ModelPullProgressMsg,
 } from '../shared/ipc';
 import type { Decision, DecideInput } from '../shared/brain';
@@ -66,6 +67,10 @@ export interface CompanionBridge {
   getWorkdirConfig(): Promise<WorkdirConfigMsg>;
   /** Open the native project-folder picker and persist the chosen working repo. */
   chooseWorkdir(): Promise<WorkdirConfigMsg>;
+  /** Subscribe to non-blocking local memory/keychain health diagnostics; returns unsubscribe. */
+  onMemoryHealthStatus(cb: (s: MemoryHealthStatusMsg) => void): () => void;
+  /** Latest local memory/keychain health snapshot. */
+  getMemoryHealthStatus(): Promise<MemoryHealthStatusMsg | null>;
 }
 
 export type AgentKindArg = 'codex' | 'claude';

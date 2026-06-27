@@ -28,6 +28,29 @@ Run this after changes to:
 - `scripts/smoke-packaged-onboarding.mjs`
 - packaged startup/signing/fuse behavior in `forge.config.ts` or `src/build/macSigning.ts`
 
+## Memory/keychain health diagnostic
+
+```sh
+npx vitest run --no-file-parallelism src/main/memoryHealthStatusStore.test.ts src/main/memoryHealthStartup.test.ts src/main/ipc.memory.test.ts src/preload.exposure.test.ts src/renderer/bootstrap/memoryHealthBanner.test.ts src/renderer/bootstrap.typedPrompt.test.ts
+npx tsc --noEmit -p tsconfig.json
+```
+
+The memory-health diagnostic is a non-blocking startup warning path for keychain/store failures. It is separate from
+`BootstrapStatusMsg`: brain readiness can block turns, but degraded memory health must not. The focused tests prove
+warmup stores and pushes `checking`/`ok`/`degraded`, the renderer can recover a missed push through
+`memory:healthStatusGet`, the product preload exposes only read-only health methods, the top-level banner renders
+friendly local-only Keychain copy, and typed prompt submits still reach `turnRun` while memory is paused.
+
+Run this after changes to:
+
+- `src/main/memoryHealth*.ts`
+- `src/main.ts` memory warmup wiring
+- `src/shared/ipc.ts` memory health channels/types
+- `src/preload.ts` memory health bridge
+- `src/renderer/bootstrap/memoryHealthBanner.ts`
+- `src/renderer/bootstrap.ts` banner mounting
+- `src/index.css` setup banner positioning
+
 ## Packaged memory persistence smoke
 
 ```sh
