@@ -31,10 +31,18 @@ export function describeBrainReadinessBlock(status: BootstrapStatusMsg): string 
   return status.message ?? 'Roro\'s local brain is not ready yet. Check the startup message, then try again.';
 }
 
+export function describeBrainReadinessPending(): string {
+  return 'Roro is still checking the local brain. Try again in a moment.';
+}
+
 export async function ensureBrainReady(deps: BrainReadinessDeps): Promise<boolean> {
   try {
     const status = await deps.getStatus();
-    if (!status || status.ready) return true;
+    if (!status) {
+      deps.onStatus?.(describeBrainReadinessPending());
+      return false;
+    }
+    if (status.ready) return true;
     deps.onStatus?.(describeBrainReadinessBlock(status));
     return false;
   } catch (e) {
@@ -46,6 +54,7 @@ export async function ensureBrainReady(deps: BrainReadinessDeps): Promise<boolea
 export function createBrainReadinessGate(deps: BrainReadinessGateDeps): BrainReadinessGate {
   let currentStatus: BootstrapStatusMsg | null = null;
   const apply = (status: BootstrapStatusMsg | null): void => {
+    if (status === null && currentStatus !== null) return;
     currentStatus = status;
   };
 
@@ -54,10 +63,14 @@ export function createBrainReadinessGate(deps: BrainReadinessGateDeps): BrainRea
 
   return {
     canStartTurn(): boolean {
-      return !currentStatus || currentStatus.ready;
+      return currentStatus?.ready === true;
     },
     ensureReady(onStatus?: (text: string) => void): boolean {
-      if (!currentStatus || currentStatus.ready) return true;
+      if (!currentStatus) {
+        onStatus?.(describeBrainReadinessPending());
+        return false;
+      }
+      if (currentStatus.ready) return true;
       onStatus?.(describeBrainReadinessBlock(currentStatus));
       return false;
     },

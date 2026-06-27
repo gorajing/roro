@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createBrainReadinessGate, describeBrainReadinessBlock, ensureBrainReady } from './brainReadiness';
+import {
+  createBrainReadinessGate,
+  describeBrainReadinessBlock,
+  describeBrainReadinessPending,
+  ensureBrainReady,
+} from './brainReadiness';
 import type { BootstrapStatusMsg } from '../../shared/ipc';
 
 const READY: BootstrapStatusMsg = {
@@ -24,10 +29,10 @@ const MISSING_MODELS: BootstrapStatusMsg = {
 };
 
 describe('ensureBrainReady', () => {
-  it('allows a turn when no bootstrap status exists yet', async () => {
+  it('blocks a turn while no bootstrap status exists yet', async () => {
     const onStatus = vi.fn();
-    await expect(ensureBrainReady({ getStatus: async () => null, onStatus })).resolves.toBe(true);
-    expect(onStatus).not.toHaveBeenCalled();
+    await expect(ensureBrainReady({ getStatus: async () => null, onStatus })).resolves.toBe(false);
+    expect(onStatus).toHaveBeenCalledWith(describeBrainReadinessPending());
   });
 
   it('allows a turn when the local brain is ready', async () => {
@@ -83,7 +88,11 @@ describe('createBrainReadinessGate', () => {
       getStatus: async () => null,
     });
 
-    expect(gate.canStartTurn()).toBe(true);
+    expect(gate.canStartTurn()).toBe(false);
+    expect(gate.ensureReady(onStatus)).toBe(false);
+    expect(onStatus).toHaveBeenCalledWith(describeBrainReadinessPending());
+
+    onStatus.mockClear();
     push?.(NEEDS_OLLAMA);
     expect(gate.canStartTurn()).toBe(false);
     expect(gate.ensureReady(onStatus)).toBe(false);
@@ -92,6 +101,8 @@ describe('createBrainReadinessGate', () => {
     push?.(READY);
     expect(gate.canStartTurn()).toBe(true);
     expect(gate.ensureReady(onStatus)).toBe(true);
+    await Promise.resolve();
+    expect(gate.current()).toEqual(READY);
 
     gate.dispose();
     expect(push).toBeNull();

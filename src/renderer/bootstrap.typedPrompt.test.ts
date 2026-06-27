@@ -99,6 +99,13 @@ function renderApp(): void {
   `;
 }
 
+const READY: BootstrapStatusMsg = {
+  ready: true,
+  needsOllamaInstall: false,
+  missing: [],
+  essentialBytes: 0,
+};
+
 async function setup(opts: {
   bootstrapStatus?: BootstrapStatusMsg | null;
   memoryHealthStatus?: MemoryHealthStatusMsg | null;
@@ -108,8 +115,10 @@ async function setup(opts: {
   renderApp();
   let actionCb: ((e: ActionEvent) => void) | null = null;
   let runEndCb: ((p: { runId: string }) => void) | null = null;
+  const bootstrapStatusCbs: Array<(status: BootstrapStatusMsg | null) => void> = [];
   const currentWorkdir = opts.currentWorkdir ?? { source: 'config', workdir: '/tmp/roro-smoke' };
   const chosenWorkdir = opts.chosenWorkdir ?? currentWorkdir;
+  const bootstrapStatus = opts.bootstrapStatus === undefined ? READY : opts.bootstrapStatus;
   const turn = deferred<{ runId: string }>();
   const turnRun = vi.fn(() => turn.promise);
   const cancelTask = vi.fn(async () => undefined);
@@ -119,10 +128,14 @@ async function setup(opts: {
     onActionEvent: (cb: (e: ActionEvent) => void): (() => void) => { actionCb = cb; return () => undefined; },
     onRunEnd: (cb: (p: { runId: string }) => void): (() => void) => { runEndCb = cb; return () => undefined; },
     onBootstrapStatus: (cb: (status: BootstrapStatusMsg | null) => void): (() => void) => {
-      if (opts.bootstrapStatus !== undefined) cb(opts.bootstrapStatus);
-      return () => undefined;
+      bootstrapStatusCbs.push(cb);
+      cb(bootstrapStatus);
+      return () => {
+        const index = bootstrapStatusCbs.indexOf(cb);
+        if (index >= 0) bootstrapStatusCbs.splice(index, 1);
+      };
     },
-    getBootstrapStatus: () => Promise.resolve(opts.bootstrapStatus ?? null),
+    getBootstrapStatus: () => Promise.resolve(bootstrapStatus),
     onMemoryHealthStatus: (cb: (status: MemoryHealthStatusMsg | null) => void): (() => void) => {
       if (opts.memoryHealthStatus !== undefined) cb(opts.memoryHealthStatus);
       return () => undefined;
@@ -142,6 +155,9 @@ async function setup(opts: {
   return {
     action: (e: ActionEvent) => actionCb?.(e),
     runEnd: (runId: string) => runEndCb?.({ runId }),
+    bootstrapStatus: (status: BootstrapStatusMsg | null) => {
+      for (const cb of bootstrapStatusCbs) cb(status);
+    },
     turn,
     turnRun,
     cancelTask,
@@ -400,6 +416,28 @@ describe('bootstrap typed prompt Stop lifecycle', () => {
     expect(h.cancel.disabled).toBe(true);
     expect(h.input.value).toBe('do it');
     expect(h.status.textContent).toContain('Start Ollama');
+  });
+
+  it('does not dispatch before startup brain readiness resolves', async () => {
+    const h = await setup({ bootstrapStatus: null });
+
+    h.input.value = 'do it';
+    submit(h.form);
+    await flush();
+
+    expect(h.turnRun).not.toHaveBeenCalled();
+    expect(h.send.disabled).toBe(false);
+    expect(h.cancel.disabled).toBe(true);
+    expect(h.input.value).toBe('do it');
+    expect(h.status.textContent).toContain('still checking the local brain');
+
+    h.bootstrapStatus(READY);
+    submit(h.form);
+    await flush();
+
+    expect(h.turnRun).toHaveBeenCalledWith({ transcript: 'do it', sessionId: expect.any(String) });
+    expect(h.send.disabled).toBe(true);
+    expect(h.cancel.disabled).toBe(false);
   });
 
   it('does not block typed turns when local memory health is degraded', async () => {

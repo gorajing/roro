@@ -107,7 +107,7 @@ export async function bootstrap(): Promise<void> {
   mountFloatingAsk({
     driver,
     sessionId,
-    canStartTurn: () => brainGate.ensureReady(),
+    canStartTurn: (onStatus) => brainGate.ensureReady(onStatus),
     smokeLifecycle: config.floatingSmoke,
   });
 
