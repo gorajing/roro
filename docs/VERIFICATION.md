@@ -138,7 +138,10 @@ npm run verify:packaged-memory-health
 `RORO_MEMORY_HEALTH_SMOKE_FAIL=keychain` failure and a fake local Ollama server. It asserts
 `getMemoryHealthStatus()` returns `degraded/keychain-unavailable`, the startup banner is visible with local Keychain
 copy, the Memory panel shows the same health-aware copy, and a non-memory answer turn still reaches `runEnd` without
-`run.failed`. The flag is stripped from unrelated packaged smokes and is forbidden in default release verification.
+`run.failed`. It also launches the packaged app in floating-window mode and asserts the compact memory-health banner
+stays visible inside the transparent window without overlapping the floating Ask surface or intercepting the central
+canvas/Ask hit targets. The flag is stripped from unrelated packaged smokes and is forbidden in default release
+verification.
 The production safeStorage wrapper uses Electron's async encryption API so memory can degrade through the in-app
 memory-health path instead of calling the synchronous Keychain API that can surface a native "Keychain Not Found" modal.
 
@@ -154,7 +157,7 @@ Run this after changes to:
 - `src/renderer/bootstrap/memoryHealthBanner.ts`
 - `src/renderer/memory/forgetPanel.ts`
 - `src/renderer/bootstrap.ts` banner mounting
-- `src/index.css` setup banner positioning
+- `src/index.css` setup banner and floating-window positioning
 - `scripts/smoke-packaged-memory-health.mjs`
 
 ## Rendered Memory panel keyboard smoke
