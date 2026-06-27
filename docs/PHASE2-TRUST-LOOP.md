@@ -132,8 +132,7 @@ Keep the existing good behaviors:
 
 Accessibility status:
 
-- Implemented: `aria-expanded` and `aria-controls` on the Memory toggle; region/heading semantics for the panel; Escape closes edit mode.
-- Remaining polish: focus restore after close/save/cancel, Escape for source detail, visible `:focus-visible` styles for Memory actions.
+- Implemented: `aria-expanded` and `aria-controls` on the Memory toggle and Source disclosure; region/heading semantics for the panel; Escape closes edit mode and source detail; focus restores after panel close, save, cancel, and forget; visible `:focus-visible` styles for Memory actions.
 
 ## Tests
 

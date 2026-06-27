@@ -59,6 +59,14 @@ function memoryUnavailableCopy(status: MemoryHealthStatusMsg | null): string {
   return 'Local memory is paused. Roro can still code, but memories will not load or save until memory is available again.';
 }
 
+function focusIfConnected(el: HTMLElement | null): void {
+  if (el?.isConnected) el.focus();
+}
+
+function domSafeId(raw: string): string {
+  return raw.replace(/[^A-Za-z0-9_-]/g, '-');
+}
+
 export function mountForgetPanel(host: HTMLElement = document.getElementById('app') ?? document.body): () => void {
   const toggle = document.createElement('button');
   toggle.type = 'button';
@@ -107,9 +115,10 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
     singleState('memory-error', memoryUnavailableCopy(status));
   }
 
-  function renderSourceDetail(view: ProfileFactSourceView): HTMLElement {
+  function renderSourceDetail(view: ProfileFactSourceView, id: string): HTMLElement {
     const detail = document.createElement('div');
     detail.className = 'memory-source-detail';
+    detail.id = id;
 
     const summary = document.createElement('p');
     summary.textContent = sourceSummary(view.source);
@@ -133,9 +142,26 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
     const row = document.createElement('li');
     row.className = 'memory-row';
     row.dataset.id = initialFact.id;
+    const rowDomId = domSafeId(initialFact.id);
+    const memoryTextId = `memory-text-${rowDomId}`;
+    const sourceDetailId = `memory-source-${rowDomId}`;
     let fact = initialFact;
     let sourceView: ProfileFactSourceView | null = null;
     let sourceVisible = false;
+
+    function focusRowAction(selector: string): void {
+      queueMicrotask(() => focusIfConnected(row.querySelector<HTMLElement>(selector)));
+    }
+
+    function focusAfterRowRemoval(nextRow: Element | null, previousRow: Element | null): void {
+      queueMicrotask(() => {
+        const target =
+          nextRow?.querySelector<HTMLElement>('.memory-verify, .memory-fix, .memory-source, .memory-forget') ??
+          previousRow?.querySelector<HTMLElement>('.memory-verify, .memory-fix, .memory-source, .memory-forget') ??
+          toggle;
+        focusIfConnected(target);
+      });
+    }
 
     function status(message: string, className = 'memory-row-note'): HTMLElement {
       const note = document.createElement('p');
@@ -149,6 +175,7 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
       row.replaceChildren();
 
       const text = document.createElement('span');
+      text.id = memoryTextId;
       text.className = 'memory-text';
       text.textContent = fact.text; // textContent, NOT innerHTML: fact text is user-authored
 
@@ -157,14 +184,23 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
 
       const verify = button('memory-verify', 'Looks right');
       verify.setAttribute('aria-label', 'Confirm this memory is still true.');
+      verify.setAttribute('aria-describedby', memoryTextId);
       const fix = button('memory-fix', 'Fix');
+      fix.setAttribute('aria-describedby', memoryTextId);
       const source = button('memory-source', sourceVisible ? 'Hide source' : 'Source');
+      source.setAttribute('aria-expanded', String(sourceVisible));
+      source.setAttribute('aria-controls', sourceDetailId);
+      source.setAttribute('aria-describedby', sourceVisible ? `${memoryTextId} ${sourceDetailId}` : memoryTextId);
+      source.setAttribute('aria-label', sourceVisible ? 'Hide source details for this memory.' : 'Show source details for this memory.');
       const forget = button('memory-forget', 'Forget');
+      forget.setAttribute('aria-describedby', memoryTextId);
       actions.append(verify, fix, source, forget);
 
       row.append(text, actions);
       if (note) row.append(status(note));
-      if (sourceVisible && sourceView) row.append(renderSourceDetail(sourceView));
+      if (sourceVisible && sourceView) {
+        row.append(renderSourceDetail(sourceView, sourceDetailId));
+      }
 
       verify.addEventListener('click', () => {
         verify.disabled = true;
@@ -195,6 +231,7 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
         if (sourceVisible) {
           sourceVisible = false;
           replaceWithDefault(note);
+          focusRowAction('.memory-source');
           return;
         }
         source.disabled = true;
@@ -204,6 +241,7 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
             sourceView = await bridge().factSource(fact.id);
             sourceVisible = true;
             replaceWithDefault(note);
+            focusRowAction('.memory-source');
           } catch (e) {
             source.disabled = false;
             source.textContent = 'Source';
@@ -213,6 +251,14 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
             console.error('[memoryPanel] source failed:', e);
           }
         })();
+      });
+      source.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || !sourceVisible) return;
+        event.preventDefault();
+        event.stopPropagation();
+        sourceVisible = false;
+        replaceWithDefault(note);
+        focusRowAction('.memory-source');
       });
 
       let armed = false;
@@ -228,8 +274,11 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
         void (async () => {
           try {
             await bridge().forget(fact.id);
+            const nextRow = row.nextElementSibling;
+            const previousRow = row.previousElementSibling;
             row.remove();
             if (!list.querySelector('.memory-row')) emptyState();
+            focusAfterRowRemoval(nextRow, previousRow);
           } catch (e) {
             forget.disabled = false;
             forget.textContent = "Couldn't forget. Retry.";
@@ -271,9 +320,17 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
       syncSave();
       input.addEventListener('input', syncSave);
       input.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') replaceWithDefault();
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          replaceWithDefault();
+          focusRowAction('.memory-fix');
+        }
       });
-      cancel.addEventListener('click', () => replaceWithDefault());
+      cancel.addEventListener('click', () => {
+        replaceWithDefault();
+        focusRowAction('.memory-fix');
+      });
       save.addEventListener('click', () => {
         save.disabled = true;
         cancel.disabled = true;
@@ -284,6 +341,7 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
             sourceView = null;
             sourceVisible = false;
             replaceWithDefault('Saved.');
+            focusRowAction('.memory-fix');
           } catch (e) {
             save.disabled = false;
             cancel.disabled = false;
@@ -322,10 +380,21 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
     }
   }
 
+  function setPanelOpen(open: boolean): void {
+    panel.hidden = !open;
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) void refresh(); // refetch each time it's opened so it reflects the latest memory
+    else focusIfConnected(toggle);
+  }
+
   toggle.addEventListener('click', () => {
-    panel.hidden = !panel.hidden;
-    toggle.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
-    if (!panel.hidden) void refresh(); // refetch each time it's opened so it reflects the latest memory
+    setPanelOpen(panel.hidden);
+  });
+
+  panel.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || panel.hidden) return;
+    event.preventDefault();
+    setPanelOpen(false);
   });
 
   return () => { toggle.remove(); panel.remove(); };

@@ -610,6 +610,17 @@ body.floating-window #floating-stop.armed + #floating-error:not([hidden]) {
   border: 1px solid rgba(255, 255, 255, 0.22);
   padding: 6px 8px;
 }
+#memory-toggle:focus-visible,
+.memory-verify:focus-visible,
+.memory-fix:focus-visible,
+.memory-source:focus-visible,
+.memory-forget:focus-visible,
+.memory-save:focus-visible,
+.memory-cancel:focus-visible,
+.memory-edit-input:focus-visible {
+  outline: 2px solid rgba(170, 215, 255, 0.95);
+  outline-offset: 2px;
+}
 .memory-row-note,
 .memory-source-detail p {
   margin: 6px 0 0;

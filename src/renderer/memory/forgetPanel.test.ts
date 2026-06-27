@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mountForgetPanel } from './forgetPanel';
 import type { ProfileFactSourceView, ProfileFactView } from '../../shared/memory';
@@ -156,6 +158,37 @@ describe('mountForgetPanel — memory trust loop', () => {
     expect(document.querySelector('.memory-source-session b')).toBeNull();
   });
 
+  it('keeps Source focused after opening and Escape closes the detail', async () => {
+    const stub = setup([fact('a', 'prefers vim')]);
+    mountForgetPanel();
+    click(q('#memory-toggle'));
+    await flush();
+
+    click(q('.memory-source'));
+    await flush();
+    await flush();
+
+    const detail = q('.memory-source-detail') as HTMLElement;
+    const source = q('.memory-source') as HTMLButtonElement;
+    expect(stub.factSource).toHaveBeenCalledWith('a');
+    expect(detail).toBeTruthy();
+    expect(detail.id).toBe(source.getAttribute('aria-controls'));
+    expect(source.getAttribute('aria-expanded')).toBe('true');
+    expect(source.getAttribute('aria-describedby')?.split(/\s+/)).toEqual([q('.memory-text')?.id, detail.id]);
+    expect(detail.getAttribute('tabindex')).toBeNull();
+    expect(detail.getAttribute('aria-label')).toBeNull();
+    expect(detail.textContent).toContain('No transcript is shown here.');
+    expect(source.nextElementSibling?.classList.contains('memory-forget')).toBe(true);
+    expect(document.activeElement).toBe(source);
+
+    source.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flush();
+
+    expect(q('.memory-source-detail')).toBeNull();
+    expect(document.activeElement).toBe(q('.memory-source'));
+    expect(q('.memory-source')?.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('source failure keeps the row visible and retryable', async () => {
     const stub = setup([fact('a', 'prefers vim')]);
     stub.factSource.mockRejectedValueOnce(new Error('missing source'));
@@ -171,6 +204,29 @@ describe('mountForgetPanel — memory trust loop', () => {
     expect((q('.memory-source') as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('restores focus to Fix after canceling an edit with Escape or Cancel', async () => {
+    setup([fact('a', 'prefers vim')]);
+    mountForgetPanel();
+    click(q('#memory-toggle'));
+    await flush();
+
+    click(q('.memory-fix'));
+    expect(document.activeElement).toBe(q('.memory-edit-input'));
+
+    q('.memory-edit-input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flush();
+    expect(q('.memory-edit-input')).toBeNull();
+    expect(document.activeElement).toBe(q('.memory-fix'));
+
+    click(q('.memory-fix'));
+    expect(document.activeElement).toBe(q('.memory-edit-input'));
+    click(q('.memory-cancel'));
+    await flush();
+
+    expect(q('.memory-edit-input')).toBeNull();
+    expect(document.activeElement).toBe(q('.memory-fix'));
+  });
+
   it('Forget is a deliberate 2-step: the first click arms, the second confirms', async () => {
     const stub = setup([fact('a', 'prefers vim')]);
     mountForgetPanel();
@@ -184,6 +240,43 @@ describe('mountForgetPanel — memory trust loop', () => {
     await flush();
     expect(stub.forget).toHaveBeenCalledWith('a');
     expect(q('.memory-row')).toBeNull();
+    expect(document.activeElement).toBe(q('#memory-toggle'));
+  });
+
+  it('moves focus to the next row after forgetting one of several memories', async () => {
+    const stub = setup([fact('a', 'prefers vim'), fact('b', 'uses tabs')]);
+    mountForgetPanel();
+    click(q('#memory-toggle'));
+    await flush();
+
+    const firstForget = document.querySelector('.memory-row .memory-forget') as HTMLButtonElement;
+    click(firstForget);
+    click(firstForget);
+    await flush();
+    await flush();
+
+    expect(stub.forget).toHaveBeenCalledWith('a');
+    expect([...document.querySelectorAll('.memory-text')].map((row) => row.textContent)).toEqual(['uses tabs']);
+    expect(document.activeElement).toBe(q('.memory-row .memory-verify'));
+  });
+
+  it('restores focus to Fix after saving an edited memory', async () => {
+    const stub = setup([fact('a', 'prefers vim')]);
+    mountForgetPanel();
+    click(q('#memory-toggle'));
+    await flush();
+
+    click(q('.memory-fix'));
+    const input = q('.memory-edit-input') as HTMLInputElement;
+    input.value = 'prefers zed';
+    input.dispatchEvent(new Event('input'));
+    click(q('.memory-save'));
+    await flush();
+    await flush();
+
+    expect(stub.fixFact).toHaveBeenCalledWith('a', 'prefers zed');
+    expect(q('.memory-text')?.textContent).toBe('prefers zed');
+    expect(document.activeElement).toBe(q('.memory-fix'));
   });
 
   it('fails loud when forget rejects and keeps the row', async () => {
@@ -252,6 +345,39 @@ describe('mountForgetPanel — memory trust loop', () => {
     expect(q('.memory-error')).toBeNull();
     expect(q('.memory-text')?.textContent).toBe('prefers vim');
     expect(stub.profile).toHaveBeenCalledTimes(2);
+  });
+
+  it('Escape closes the panel and restores focus to the toggle', async () => {
+    setup([fact('a', 'prefers vim')]);
+    mountForgetPanel();
+    click(q('#memory-toggle'));
+    await flush();
+    expect((q('#memory-panel') as HTMLElement).hidden).toBe(false);
+
+    q('#memory-panel')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flush();
+
+    expect((q('#memory-panel') as HTMLElement).hidden).toBe(true);
+    expect(q('#memory-toggle')?.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(q('#memory-toggle'));
+  });
+
+  it('ships visible focus styles for every Memory panel keyboard target', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
+    const selectors = [
+      '#memory-toggle:focus-visible',
+      '.memory-verify:focus-visible',
+      '.memory-fix:focus-visible',
+      '.memory-source:focus-visible',
+      '.memory-forget:focus-visible',
+      '.memory-save:focus-visible',
+      '.memory-cancel:focus-visible',
+      '.memory-edit-input:focus-visible',
+    ];
+
+    for (const selector of selectors) expect(css).toContain(selector);
+    expect(css).toMatch(/focus-visible[\s\S]*outline\s*:\s*(?!none)/);
+    expect(css).toMatch(/focus-visible[\s\S]*outline-offset\s*:/);
   });
 
   it('unmount removes the toggle and panel', () => {
