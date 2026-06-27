@@ -9,6 +9,9 @@ const h = vi.hoisted(() => ({
   showOpenDialog: vi.fn(),
   fromWebContents: vi.fn(),
   openExternal: vi.fn(),
+  pullModel: vi.fn(),
+  refreshBootstrapStatus: vi.fn(),
+  sendToWebContents: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -38,10 +41,16 @@ vi.mock('./identity', () => ({
   getOwnerId: () => 'owner-test',
 }));
 vi.mock('../brain/ollama', () => ({
-  pullModel: vi.fn(),
+  pullModel: h.pullModel,
+}));
+vi.mock('./bootstrapRefresh', () => ({
+  refreshBootstrapStatus: h.refreshBootstrapStatus,
+}));
+vi.mock('./safeSend', () => ({
+  sendToWebContents: h.sendToWebContents,
 }));
 
-import { CH } from '../shared/ipc';
+import { CH, type BootstrapStatusMsg } from '../shared/ipc';
 import { registerIpcHandlers } from './ipc';
 import { setPersistedWorkdir, tryResolveWorkdir } from './workdir';
 
@@ -67,6 +76,16 @@ describe('config IPC — packaged-app workdir onboarding spine', () => {
     h.getPath.mockReturnValue(dir);
     h.showOpenDialog.mockReset();
     h.fromWebContents.mockReset();
+    h.openExternal.mockReset();
+    h.pullModel.mockReset();
+    h.refreshBootstrapStatus.mockReset();
+    h.sendToWebContents.mockReset();
+    h.refreshBootstrapStatus.mockResolvedValue({
+      ok: true,
+      message: 'ready',
+      status: { ready: true, needsOllamaInstall: false, missing: [], essentialBytes: 0 },
+    });
+    h.sendToWebContents.mockReturnValue(true);
     registerIpcHandlers();
   });
 
@@ -172,6 +191,7 @@ describe('config IPC — packaged-app workdir onboarding spine', () => {
     expect(h.handlers.has(CH.memoryProfile)).toBe(true);
     expect(h.handlers.has(CH.memoryHealthStatusGet)).toBe(true);
     expect(h.handlers.has(CH.executorReadinessGet)).toBe(true);
+    expect(h.handlers.has(CH.bootstrapRefresh)).toBe(true);
 
     h.handlers.clear();
     process.env.RORO_DEBUG_BRIDGE = '1';
@@ -184,5 +204,58 @@ describe('config IPC — packaged-app workdir onboarding spine', () => {
     expect(h.handlers.has(CH.memoryRemember)).toBe(true);
     expect(h.handlers.has(CH.memoryRecall)).toBe(true);
     expect(h.handlers.has(CH.visionAsk)).toBe(true);
+  });
+
+  it('bootstrap:refresh reruns MAIN readiness and pushes the returned status', async () => {
+    const sender = {};
+    const status: BootstrapStatusMsg = { ready: false, needsOllamaInstall: true, missing: [], essentialBytes: 0 };
+    h.refreshBootstrapStatus.mockResolvedValue({ ok: false, message: 'install Ollama', status });
+
+    const result = await handler<(event: { sender: unknown }) => Promise<unknown>>(CH.bootstrapRefresh)({
+      sender,
+    });
+
+    expect(h.refreshBootstrapStatus).toHaveBeenCalled();
+    expect(result).toEqual(status);
+    expect(h.sendToWebContents).toHaveBeenCalledWith(sender, CH.bootstrapStatus, status);
+  });
+
+  it('model:pull allowlists known models, streams progress, then refreshes bootstrap status', async () => {
+    const sender = {
+      once: vi.fn(),
+      removeListener: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+    };
+    h.pullModel.mockImplementation(async (model: string, onProgress: (p: { status: string; percent?: number }) => void) => {
+      onProgress({ status: 'downloading', percent: 50 });
+    });
+    const ready: BootstrapStatusMsg = { ready: true, needsOllamaInstall: false, missing: [], essentialBytes: 0 };
+    h.refreshBootstrapStatus.mockResolvedValue({ ok: true, message: 'ready', status: ready });
+
+    await handler<(event: { sender: typeof sender }, models: string[]) => Promise<void>>(CH.modelPull)(
+      { sender },
+      ['qwen2.5:3b', 'not-a-real-model', 'nomic-embed-text'],
+    );
+
+    expect(h.pullModel).toHaveBeenCalledTimes(2);
+    expect(h.pullModel.mock.calls.map((call) => call[0])).toEqual(['qwen2.5:3b', 'nomic-embed-text']);
+    expect(h.sendToWebContents).toHaveBeenCalledWith(
+      sender,
+      CH.modelPullProgress,
+      { model: 'qwen2.5:3b', status: 'downloading', percent: 50 },
+    );
+    expect(h.sendToWebContents).toHaveBeenCalledWith(
+      sender,
+      CH.modelPullProgress,
+      { model: 'nomic-embed-text', status: 'downloading', percent: 50 },
+    );
+    expect(h.sendToWebContents).toHaveBeenCalledWith(
+      sender,
+      CH.modelPullProgress,
+      { model: '', status: 'success', done: true },
+    );
+    expect(h.refreshBootstrapStatus).toHaveBeenCalled();
+    expect(h.sendToWebContents).toHaveBeenCalledWith(sender, CH.bootstrapStatus, ready);
+    expect(sender.removeListener).toHaveBeenCalledWith('destroyed', expect.any(Function));
   });
 });

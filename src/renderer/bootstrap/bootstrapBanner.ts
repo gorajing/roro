@@ -14,6 +14,8 @@ export interface BootstrapBannerDeps {
   /** Fetch the CURRENT readiness on demand — recovers a push that fired before we subscribed (the startup
    *  race: MAIN sends on did-finish-load, but the renderer subscribes after the async character load). */
   getStatus: () => Promise<BootstrapStatusMsg | null>;
+  /** Ask MAIN to re-run the local readiness probe after the user installs/starts Ollama or pulls manually. */
+  refresh: () => Promise<BootstrapStatusMsg | null>;
   /** Pull the given models, streaming progress. Resolves when all are done; rejects on failure. */
   pull: (models: string[], onProgress: (p: ModelPullProgressMsg) => void) => Promise<void>;
   /** Open an external URL (the Ollama download page) — MAIN allowlists the URL. */
@@ -47,6 +49,31 @@ export function mountBootstrapBanner(deps: BootstrapBannerDeps): () => void {
   function clearButtons(): void {
     banner.querySelector('#bootstrap-download')?.remove();
     banner.querySelector('#bootstrap-get-ollama')?.remove();
+    banner.querySelector('#bootstrap-refresh')?.remove();
+  }
+
+  function renderRefreshButton(label = 'Check again'): void {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'bootstrap-refresh';
+    btn.textContent = label;
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      show('Checking local brain...');
+      void deps.refresh()
+        .then((status) => {
+          if (status) apply(status);
+          else {
+            show('Still checking local brain -- try again.');
+            btn.disabled = false;
+          }
+        })
+        .catch((e) => {
+          show(`Check failed: ${e instanceof Error ? e.message : String(e)}`);
+          btn.disabled = false;
+        });
+    });
+    banner.append(btn);
   }
 
   function renderMissing(status: BootstrapStatusMsg): void {
@@ -84,25 +111,26 @@ export function mountBootstrapBanner(deps: BootstrapBannerDeps): () => void {
     clearButtons(); // start each render clean so a state transition can't leave a stale button behind
     if (!status || status.ready) { banner.hidden = true; return; }
     if (status.needsOllamaInstall) {
-      show("Ollama isn't running — Roro thinks on-device with it. Install it, then come back.");
+      show("Ollama isn't reachable yet. Roro uses it to think on-device. Install or start Ollama, then check again.");
       // Guide the install (open the official download page) rather than auto-running a shell installer —
       // a local-first/trust-first app shouldn't silently execute an OS-level install.
       const get = document.createElement('button');
       get.type = 'button';
       get.id = 'bootstrap-get-ollama';
-      get.textContent = 'Get Ollama →';
+      get.textContent = 'Get Ollama';
       get.addEventListener('click', () => deps.openExternal(OLLAMA_DOWNLOAD_URL));
       banner.append(get);
+      renderRefreshButton('I started Ollama, check again');
       return;
     }
-    if (status.missing.length > 0) { renderMissing(status); return; }
-    if (status.message) { show(status.message); return; }
+    if (status.missing.length > 0) { renderMissing(status); renderRefreshButton(); return; }
+    if (status.message) { show(status.message); renderRefreshButton(); return; }
     banner.hidden = true;
   }
 
   const unsub = deps.subscribe(apply);
   // Recover a status pushed before this subscription existed (the startup race) — fetch the current one once.
-  void deps.getStatus().then(apply).catch(() => undefined);
+  void deps.getStatus().then((status) => { if (status) apply(status); }).catch(() => undefined);
 
   return () => { unsub(); banner.remove(); };
 }

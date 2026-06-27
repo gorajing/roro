@@ -13,6 +13,7 @@
 //   CH.configGet          -> configStore.hydrateWorkdirConfig()
 //   CH.configChooseWorkdir-> native folder picker + configStore.persistWorkdirChoice()
 //   CH.executorReadinessGet -> executorReadiness.getExecutorReadiness()
+//   CH.bootstrapRefresh   -> bootstrapRefresh.refreshBootstrapStatus()
 //   CH.cancelTask         -> orchestrator.cancelTask()
 //   CH.brainDecide        -> brain.decide()                    (sibling: src/brain; debug bridge only)
 //   CH.brainDescribeScreen-> brain.describeScreen()            (sibling: src/brain; debug bridge only)
@@ -28,11 +29,10 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { OpenDialogOptions } from 'electron';
 import { CH } from '../shared/ipc';
-import type { MicStatus, TurnInput, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg } from '../shared/ipc';
-import { ollamaTags, pullModel } from '../brain/ollama';
-import { bootstrapStatusFor, DEFAULT_MODEL_SPECS } from './bootstrapPlan';
+import type { MicStatus, TurnInput, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg, BootstrapStatusMsg } from '../shared/ipc';
+import { pullModel } from '../brain/ollama';
+import { DEFAULT_MODEL_SPECS } from './bootstrapPlan';
 import { isAllowedExternalUrl } from './openExternalGuard';
-import { setBootstrapStatus } from './bootstrapStatusStore';
 import { getMemoryHealthStatus } from './memoryHealthStatusStore';
 import type { Decision, DecideInput } from '../shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch, ProfileFactSourceView, ProfileFactView } from '../shared/memory';
@@ -45,6 +45,7 @@ import { getOwnerId } from './identity';
 import { hydrateWorkdirConfig, persistWorkdirChoice } from './configStore';
 import { sendToWebContents } from './safeSend';
 import { getExecutorReadiness } from './executorReadiness';
+import { refreshBootstrapStatus } from './bootstrapRefresh';
 
 /** Coerce a renderer-supplied agent arg to a valid AgentKind (default codex). */
 function asAgentKind(v: unknown): AgentKind {
@@ -124,6 +125,11 @@ export function registerIpcHandlers(): void {
   });
   ipcMain.handle(CH.executorReadinessGet, (_e, agent?: AgentKind): Promise<ExecutorReadinessMsg> =>
     getExecutorReadiness(asAgentKind(agent)));
+  ipcMain.handle(CH.bootstrapRefresh, async (e): Promise<BootstrapStatusMsg> => {
+    const refreshed = await refreshBootstrapStatus();
+    sendToWebContents(e.sender, CH.bootstrapStatus, refreshed.status);
+    return refreshed.status;
+  });
 
   // ---- Brain (sibling: src/brain) ----
   // Direct brain invokes are a debug bridge. Product turns use CH.turnRun, while reasoning/content
@@ -231,9 +237,8 @@ export function registerIpcHandlers(): void {
         await pullModel(model, (p) => tick({ model, status: p.status, percent: p.percent }), ac.signal);
       }
       tick({ model: '', status: 'success', done: true });
-      const refreshed = bootstrapStatusFor({ kind: 'reachable', models: await ollamaTags() });
-      setBootstrapStatus(refreshed);
-      if (refreshed) sendToWebContents(e.sender, CH.bootstrapStatus, refreshed);
+      const refreshed = await refreshBootstrapStatus();
+      sendToWebContents(e.sender, CH.bootstrapStatus, refreshed.status);
     } catch (err) {
       tick({ model: '', status: 'error', error: err instanceof Error ? err.message : String(err) });
       throw err;

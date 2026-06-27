@@ -58,6 +58,8 @@ export interface CompanionBridge {
   onCursor(cb: (target: { x: number; y: number }) => void): () => void;
   /** Latest first-run brain/model readiness snapshot. */
   getBootstrapStatus(): Promise<BootstrapStatusMsg | null>;
+  /** Re-run MAIN's local brain/model readiness probe after the user starts Ollama or changes models. */
+  refreshBootstrapStatus(): Promise<BootstrapStatusMsg>;
   /** Open a MAIN-allowlisted external URL in the default browser. */
   openExternal(url: string): Promise<void>;
   /** Pull known local Ollama models; progress streams through onPullProgress. */
