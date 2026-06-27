@@ -163,6 +163,12 @@ function terminalEventText(e: ActionEvent): string | undefined {
   return undefined;
 }
 
+function unapprovedDestructiveCommandReason(e: ActionEvent, destructiveApproved: boolean): string | null {
+  if (destructiveApproved || e.kind !== 'command' || e.status !== 'started') return null;
+  const verdict = classifyDestructive(e.command);
+  return verdict.destructive ? verdict.reason ?? 'destructive command' : null;
+}
+
 /** Map a canonical event to the memory kind we persist it under. */
 function memoryKind(e: ActionEvent): MemoryKind {
   switch (e.kind) {
@@ -298,6 +304,7 @@ async function dispatchExecutor(
   prompt: string,
   agent: AgentKind,
   repo: string,
+  destructiveApproved = false,
   factCtx?: { transcript: string; narration: string; task: string },
 ): Promise<void> {
   const controller = new AbortController();
@@ -359,6 +366,12 @@ async function dispatchExecutor(
       // (and so Stop/cancelTask) is keyed by THIS runId. Without this, a targeted Stop from the
       // renderer (which sees the event's runId) never finds the controller. One id per turn.
       const stamped = { ...ev, runId } as ActionEvent;
+      const destructiveReason = unapprovedDestructiveCommandReason(stamped, destructiveApproved);
+      if (destructiveReason) {
+        controller.abort();
+        endUi(`blocked unapproved destructive command: ${destructiveReason}`);
+        continue;
+      }
       pushEvent(stamped);
       // Native "job done" notification on terminal events — visible even when the
       // window is hidden or in floating mode.
@@ -598,7 +611,7 @@ async function actOnDecision(
       // Lock-protected single-executor dispatch (fresh clean-tree check inside; resolves at DISPATCH —
       // the action stream arrives over push channels; the AbortController registers synchronously).
       await guardedDispatch(runId, confirm.destructive, repo, () => {
-        void dispatchExecutor(runId, sessionId, task, agent, repo, {
+        void dispatchExecutor(runId, sessionId, task, agent, repo, confirm.destructive, {
           transcript,
           narration: decision.narration,
           task,
@@ -721,7 +734,7 @@ export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId
       return;
     }
     await guardedDispatch(runId, confirm.destructive, repo, () => {
-      void dispatchExecutor(runId, `task_${runId}`, prompt, agent, repo);
+      void dispatchExecutor(runId, `task_${runId}`, prompt, agent, repo, confirm.destructive);
     });
   })();
   return { runId };

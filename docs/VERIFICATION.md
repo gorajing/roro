@@ -66,6 +66,26 @@ Run this after changes to:
 - `src/index.css` setup banner positioning
 - `scripts/smoke-packaged-memory-health.mjs`
 
+## Destructive command tripwire
+
+```sh
+npx vitest run --no-file-parallelism src/main/destructive.test.ts src/main/orchestrator.destructiveCommand.test.ts src/main/orchestrator.stopSlotRetention.test.ts
+npx tsc --noEmit -p tsconfig.json
+```
+
+Roro checks destructive tasks twice: first on the task text, where the existing confirm chip is the only approval path,
+and again on started executor `command` events. The command-level tripwire aborts an unapproved destructive argv before
+it is forwarded to the renderer, emits a terminal `run.failed`, and keeps the single-executor slot occupied until the
+executor stream actually drains. A prompt that was explicitly approved by the confirm gate may run the matching
+destructive command, subject to the existing clean-git-tree check.
+
+Run this after changes to:
+
+- `src/main/destructive.ts`
+- `src/main/orchestrator.ts` dispatch/cancel/slot-retention behavior
+- `src/executor/*.ts` command-event mapping
+- `src/renderer/confirm/*`
+
 ## Packaged memory persistence smoke
 
 ```sh
