@@ -13,6 +13,7 @@ function config(overrides: Partial<RoroConfig> = {}): RoroConfig {
     cosmeticsStore: false,
     debugBridge: false,
     floatingSmoke: false,
+    memoryPanelSmoke: false,
     ...overrides,
   };
 }
@@ -49,5 +50,13 @@ describe('loadConfig', () => {
     vi.stubGlobal('window', { RORO_CFG: { floatingSmoke: true } });
 
     expect(loadConfig().floatingSmoke).toBe(true);
+  });
+
+  it('keeps the Memory panel smoke harness off by default and honors explicit runtime opt-in', () => {
+    expect(loadConfig().memoryPanelSmoke).toBe(false);
+
+    vi.stubGlobal('window', { RORO_CFG: { memoryPanelSmoke: true } });
+
+    expect(loadConfig().memoryPanelSmoke).toBe(true);
   });
 });

@@ -25,6 +25,7 @@ import { CH } from './shared/ipc';
 import { sendToWindow } from './main/safeSend';
 import { getBootstrapStatus, setBootstrapStatus } from './main/bootstrapStatusStore';
 import { warmMemoryHealthAtStartup } from './main/memoryHealthStartup';
+import { memoryWarmupDisabled } from './main/memoryWarmupFlag';
 
 const STARTUP_MEMORY_WARMUP_DELAY_MS = 3000;
 
@@ -131,13 +132,17 @@ app.whenReady().then(async () => {
   // 4. Memory warmup: initialize keychain/PGlite shortly after first paint, off the first-turn path.
   //    Non-blocking — a very fast first turn still degrades independently if memory is unavailable, while
   //    the common path gets a warmed store without delaying the packaged renderer target.
-  const warmMemory = (): void => {
-    setTimeout(() => { void warmMemoryHealthAtStartup({ ownerId, win, loadMemory }); }, STARTUP_MEMORY_WARMUP_DELAY_MS);
-  };
-  if (!win.isDestroyed() && !win.webContents.isDestroyed() && win.webContents.isLoading()) {
-    win.webContents.once('did-finish-load', warmMemory);
+  if (memoryWarmupDisabled(process.env)) {
+    console.log('[main] memory warmup skipped by RORO_DISABLE_MEMORY_WARMUP');
   } else {
-    warmMemory();
+    const warmMemory = (): void => {
+      setTimeout(() => { void warmMemoryHealthAtStartup({ ownerId, win, loadMemory }); }, STARTUP_MEMORY_WARMUP_DELAY_MS);
+    };
+    if (!win.isDestroyed() && !win.webContents.isDestroyed() && win.webContents.isLoading()) {
+      win.webContents.once('did-finish-load', warmMemory);
+    } else {
+      warmMemory();
+    }
   }
 
   // 5. Brain self-check (local-first): verify Ollama/models up-front. Non-blocking — never gates the

@@ -46,6 +46,8 @@ export function createWindow(): BrowserWindow {
     debugBridge: process.env.RORO_DEBUG_BRIDGE === '1',
     // Test-only renderer lifecycle harness used by npm run verify:floating; never enabled for default launches.
     floatingSmoke: process.env.RORO_FLOATING_SMOKE === '1',
+    // Test-only Memory panel keyboard/a11y harness. Renderer-only; default launches use the real preload bridge.
+    memoryPanelSmoke: process.env.RORO_MEMORY_PANEL_SMOKE === '1',
   };
 
   const mainWindow = new BrowserWindow({

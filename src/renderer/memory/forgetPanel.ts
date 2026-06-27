@@ -7,7 +7,7 @@
 import type { ProfileFactSourceView, ProfileFactView } from '../../shared/memory';
 import type { MemoryHealthStatusMsg } from '../../shared/ipc';
 
-interface MemoryBridge {
+export interface MemoryBridge {
   profile(): Promise<ProfileFactView[]>;
   fixFact(id: string, value: string): Promise<ProfileFactView>;
   verifyFact(id: string): Promise<ProfileFactView>;
@@ -15,17 +15,22 @@ interface MemoryBridge {
   forget(id: string): Promise<void>;
 }
 
-interface CompanionBridge {
+export interface CompanionBridge {
   getMemoryHealthStatus?(): Promise<MemoryHealthStatusMsg | null>;
 }
 
-function bridge(): MemoryBridge {
+export interface MemoryPanelDeps {
+  memory?: MemoryBridge;
+  companion?: CompanionBridge;
+}
+
+function windowMemoryBridge(): MemoryBridge {
   const memory = (window as unknown as { memory?: MemoryBridge }).memory;
   if (!memory) throw new Error('window.memory is unavailable');
   return memory;
 }
 
-function companionBridge(): CompanionBridge | undefined {
+function windowCompanionBridge(): CompanionBridge | undefined {
   return (window as unknown as { companion?: CompanionBridge }).companion;
 }
 
@@ -67,7 +72,12 @@ function domSafeId(raw: string): string {
   return raw.replace(/[^A-Za-z0-9_-]/g, '-');
 }
 
-export function mountForgetPanel(host: HTMLElement = document.getElementById('app') ?? document.body): () => void {
+export function mountForgetPanel(
+  host: HTMLElement = document.getElementById('app') ?? document.body,
+  deps: MemoryPanelDeps = {},
+): () => void {
+  const bridge = (): MemoryBridge => deps.memory ?? windowMemoryBridge();
+  const companionBridge = (): CompanionBridge | undefined => deps.companion ?? windowCompanionBridge();
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.id = 'memory-toggle';
