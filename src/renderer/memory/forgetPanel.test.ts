@@ -76,6 +76,30 @@ describe('mountForgetPanel — memory trust loop', () => {
       .toEqual(['prefers vim', 'uses tabs']);
   });
 
+  it('can render against injected smoke deps without the preload memory bridge', async () => {
+    document.body.innerHTML = '<div id="app"></div>';
+    delete (window as unknown as { memory?: Stub }).memory;
+    const profile = vi.fn().mockResolvedValue([fact('a', 'prefers vim')]);
+
+    mountForgetPanel(undefined, {
+      memory: {
+        profile,
+        fixFact: vi.fn(),
+        verifyFact: vi.fn(),
+        factSource: vi.fn(),
+        forget: vi.fn(),
+      },
+      companion: {
+        getMemoryHealthStatus: vi.fn().mockResolvedValue(null),
+      },
+    });
+    click(q('#memory-toggle'));
+    await flush();
+
+    expect(profile).toHaveBeenCalledOnce();
+    expect(q('.memory-text')?.textContent).toBe('prefers vim');
+  });
+
   it('verifies a memory through Looks right and keeps the row retryable on failure', async () => {
     const stub = setup([fact('a', 'prefers vim')]);
     stub.verifyFact.mockRejectedValueOnce(new Error('IPC down')).mockResolvedValueOnce(fact('a', 'prefers vim'));

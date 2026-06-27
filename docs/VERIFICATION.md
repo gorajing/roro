@@ -71,6 +71,41 @@ Run this after changes to:
 - `src/index.css` setup banner positioning
 - `scripts/smoke-packaged-memory-health.mjs`
 
+## Rendered Memory panel keyboard smoke
+
+```sh
+npm run verify:memory-panel-rendered
+```
+
+`scripts/smoke-memory-panel-rendered.mjs` launches the default Electron renderer over the Chrome DevTools Protocol with
+`RORO_MEMORY_PANEL_SMOKE=1`, `RORO_DISABLE_MEMORY_WARMUP=1`, a renderer-only fake profile fact, and no debug bridge.
+It uses real CDP keyboard input
+(`Tab`, `Space`, `Escape`, `Shift+Tab`) rather than synthetic DOM events, then inspects `document.activeElement`,
+ARIA state, and computed `:focus-visible` outline styles.
+
+The smoke proves the rendered Memory panel is reachable by keyboard, opens as a controlled `region`, renders one local
+fact, tabs through the first-row actions in order (`Looks right` -> `Fix` -> `Source` -> `Forget`), gives every keyboard
+target a visible focus ring, keeps the Source disclosure itself out of the tab order, restores focus when Source/edit
+states close with Escape, and closes the panel back to `#memory-toggle` with `aria-expanded="false"`.
+
+This is intentionally local/opt-in and not in CI because it needs a GUI and dev Electron launch. It also does **not**
+prove real memory extraction, encrypted memory persistence, profile storage, memory-health warmup, or Keychain recovery.
+Keep using the unit tests and packaged memory-health/persistence smokes for those paths.
+
+Run this after changes to:
+
+- `src/renderer/memory/forgetPanel.ts`
+- `src/renderer/memory/smokeBridge.ts`
+- `src/renderer/bootstrap.ts` Memory panel mounting
+- `src/main/window.ts` smoke flag injection
+- `src/main.ts` memory warmup scheduling
+- `src/main/memoryWarmupFlag.ts`
+- `src/renderer/config.ts` smoke flag plumbing
+- `scripts/v0-deferred-env.mjs`
+- `src/build/v0DeferredEnv.test.ts`
+- `src/index.css` Memory panel focus, positioning, or visibility styles
+- `scripts/smoke-memory-panel-rendered.mjs`
+
 ## Destructive command tripwire
 
 ```sh

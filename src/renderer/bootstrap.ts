@@ -18,6 +18,7 @@ import { subscribeActionEvents } from './events/actionEvents';
 import { mountFloatingAsk } from './ask/floatingAsk';
 import { mountConfirmChip } from './confirm/confirmChip';
 import { mountForgetPanel } from './memory/forgetPanel';
+import { createMemoryPanelSmokeDeps } from './memory/smokeBridge';
 import { mountProjectSettings } from './settings/projectSettings';
 import { mountCosmeticsStore } from './cosmetics/cosmeticsStore';
 import { mountBootstrapBanner } from './bootstrap/bootstrapBanner';
@@ -150,7 +151,10 @@ export async function bootstrap(): Promise<void> {
   // M8: the transparency + Forget panel — see + delete the facts Roro knows about you (the trust
   // counterweight). Mount the toggle in #controls so it sits with the other header controls and is hidden
   // alongside them in floating mode; the panel itself positions as an overlay.
-  mountForgetPanel(document.getElementById('controls') ?? undefined);
+  mountForgetPanel(
+    document.getElementById('controls') ?? undefined,
+    config.memoryPanelSmoke ? createMemoryPanelSmokeDeps() : undefined,
+  );
 
   // M9 (WS5): the cosmetics fake-door — OFF by default; the founder enables it (RORO_WS5_STORE=1) to run the
   // willingness-to-pay experiment. Intent is captured locally (console + a localStorage log the founder can

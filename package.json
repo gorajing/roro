@@ -18,6 +18,7 @@
     "verify:floating": "node scripts/smoke-floating-ask.mjs",
     "verify:floating-live-turn": "node scripts/smoke-floating-live-turn.mjs",
     "verify:typed-live-turn": "node scripts/smoke-typed-live-turn.mjs",
+    "verify:memory-panel-rendered": "node scripts/smoke-memory-panel-rendered.mjs",
     "verify:epipe": "node scripts/smoke-packaged-epipe.mjs",
     "verify:packaged-memory": "node scripts/smoke-packaged-memory.mjs",
     "verify:packaged-memory-health": "node scripts/smoke-packaged-memory-health.mjs",

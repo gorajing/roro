@@ -8,6 +8,7 @@ vi.mock('./config', () => ({
     modelUrl: undefined as string | undefined,
     floatingWindow: false,
     floatingSmoke: false,
+    memoryPanelSmoke: false,
     cosmeticsStore: false,
   }),
   voiceSurfaceEnabled: () => false,
