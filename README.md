@@ -19,8 +19,10 @@ Privacy promise: Roro's default brain, recall, embeddings, and memory run on
 your machine with local Ollama and local storage. Memory contents are encrypted
 at rest by default with the OS keychain, and Roro fails loud instead of silently
 saving plaintext if that keychain is unavailable. Roro itself does not require
-accounts, app-owned telemetry, or a cloud-model key; optional cloud brain and
-executor paths only run when you explicitly configure them.
+accounts, app-owned telemetry, or a cloud-model key. Coding turns still run
+through your own local executor CLI: install and sign in to Codex or Claude
+outside Roro first, or point Roro at the binary with `RORO_CODEX_BIN` /
+`RORO_CLAUDE_BIN`.
 
 See [`PUBLIC.md`](PUBLIC.md) for the path to public readiness and
 [`HANDOFF.md`](HANDOFF.md) for current engineering truth.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyDestructive } from './destructive';
+import { classifyDestructive, classifyDestructiveCommand } from './destructive';
 
 const D = (task: string): boolean => classifyDestructive(task).destructive;
 
@@ -92,6 +92,31 @@ describe('classifyDestructive', () => {
     expect(D('edit ~/.bashrc to add an alias')).toBe(true);
     expect(D('append a line to /etc/hosts')).toBe(true);
     expect(D('write /usr/local/bin/foo')).toBe(true);
+  });
+
+  it('does NOT flag benign commands that mention the active workspace under /var', () => {
+    const workspace = '/var/folders/demo/roro-smoke/chosen-project';
+    expect(classifyDestructiveCommand(`cat ${workspace}/result.txt`, workspace).destructive).toBe(false);
+    expect(classifyDestructiveCommand(`printf ok > ${workspace}`, workspace).destructive).toBe(false);
+    expect(classifyDestructiveCommand(`python3 - <<'PY'\nfrom pathlib import Path\nprint(Path('${workspace}/result.txt').read_text())\nPY`, workspace).destructive).toBe(false);
+    expect(classifyDestructiveCommand('cat /private/var/folders/demo/roro-smoke/chosen-project/result.txt', workspace).destructive).toBe(false);
+  });
+
+  it('still flags destructive commands and system paths outside the active workspace', () => {
+    const workspace = '/var/folders/demo/roro-smoke/chosen-project';
+    expect(classifyDestructiveCommand(`rm -rf ${workspace}/build`, workspace).destructive).toBe(true);
+    expect(classifyDestructiveCommand('cat /var/db/some-system-file', workspace).destructive).toBe(true);
+    expect(classifyDestructiveCommand(`cat ${workspace}-old/result.txt`, workspace).destructive).toBe(true);
+    expect(classifyDestructiveCommand('cat /private/var/folders/demo/roro-smoke/chosen-project-old/result.txt', workspace).destructive).toBe(true);
+    expect(classifyDestructiveCommand(`cat ${workspace}/../outside.txt`, workspace).destructive).toBe(true);
+    expect(classifyDestructiveCommand(`cat ${workspace}/subdir/../outside.txt`, workspace).destructive).toBe(true);
+  });
+
+  it('does NOT flag shell interpreter paths while still inspecting the shell body', () => {
+    expect(classifyDestructiveCommand('/bin/zsh -lc "printf ok"', undefined).destructive).toBe(false);
+    expect(classifyDestructiveCommand('/usr/bin/env bash -lc "printf ok"', undefined).destructive).toBe(false);
+    expect(classifyDestructiveCommand('/bin/zsh -lc "rm -rf build"', undefined).destructive).toBe(true);
+    expect(classifyDestructiveCommand('/bin/zsh -lc "cat /bin/sensitive"', undefined).destructive).toBe(true);
   });
 
   it('does NOT flag ordinary in-repo tasks or URL routes (avoid alarm fatigue)', () => {

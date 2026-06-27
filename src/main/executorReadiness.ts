@@ -1,5 +1,6 @@
 import { constants, existsSync } from 'node:fs';
 import { access } from 'node:fs/promises';
+import { delimiter } from 'node:path';
 import type { AgentKind } from '../shared/events';
 import type { ExecutorReadinessMsg } from '../shared/ipc';
 import { resolveExecutableDetails } from '../executor/resolveBin';
@@ -58,7 +59,7 @@ export async function getExecutorReadiness(
   ];
   const resolution = resolveExecutableDetails(spec.name, deps.env[spec.envVar], {
     exists: existsSync,
-    pathDirs: (deps.env.PATH ?? '').split(':').filter(Boolean),
+    pathDirs: (deps.env.PATH ?? '').split(delimiter).filter(Boolean),
     extraDirs: commonDirs,
   });
   const executable = resolution.found && await deps.canExecute(resolution.path);

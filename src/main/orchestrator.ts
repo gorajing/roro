@@ -25,7 +25,7 @@ import { loadBrain, loadMemory, loadVision, type MemoryModule } from './siblings
 import { getOwnerId } from './identity';
 import { buildRecallContext } from './memoryContext';
 import { extractAndStoreFact } from './factStore';
-import { classifyDestructive } from './destructive';
+import { classifyDestructive, classifyDestructiveCommand } from './destructive';
 import { requestConfirm, resolveConfirm } from './confirmGate';
 import { isCleanTree } from './gitTree';
 import { resolveWorkdir, tryResolveWorkdir } from './workdir';
@@ -164,9 +164,9 @@ function terminalEventText(e: ActionEvent): string | undefined {
   return undefined;
 }
 
-function unapprovedDestructiveCommandReason(e: ActionEvent, destructiveApproved: boolean): string | null {
+function unapprovedDestructiveCommandReason(e: ActionEvent, destructiveApproved: boolean, repo?: string): string | null {
   if (destructiveApproved || e.kind !== 'command' || e.status !== 'started') return null;
-  const verdict = classifyDestructive(e.command);
+  const verdict = classifyDestructiveCommand(e.command, repo);
   return verdict.destructive ? verdict.reason ?? 'destructive command' : null;
 }
 
@@ -367,7 +367,7 @@ async function dispatchExecutor(
       // (and so Stop/cancelTask) is keyed by THIS runId. Without this, a targeted Stop from the
       // renderer (which sees the event's runId) never finds the controller. One id per turn.
       const stamped = { ...ev, runId } as ActionEvent;
-      const destructiveReason = unapprovedDestructiveCommandReason(stamped, destructiveApproved);
+      const destructiveReason = unapprovedDestructiveCommandReason(stamped, destructiveApproved, repo);
       if (destructiveReason) {
         controller.abort();
         endUi(`blocked unapproved destructive command: ${destructiveReason}`);

@@ -16,13 +16,13 @@ describe('actionableErrorCopy', () => {
 
   it('turns Claude auth failures into executor-auth guidance', () => {
     expect(actionableErrorCopy('claude error: 401 unauthorized api key')).toBe(
-      'Claude executor is not authenticated. Sign in to the Claude CLI or set ANTHROPIC_API_KEY for the executor, then try again.',
+      'Claude executor is not authenticated. Sign in to the Claude CLI or set ANTHROPIC_API_KEY for that executor, then try again. Roro does not manage executor accounts.',
     );
   });
 
   it('turns Codex auth failures into executor-auth guidance', () => {
     expect(actionableErrorCopy('openai codex error: forbidden 403 login required')).toBe(
-      'Codex executor is not authenticated. Sign in to the Codex CLI or configure its API key, then try again.',
+      'Codex executor is not authenticated. Sign in to the Codex CLI or configure its API key for that executor, then try again. Roro does not manage executor accounts.',
     );
   });
 

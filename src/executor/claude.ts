@@ -20,7 +20,7 @@ import {
   Executor,
   newRunId,
 } from '../shared/events';
-import { resolveBin } from './resolveBin';
+import { executorPathEnv, resolveBin } from './resolveBin';
 import { armSigkillEscalation } from './abortKill';
 
 // Resolve the claude binary portably: RORO_CLAUDE_BIN override -> PATH -> common install dirs
@@ -355,7 +355,7 @@ export async function* runClaude(
   const child = spawn(CLAUDE_BIN, args, {
     cwd: opts.repo,
     stdio: ['ignore', 'pipe', 'pipe'], // stdin=/dev/null; STDOUT=JSONL; stderr=hook spam
-    env: { ...process.env }, // ANTHROPIC_API_KEY passes through
+    env: { ...process.env, PATH: executorPathEnv(CLAUDE_BIN, process.env) }, // ANTHROPIC_API_KEY passes through
     signal: opts.signal,
   });
   // {signal} sends SIGTERM on abort; escalate to SIGKILL if the child ignores it.

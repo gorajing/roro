@@ -85,10 +85,11 @@ Run this after changes to:
 ```sh
 npm run package
 npm run verify:packaged-first-task
+npm run verify:packaged-real-codex # opt-in; requires your real authenticated/configured Codex CLI
 ```
 
 `scripts/smoke-packaged-first-task.mjs` launches the real packaged app with disposable app state, a persisted
-`userData/config.json` project, a deterministic fake Ollama server, and a fake Codex executable override. On macOS it
+`userData/config.json` project, a deterministic fake Ollama server, and by default a fake Codex executable override. On macOS it
 also installs a temporary unlocked user keychain for the run, then restores the original keychain defaults; this keeps
 the smoke deterministic while still exercising packaged `safeStorage` on the product `turnRun` path.
 
@@ -100,8 +101,16 @@ under the chosen project, the typed UI returns to the ready state, the executor 
 `exec --json --skip-git-repo-check -s workspace-write -C <project>`, and the packaged logs contain no Keychain/EPIPE
 crash signatures. Main-process unit tests cover the fail-closed `run_agent` readiness boundary for missing executors.
 
+`npm run verify:packaged-real-codex` flips the same harness into a human-owned release/cohort preflight:
+fake Ollama still makes the brain decision deterministic, but the app must discover and run the real local Codex CLI
+without the fake `RORO_CODEX_BIN` override. The script narrows `PATH` by default so the packaged app proves its common
+install-dir lookup, then asserts real Codex auth/config can start, emit a Codex run, complete without `run.failed`, and
+write the requested file in the disposable project. Set `RORO_PACKAGED_REAL_CODEX_USE_ENV_BIN=1` only when intentionally
+testing a nonstandard Codex install via `RORO_CODEX_BIN`.
+
 This is an engineering first-task gate for the real `.app`. It does **not** prove a signed/notarized clean-Mac install,
-real Codex authentication, real model quality, non-founder comprehension, or cross-update memory durability.
+real model quality, non-founder comprehension, or cross-update memory durability. The default fake-Codex mode also does
+not prove real Codex authentication; use the opt-in real-Codex smoke for that local executor-auth preflight.
 
 Run this after changes to:
 

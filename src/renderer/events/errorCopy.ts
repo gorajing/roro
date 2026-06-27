@@ -34,11 +34,11 @@ export function actionableErrorCopy(error: string): string {
   }
 
   if (/\bclaude\b|\banthropic\b/i.test(clean) && /\b(auth|login|api key|unauthorized|unauthorised|forbidden|401|403)\b/i.test(clean)) {
-    return 'Claude executor is not authenticated. Sign in to the Claude CLI or set ANTHROPIC_API_KEY for the executor, then try again.';
+    return 'Claude executor is not authenticated. Sign in to the Claude CLI or set ANTHROPIC_API_KEY for that executor, then try again. Roro does not manage executor accounts.';
   }
 
   if (/\bcodex\b|\bopenai\b/i.test(clean) && /\b(auth|login|api key|unauthorized|unauthorised|forbidden|401|403)\b/i.test(clean)) {
-    return 'Codex executor is not authenticated. Sign in to the Codex CLI or configure its API key, then try again.';
+    return 'Codex executor is not authenticated. Sign in to the Codex CLI or configure its API key for that executor, then try again. Roro does not manage executor accounts.';
   }
 
   return clip(clean);

@@ -1,8 +1,8 @@
 # Roro — Run & Integration Guide
 
 Roro is **local-first**: the brain runs on a local Ollama daemon and memory is an
-in-process PGlite + pgvector store. The default path needs **no API keys** and makes
-no network calls. The steps below bring the full app alive on your Mac.
+in-process PGlite + pgvector store. The default brain/memory path needs **no app
+API keys** and makes no cloud model calls. The steps below bring the full app alive on your Mac.
 
 ## 1. Local brain — install Ollama + pull core models
 
@@ -110,6 +110,11 @@ cat thinks (driven by the local brain's content stream) → drives Codex in `ROR
 (each action narrated + animated) → writes to local PGlite memory. Then ask
 *"what did we do?"* for the pgvector recall beat.
 
+Roro's brain and memory setup does not need an app-owned cloud key, but the coding executor is
+your own CLI. Before expecting a coding turn to edit files, authenticate or configure Codex (or
+Claude) outside Roro. If the CLI is in a nonstandard location, set `RORO_CODEX_BIN` or
+`RORO_CLAUDE_BIN` to the executable path.
+
 ### Optional floating character window
 
 ```
@@ -129,6 +134,7 @@ actually be muted.
 - `npx vitest run --no-file-parallelism` → full deterministic suite
 - `npm run verify:floating` → on-screen smoke for the floating Ask (needs a display)
 - `npm run verify:packaged-model-setup` → packaged Ollama-down/Recheck through one-click core model pull
+- `npm run verify:packaged-real-codex` → opt-in packaged first task using your real authenticated/configured Codex CLI
 - `npm run verify:typed-live-turn` → default typed prompt through public `turnRun`
 - `npm run verify:floating-live-turn` → floating Ask through public `turnRun`
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { resolveExecutable, resolveExecutableDetails } from './resolveBin';
+import { delimiter } from 'node:path';
+import { executorPathEnv, resolveExecutable, resolveExecutableDetails } from './resolveBin';
 
 function deps(present: string[]) {
   return {
@@ -51,5 +52,19 @@ describe('resolveExecutable', () => {
       source: 'bare',
       found: false,
     });
+  });
+
+  it('builds a child PATH that lets npm-style executor launchers find node', () => {
+    const parts = executorPathEnv('/opt/homebrew/bin/codex', { PATH: ['/usr/bin', '/bin'].join(delimiter) }).split(delimiter);
+    expect(parts[0]).toBe('/opt/homebrew/bin');
+    expect(parts).toContain('/usr/local/bin');
+    expect(parts).toContain('/usr/bin');
+    expect(parts.filter((part) => part === '/opt/homebrew/bin')).toHaveLength(1);
+  });
+
+  it('keeps common executor dirs even when the executable falls back to a bare name', () => {
+    const parts = executorPathEnv('codex', { PATH: '/custom/bin' }).split(delimiter);
+    expect(parts).toContain('/opt/homebrew/bin');
+    expect(parts).toContain('/custom/bin');
   });
 });
