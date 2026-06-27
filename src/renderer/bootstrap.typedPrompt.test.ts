@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActionEvent } from '../shared/events';
-import type { BootstrapStatusMsg, WorkdirConfigMsg } from '../shared/ipc';
+import type { BootstrapStatusMsg, MemoryHealthStatusMsg, WorkdirConfigMsg } from '../shared/ipc';
 
 vi.mock('./config', () => ({
   loadConfig: () => ({
@@ -100,6 +100,7 @@ function renderApp(): void {
 
 async function setup(opts: {
   bootstrapStatus?: BootstrapStatusMsg | null;
+  memoryHealthStatus?: MemoryHealthStatusMsg | null;
   currentWorkdir?: WorkdirConfigMsg;
   chosenWorkdir?: WorkdirConfigMsg;
 } = {}) {
@@ -121,6 +122,11 @@ async function setup(opts: {
       return () => undefined;
     },
     getBootstrapStatus: () => Promise.resolve(opts.bootstrapStatus ?? null),
+    onMemoryHealthStatus: (cb: (status: MemoryHealthStatusMsg | null) => void): (() => void) => {
+      if (opts.memoryHealthStatus !== undefined) cb(opts.memoryHealthStatus);
+      return () => undefined;
+    },
+    getMemoryHealthStatus: () => Promise.resolve(opts.memoryHealthStatus ?? null),
     getWorkdirConfig: () => Promise.resolve(currentWorkdir),
     chooseWorkdir: () => Promise.resolve(chosenWorkdir),
   });
@@ -288,5 +294,25 @@ describe('bootstrap typed prompt Stop lifecycle', () => {
     expect(h.cancel.disabled).toBe(true);
     expect(h.input.value).toBe('do it');
     expect(h.status.textContent).toContain('Start Ollama');
+  });
+
+  it('does not block typed turns when local memory health is degraded', async () => {
+    const h = await setup({
+      memoryHealthStatus: {
+        state: 'degraded',
+        checkedAt: 1,
+        reason: 'keychain-unavailable',
+        message: 'Local memory is paused.',
+      },
+    });
+
+    h.input.value = 'do it';
+    submit(h.form);
+    await flush();
+
+    expect(h.turnRun).toHaveBeenCalledWith({ transcript: 'do it', sessionId: expect.any(String) });
+    expect(h.send.disabled).toBe(true);
+    expect(h.cancel.disabled).toBe(false);
+    expect(document.querySelector('#memory-health-banner')?.textContent).toMatch(/Local memory is paused/);
   });
 });

@@ -689,7 +689,8 @@ body.floating-window #floating-stop.armed + #floating-error:not([hidden]) {
 
 /* First-run setup banners — top notices; [hidden] override so the id's display can't defeat it. */
 #bootstrap-banner,
-#workdir-banner {
+#workdir-banner,
+#memory-health-banner {
   position: absolute;
   top: 12px;
   left: 50%;
@@ -713,12 +714,20 @@ body.floating-window #floating-stop.armed + #floating-error:not([hidden]) {
   border-color: rgba(124, 140, 255, 0.5);
   background: rgba(18, 24, 52, 0.95);
 }
+#memory-health-banner {
+  top: 104px;
+  border-color: rgba(120, 150, 190, 0.45);
+  background: rgba(20, 28, 38, 0.95);
+}
 #bootstrap-banner[hidden],
-#workdir-banner[hidden] {
+#workdir-banner[hidden],
+#memory-health-banner[hidden] {
   display: none;
 }
 #bootstrap-download,
-#workdir-choose {
+#workdir-choose,
+#memory-health-details,
+#memory-health-dismiss {
   font: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -735,8 +744,15 @@ body.floating-window #floating-stop.armed + #floating-error:not([hidden]) {
   background: rgba(124, 140, 255, 0.9);
   color: #080b16;
 }
+#memory-health-details,
+#memory-health-dismiss {
+  border-color: rgba(160, 185, 215, 0.55);
+  background: rgba(70, 95, 125, 0.85);
+}
 #bootstrap-download:disabled,
-#workdir-choose:disabled {
+#workdir-choose:disabled,
+#memory-health-details:disabled,
+#memory-health-dismiss:disabled {
   opacity: 0.6;
   cursor: default;
 }

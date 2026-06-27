@@ -27,6 +27,17 @@ export interface ModelPullProgressMsg {
   error?: string;
 }
 
+export type MemoryHealthState = 'checking' | 'ok' | 'degraded';
+export type MemoryHealthStatusReason = 'keychain-unavailable' | 'memory-locked' | 'store-unavailable' | 'unknown';
+
+/** Non-blocking memory health pushed MAIN->renderer; unlike BootstrapStatusMsg, it must not gate turns. */
+export interface MemoryHealthStatusMsg {
+  state: MemoryHealthState;
+  checkedAt: number;
+  reason?: MemoryHealthStatusReason;
+  message?: string;
+}
+
 export type WorkdirConfigSource = 'env' | 'config' | 'unset';
 
 export interface WorkdirConfigMsg {
@@ -50,6 +61,8 @@ export const CH = {
   memoryProfile: 'memory:profile', memoryFixFact: 'memory:fixFact',
   memoryVerifyFact: 'memory:verifyFact', memoryFactSource: 'memory:factSource',
   memoryForget: 'memory:forget',
+  // Non-blocking memory/keychain readiness: warn the renderer, but never block a turn.
+  memoryHealthStatus: 'memory:healthStatus', memoryHealthStatusGet: 'memory:healthStatusGet',
   // First-run bootstrap (M7b): MAIN pushes readiness (and serves it on demand to recover a missed push);
   // renderer invokes a one-click pull; MAIN streams progress.
   bootstrapStatus: 'bootstrap:status', bootstrapStatusGet: 'bootstrap:statusGet',

@@ -24,6 +24,7 @@ import { ollamaTags } from './brain/ollama';
 import { CH } from './shared/ipc';
 import { sendToWindow } from './main/safeSend';
 import { getBootstrapStatus, setBootstrapStatus } from './main/bootstrapStatusStore';
+import { warmMemoryHealthAtStartup } from './main/memoryHealthStartup';
 
 const STARTUP_MEMORY_WARMUP_DELAY_MS = 3000;
 
@@ -82,16 +83,6 @@ async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
   }
 }
 
-async function warmMemoryAtStartup(ownerId: string): Promise<void> {
-  try {
-    const memory = await loadMemory();
-    await memory.profileFacts(ownerId);
-    console.log('[main] memory warmup OK');
-  } catch (err) {
-    console.error(`[main] memory warmup FAILED — ${(err as Error).message}`);
-  }
-}
-
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
@@ -141,7 +132,7 @@ app.whenReady().then(async () => {
   //    Non-blocking — a very fast first turn still degrades independently if memory is unavailable, while
   //    the common path gets a warmed store without delaying the packaged renderer target.
   const warmMemory = (): void => {
-    setTimeout(() => { void warmMemoryAtStartup(ownerId); }, STARTUP_MEMORY_WARMUP_DELAY_MS);
+    setTimeout(() => { void warmMemoryHealthAtStartup({ ownerId, win, loadMemory }); }, STARTUP_MEMORY_WARMUP_DELAY_MS);
   };
   if (!win.isDestroyed() && !win.webContents.isDestroyed() && win.webContents.isLoading()) {
     win.webContents.once('did-finish-load', warmMemory);
