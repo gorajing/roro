@@ -143,9 +143,16 @@ function makeLoader<T>(
 export const loadBrain = makeLoader<BrainModule>('brain', () =>
   import(/* @vite-ignore */ '../brain/index'),
 );
-export const loadMemory = makeLoader<MemoryModule>('memory', () =>
+const loadMemoryModule = makeLoader<MemoryModule>('memory', () =>
   import(/* @vite-ignore */ '../memory2/index'),
 );
+
+export async function loadMemory(): Promise<MemoryModule> {
+  if (process.env.RORO_MEMORY_HEALTH_SMOKE_FAIL === 'keychain') {
+    throw new Error('memory2: OS keychain unavailable (safeStorage(darwin/os-keychain)); forced by RORO_MEMORY_HEALTH_SMOKE_FAIL=keychain');
+  }
+  return loadMemoryModule();
+}
 export const loadVision = makeLoader<VisionModule>('vision', () =>
   import(/* @vite-ignore */ '../vision/index'),
 );

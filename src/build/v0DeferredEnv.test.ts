@@ -15,11 +15,12 @@ describe('v0 deferred env hygiene', () => {
 
     expect(enabledV0DeferredEnv({ RORO_FLOATING_SMOKE: '1' })).toEqual(['RORO_FLOATING_SMOKE']);
     expect(enabledV0DeferredEnv({ RORO_FLOATING_SMOKE: '0' })).toEqual([]);
+    expect(enabledV0DeferredEnv({ RORO_MEMORY_HEALTH_SMOKE_FAIL: 'keychain' })).toEqual(['RORO_MEMORY_HEALTH_SMOKE_FAIL']);
   });
 
   it('strips the floating lifecycle smoke harness from packaged smoke envs', async () => {
     const { stripV0DeferredEnv } = await loadDeferredEnv();
-    const env = { RORO_FLOATING_SMOKE: '1', RORO_DEBUG_BRIDGE: '1' };
+    const env = { RORO_FLOATING_SMOKE: '1', RORO_DEBUG_BRIDGE: '1', RORO_MEMORY_HEALTH_SMOKE_FAIL: 'keychain' };
 
     expect(stripV0DeferredEnv(env)).toBe(env);
 

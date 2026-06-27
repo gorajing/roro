@@ -182,6 +182,7 @@ npm run release:doctor           # CI-safe release/signing doctor for the unsign
 npm run package
 npm run verify:release-artifact  # after npm run package, verifies the packaged .app shape
 npm run verify:packaged-memory   # packaged memory write -> quit -> relaunch -> recall smoke
+npm run verify:packaged-memory-health # packaged Keychain/memory-paused UX stays non-blocking
 npm run verify:packaged-live-memory-turn  # packaged relaunch -> live Ollama turn uses recalled memory
 npm run verify:packaged-natural-memory-turn # packaged natural-language teach -> relaunch -> recall turn
 npm run verify:packaged-onboarding

@@ -20,6 +20,7 @@
     "verify:typed-live-turn": "node scripts/smoke-typed-live-turn.mjs",
     "verify:epipe": "node scripts/smoke-packaged-epipe.mjs",
     "verify:packaged-memory": "node scripts/smoke-packaged-memory.mjs",
+    "verify:packaged-memory-health": "node scripts/smoke-packaged-memory-health.mjs",
     "verify:packaged-live-memory-turn": "RORO_PACKAGED_MEMORY_LIVE_TURN=1 node scripts/smoke-packaged-memory.mjs",
     "verify:packaged-natural-memory-turn": "RORO_PACKAGED_MEMORY_NATURAL_LANGUAGE_TURN=1 node scripts/smoke-packaged-memory.mjs",
     "verify:packaged-onboarding": "node scripts/smoke-packaged-onboarding.mjs",

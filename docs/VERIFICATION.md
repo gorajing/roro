@@ -31,7 +31,7 @@ Run this after changes to:
 ## Memory/keychain health diagnostic
 
 ```sh
-npx vitest run --no-file-parallelism src/main/memoryHealthStatusStore.test.ts src/main/memoryHealthStartup.test.ts src/main/ipc.memory.test.ts src/preload.exposure.test.ts src/renderer/bootstrap/memoryHealthBanner.test.ts src/renderer/bootstrap.typedPrompt.test.ts
+npx vitest run --no-file-parallelism src/main/memoryHealthStatusStore.test.ts src/main/memoryHealthStartup.test.ts src/main/ipc.memory.test.ts src/preload.exposure.test.ts src/renderer/bootstrap/memoryHealthBanner.test.ts src/renderer/bootstrap.typedPrompt.test.ts src/renderer/memory/forgetPanel.test.ts
 npx tsc --noEmit -p tsconfig.json
 ```
 
@@ -40,6 +40,19 @@ The memory-health diagnostic is a non-blocking startup warning path for keychain
 warmup stores and pushes `checking`/`ok`/`degraded`, the renderer can recover a missed push through
 `memory:healthStatusGet`, the product preload exposes only read-only health methods, the top-level banner renders
 friendly local-only Keychain copy, and typed prompt submits still reach `turnRun` while memory is paused.
+The Memory panel also uses the same health status to explain a Keychain-paused profile load.
+
+After `npm run package`, run:
+
+```sh
+npm run verify:packaged-memory-health
+```
+
+`scripts/smoke-packaged-memory-health.mjs` launches the real packaged app with a smoke-only forced
+`RORO_MEMORY_HEALTH_SMOKE_FAIL=keychain` failure and a fake local Ollama server. It asserts
+`getMemoryHealthStatus()` returns `degraded/keychain-unavailable`, the startup banner is visible with local Keychain
+copy, the Memory panel shows the same health-aware copy, and a non-memory answer turn still reaches `runEnd` without
+`run.failed`. The flag is stripped from unrelated packaged smokes and is forbidden in default release verification.
 
 Run this after changes to:
 
@@ -48,8 +61,10 @@ Run this after changes to:
 - `src/shared/ipc.ts` memory health channels/types
 - `src/preload.ts` memory health bridge
 - `src/renderer/bootstrap/memoryHealthBanner.ts`
+- `src/renderer/memory/forgetPanel.ts`
 - `src/renderer/bootstrap.ts` banner mounting
 - `src/index.css` setup banner positioning
+- `scripts/smoke-packaged-memory-health.mjs`
 
 ## Packaged memory persistence smoke
 
