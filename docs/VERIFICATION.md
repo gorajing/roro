@@ -150,7 +150,9 @@ proves recall degrades to recency when embeddings are unavailable. `npm run veri
 narration containing that value.
 `npm run verify:packaged-natural-memory-turn` also keeps live Ollama enabled, teaches a stated preference through
 packaged `turnRun`, waits for the extracted profile fact, relaunches, asks about it through a later turn, and asserts
-the visible floating Ask receipt reads `Done. Memory used.` after recall.
+the floating Ask receipt state reads `Done. Memory used.` after recall. The natural-language packaged smoke uses the
+floating Ask smoke hook to inspect receipt state, but it does not launch the packaged app in floating-window mode or prove
+that the floating receipt is visibly rendered; use `npm run verify:floating-live-turn` for the visible floating Ask path.
 
 The live mode proves packaged same-build encrypted recall can feed a live turn/narration after relaunch. It does **not**
 replace the Phase 0 non-founder magic-moment validation, the Developer-ID/notarized clean-Mac install, or cross-update
