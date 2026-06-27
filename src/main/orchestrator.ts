@@ -16,7 +16,7 @@
 import { Notification } from 'electron';
 import { CH } from '../shared/ipc';
 import type { TurnInput } from '../shared/ipc';
-import type { ActionEvent, AgentKind } from '../shared/events';
+import { formatMemoryStatus, type ActionEvent, type AgentKind } from '../shared/events';
 import { newRunId, SCREEN_CAPTURE_STATUS_TEXT } from '../shared/events';
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import type { MemoryKind } from '../shared/memory';
@@ -260,7 +260,7 @@ async function recallContext(
     pushEvent({
       kind: 'status',
       runId,
-      text: `Memory: ${factCount} known ${factCount === 1 ? 'fact' : 'facts'}, ${episodeCount} related ${episodeCount === 1 ? 'item' : 'items'}`,
+      text: formatMemoryStatus({ factCount, episodeCount }),
       ts: Date.now(),
     });
     return context;

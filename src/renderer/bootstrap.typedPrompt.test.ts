@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ActionEvent } from '../shared/events';
+import { formatMemoryStatus, type ActionEvent } from '../shared/events';
 import type { BootstrapStatusMsg, MemoryHealthStatusMsg, WorkdirConfigMsg } from '../shared/ipc';
 
 vi.mock('./config', () => ({
@@ -265,7 +265,7 @@ describe('bootstrap typed prompt Stop lifecycle', () => {
     h.input.value = 'what did we decide?';
     submit(h.form);
     await flush();
-    h.action({ kind: 'status', runId: 'answer-run', text: 'Memory: 0 known facts, 0 related items', ts: 1 });
+    h.action({ kind: 'status', runId: 'answer-run', text: formatMemoryStatus({ factCount: 0, episodeCount: 0 }), ts: 1 });
     h.runEnd('answer-run');
 
     expect(h.status.textContent).toBe('Done. Memory checked.');
@@ -281,7 +281,7 @@ describe('bootstrap typed prompt Stop lifecycle', () => {
     submit(h.form);
     await flush();
     h.action({ kind: 'run.started', runId: 'typed-run', agent: 'codex', ts: 1 });
-    h.action({ kind: 'status', runId: 'typed-run', text: 'Memory: 2 known facts, 1 related item', ts: 2 });
+    h.action({ kind: 'status', runId: 'typed-run', text: formatMemoryStatus({ factCount: 2, episodeCount: 1 }), ts: 2 });
     h.action({
       kind: 'file_change',
       runId: 'typed-run',
@@ -306,7 +306,7 @@ describe('bootstrap typed prompt Stop lifecycle', () => {
     submit(h.form);
     await flush();
     h.action({ kind: 'run.started', runId: 'typed-run', agent: 'codex', ts: 1 });
-    h.action({ kind: 'status', runId: 'typed-run', text: 'Memory: 2 known facts, 1 related item', ts: 2 });
+    h.action({ kind: 'status', runId: 'typed-run', text: formatMemoryStatus({ factCount: 2, episodeCount: 1 }), ts: 2 });
     h.action({
       kind: 'file_change',
       runId: 'typed-run',

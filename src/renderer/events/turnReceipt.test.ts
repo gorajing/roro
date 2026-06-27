@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ActionEvent } from '../../shared/events';
+import { formatMemoryStatus, type ActionEvent } from '../../shared/events';
 import { initialTurnReceiptState, receiptForTurnEnd, reduceTurnReceipt } from './turnReceipt';
 
 function reduce(events: ActionEvent[]) {
@@ -13,7 +13,7 @@ const failed = (error: string): ActionEvent => ({ kind: 'run.failed', runId: 'r1
 describe('turnReceipt', () => {
   it('shows a memory-used receipt when the memory beat recalled saved context', () => {
     const state = reduce([
-      status('Memory: 2 known facts, 1 related item'),
+      status(formatMemoryStatus({ factCount: 2, episodeCount: 1 })),
       completed,
     ]);
 
@@ -22,7 +22,7 @@ describe('turnReceipt', () => {
 
   it('shows memory checked when no saved memory matched', () => {
     const state = reduce([
-      status('Memory: 0 known facts, 0 related items'),
+      status(formatMemoryStatus({ factCount: 0, episodeCount: 0 })),
       completed,
     ]);
 
@@ -43,7 +43,7 @@ describe('turnReceipt', () => {
         ],
         ts: 2,
       },
-      status('Memory: 1 known fact, 0 related items'),
+      status(formatMemoryStatus({ factCount: 1, episodeCount: 0 })),
       completed,
     ]);
 
@@ -57,7 +57,7 @@ describe('turnReceipt', () => {
   });
 
   it('keeps cancellation neutral even when no terminal failure event was observed', () => {
-    const state = reduce([status('Memory: 1 known fact, 0 related items')]);
+    const state = reduce([status(formatMemoryStatus({ factCount: 1, episodeCount: 0 }))]);
 
     expect(receiptForTurnEnd(state, true)).toEqual({ tone: 'neutral', text: 'Stopped.' });
   });

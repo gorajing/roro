@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mountFloatingAsk } from './floatingAsk';
 import type { CharacterDriver } from '../character/types';
-import type { ActionEvent } from '../../shared/events';
+import { formatMemoryStatus, type ActionEvent } from '../../shared/events';
 
 function setCompanion(stub: unknown): void {
   (window as unknown as { companion: unknown }).companion = stub;
@@ -52,7 +52,7 @@ function setup(over: {
 
 const submit = (form: HTMLElement) => form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
 const started: ActionEvent = { kind: 'run.started', runId: 'r1', agent: 'codex', ts: 1 };
-const memoryUsed: ActionEvent = { kind: 'status', runId: 'r1', text: 'Memory: 1 known fact, 0 related items', ts: 1 };
+const memoryUsed: ActionEvent = { kind: 'status', runId: 'r1', text: formatMemoryStatus({ factCount: 1, episodeCount: 0 }), ts: 1 };
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r));
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
@@ -239,7 +239,7 @@ describe('floatingAsk shell (jsdom)', () => {
     submit(h.form);
     await flush();
 
-    h.fireAction({ kind: 'status', runId: 'other-run', text: 'Memory: 4 known facts, 2 related items', ts: 1 });
+    h.fireAction({ kind: 'status', runId: 'other-run', text: formatMemoryStatus({ factCount: 4, episodeCount: 2 }), ts: 1 });
     h.fireAction({ kind: 'run.started', runId: 'r1', agent: 'codex', ts: 2 });
     h.fireRunEnd('other-run');
 

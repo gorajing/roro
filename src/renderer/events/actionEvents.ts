@@ -9,7 +9,7 @@
 // timeline marker. Returns a single unsubscribe that detaches everything.
 
 import { eventToAvatarState } from '../../shared/avatar';
-import { SCREEN_CAPTURE_STATUS_TEXT, type ActionEvent } from '../../shared/events';
+import { parseMemoryStatus, SCREEN_CAPTURE_STATUS_TEXT, type ActionEvent } from '../../shared/events';
 import { isStoppedTerminalError } from '../../shared/stopped';
 import type { ActivityCue, CharacterDriver, CaptionSink } from '../character/types';
 import type { ActionTimeline } from '../character/captions';
@@ -71,9 +71,9 @@ export function activityForEvent(e: ActionEvent): ActivityCue | null {
       }
       // The orchestrator's owner-scoped recall beat: "Memory: N known facts, M related items".
       // (C1 moved this off kind:'message' — it's a status line, not assistant text.)
-      const beat = e.text.match(/^Memory: (\d+) known .*?(\d+) related/);
+      const beat = parseMemoryStatus(e.text);
       if (beat) {
-        const recalled = Number(beat[1]) > 0 || Number(beat[2]) > 0;
+        const recalled = beat.factCount > 0 || beat.episodeCount > 0;
         return { kind: 'memory', text: recalled ? 'recalled memory' : 'checking memory' };
       }
       return null;

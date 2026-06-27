@@ -122,6 +122,7 @@ function smokeEnv(port, ollamaPort) {
   delete env.DOTENV_CONFIG_PATH;
   const stripped = stripV0DeferredEnv(env);
   stripped.RORO_DEBUG_BRIDGE = '1';
+  if (NATURAL_LANGUAGE_TURN) stripped.RORO_FLOATING_SMOKE = '1';
   return stripped;
 }
 
@@ -389,6 +390,87 @@ function liveTurnExpression(transcript, sessionId, timeoutMs) {
   })`;
 }
 
+function floatingReceiptTurnExpression(transcript, sessionId, timeoutMs) {
+  return `new Promise((resolve) => {
+    const companion = window.companion;
+    const smoke = window.__roroFloatingAskSmoke;
+    if (
+      typeof companion?.turnRun !== 'function' ||
+      typeof companion?.onActionEvent !== 'function' ||
+      typeof companion?.onRunEnd !== 'function' ||
+      typeof smoke?.startTask !== 'function' ||
+      typeof smoke?.state !== 'function'
+    ) {
+      resolve({ ok: false, message: 'missing floating receipt turn bridge' });
+      return;
+    }
+
+    const events = [];
+    let turnResult = null;
+    let turnRunId = null;
+    let pendingRunEnd = null;
+    let settled = false;
+    let offEvent = () => {};
+    let offRunEnd = () => {};
+
+    const timer = setTimeout(() => {
+      finish({ ok: false, message: 'floating receipt turn timed out after ${timeoutMs}ms' });
+    }, ${timeoutMs});
+
+    function cleanup() {
+      clearTimeout(timer);
+      try { offEvent(); } catch {}
+      try { offRunEnd(); } catch {}
+    }
+
+    function finish(payload) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      const floatingState = smoke.state();
+      const scopedEvents = turnRunId
+        ? events.filter((event) => event?.runId === turnRunId)
+        : events;
+      resolve({
+        ...payload,
+        events: scopedEvents,
+        turnResult,
+        floatingState,
+        receiptText: floatingState?.errorText ?? '',
+      });
+    }
+
+    function finishIfRunEnded() {
+      if (!turnRunId || !pendingRunEnd || pendingRunEnd.runId !== turnRunId) return;
+      setTimeout(() => finish({ ok: true, runEnd: pendingRunEnd }), 0);
+    }
+
+    offEvent = companion.onActionEvent((event) => {
+      events.push(event);
+    });
+    offRunEnd = companion.onRunEnd((runEnd) => {
+      pendingRunEnd = runEnd;
+      finishIfRunEnded();
+    });
+
+    document.getElementById('ask-pill')?.click();
+    smoke.startTask(${JSON.stringify(transcript)});
+    companion.turnRun(${JSON.stringify({ transcript, sessionId })})
+      .then((value) => {
+        turnResult = value;
+        turnRunId = typeof value?.runId === 'string' ? value.runId : null;
+        finishIfRunEnded();
+      })
+      .catch((err) => {
+        finish({
+          ok: false,
+          message: String(err?.message || err),
+          stack: String(err?.stack || ''),
+        });
+      });
+  })`;
+}
+
 function bootstrapStatusExpression(timeoutMs) {
   return `new Promise((resolve) => {
     const companion = window.companion;
@@ -470,6 +552,7 @@ async function waitForRendererBridge(cdp, child, label) {
           turnRun: typeof window.companion?.turnRun,
           onActionEvent: typeof window.companion?.onActionEvent,
           onRunEnd: typeof window.companion?.onRunEnd,
+          floatingAskSmoke: typeof window.__roroFloatingAskSmoke?.startTask,
         };
       })()`);
       const bridgeReady =
@@ -478,6 +561,7 @@ async function waitForRendererBridge(cdp, child, label) {
         dom.memoryRecall === 'function' &&
         dom.bootstrapStatus === 'function' &&
         (!NATURAL_LANGUAGE_TURN || dom.memoryProfile === 'function') &&
+        (!NATURAL_LANGUAGE_TURN || dom.floatingAskSmoke === 'function') &&
         (!NEEDS_LIVE_OLLAMA || (
           dom.turnRun === 'function' &&
           dom.onActionEvent === 'function' &&
@@ -486,7 +570,7 @@ async function waitForRendererBridge(cdp, child, label) {
       if (bridgeReady) return dom;
       lastError =
         `hasBody=${dom.hasBody}, memoryRemember=${dom.memoryRemember}, memoryRecall=${dom.memoryRecall}, ` +
-        `memoryProfile=${dom.memoryProfile}, bootstrapStatus=${dom.bootstrapStatus}, turnRun=${dom.turnRun}, ` +
+        `memoryProfile=${dom.memoryProfile}, bootstrapStatus=${dom.bootstrapStatus}, floatingAskSmoke=${dom.floatingAskSmoke}, turnRun=${dom.turnRun}, ` +
         `onActionEvent=${dom.onActionEvent}, onRunEnd=${dom.onRunEnd}`;
     } catch (err) {
       lastError = err.message;
@@ -582,6 +666,46 @@ function setKeychainSearchList(paths) {
   runSecurity(['list-keychains', '-d', 'user', '-s', ...paths]);
 }
 
+function protectKeychainRestore(restore) {
+  let restored = false;
+  const signalHandlers = new Map();
+
+  const runRestore = () => {
+    if (restored) return;
+    restored = true;
+    process.off('exit', onExit);
+    for (const [signal, handler] of signalHandlers) {
+      process.off(signal, handler);
+    }
+    restore();
+  };
+
+  const onExit = () => {
+    try {
+      runRestore();
+    } catch {
+      // The process is already exiting; do not mask the original termination.
+    }
+  };
+
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    const handler = () => {
+      try {
+        runRestore();
+      } catch (err) {
+        console.error(`[smoke] keychain restore error during ${signal}: ${err.message}`);
+      } finally {
+        process.exit(signal === 'SIGINT' ? 130 : signal === 'SIGTERM' ? 143 : 129);
+      }
+    };
+    signalHandlers.set(signal, handler);
+    process.once(signal, handler);
+  }
+  process.once('exit', onExit);
+
+  return runRestore;
+}
+
 function installTemporaryKeychain(root) {
   const previousDefault = readDefaultKeychain();
   const previousSearchList = readKeychainSearchList();
@@ -644,7 +768,7 @@ await mkdir(userDataDir, { recursive: true });
 let restoreKeychain = () => {};
 
 try {
-  restoreKeychain = installTemporaryKeychain(root);
+  restoreKeychain = protectKeychainRestore(installTemporaryKeychain(root));
   const first = await withPackagedRenderer({
     cwd,
     userDataDir,
@@ -656,6 +780,7 @@ try {
       check('memory recall bridge exists', dom.memoryRecall === 'function');
       check('bootstrap status bridge exists', dom.bootstrapStatus === 'function');
       if (NATURAL_LANGUAGE_TURN) check('memory profile bridge exists for natural-language mode', dom.memoryProfile === 'function');
+      if (NATURAL_LANGUAGE_TURN) check('floating Ask smoke hook exists for receipt mode', dom.floatingAskSmoke === 'function');
       if (NEEDS_LIVE_OLLAMA) {
         check('turnRun bridge exists for live turn mode', dom.turnRun === 'function');
         check('action-event bridge exists for live turn mode', dom.onActionEvent === 'function');
@@ -776,6 +901,7 @@ try {
       check('relaunch renderer URL is file:// app.asar', dom.href.startsWith('file://') && dom.href.includes('/Roro.app/Contents/Resources/app.asar/'));
       check('relaunch memory recall bridge exists', dom.memoryRecall === 'function');
       if (NATURAL_LANGUAGE_TURN) check('relaunch profile bridge exists for natural-language mode', dom.memoryProfile === 'function');
+      if (NATURAL_LANGUAGE_TURN) check('relaunch floating Ask smoke hook exists for receipt mode', dom.floatingAskSmoke === 'function');
       if (NEEDS_LIVE_OLLAMA) {
         check('relaunch turnRun bridge exists for live turn mode', dom.turnRun === 'function');
         check('relaunch action-event bridge exists for live turn mode', dom.onActionEvent === 'function');
@@ -818,8 +944,8 @@ try {
         );
         naturalTurn = await runRendererMemoryOp(
           cdp,
-          liveTurnExpression(naturalRecallTranscript, sessionB, LIVE_TURN_TIMEOUT_MS),
-          'natural-language recall turn',
+          floatingReceiptTurnExpression(naturalRecallTranscript, sessionB, LIVE_TURN_TIMEOUT_MS),
+          'natural-language recall turn with visible receipt',
           LIVE_TURN_TIMEOUT_MS + 5000,
         );
       }
@@ -898,9 +1024,14 @@ try {
       JSON.stringify(naturalProfile?.facts ?? []),
     );
     check('natural-language relaunched fact source is the teach session', relaunchedFact?.source?.session_id === sessionA, JSON.stringify(relaunchedFact));
-    check('natural-language recall turn bridge resolved', second.naturalTurn?.ok, second.naturalTurn?.message);
+    check('natural-language recall turn with visible receipt bridge resolved', second.naturalTurn?.ok, second.naturalTurn?.message);
     check('natural-language recall turn completed with runEnd', natural?.ok === true && Boolean(natural.runEnd), natural?.message);
     check('natural-language recall runEnd matches turnRun result', natural?.runEnd?.runId === natural?.turnResult?.runId);
+    check(
+      'natural-language visible receipt reports memory used',
+      natural?.receiptText === 'Done. Memory used.',
+      natural?.receiptText || JSON.stringify(natural?.floatingState ?? {}),
+    );
     check('natural-language recall emitted a memory status beat', Boolean(memoryStatus), JSON.stringify(naturalEvents));
     check('natural-language recall saw at least one known fact', knownCount > 0, memoryStatus?.text);
     check('natural-language recall did not start the coding executor', !naturalEvents.some((event) => event?.kind === 'run.started'));
