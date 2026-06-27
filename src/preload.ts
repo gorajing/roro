@@ -71,6 +71,7 @@ const companion = {
   onBootstrapStatus: (cb: (s: BootstrapStatusMsg) => void): (() => void) =>
     subscribe<BootstrapStatusMsg>(CH.bootstrapStatus, cb),
   getBootstrapStatus: (): Promise<BootstrapStatusMsg | null> => ipcRenderer.invoke(CH.bootstrapStatusGet),
+  refreshBootstrapStatus: (): Promise<BootstrapStatusMsg> => ipcRenderer.invoke(CH.bootstrapRefresh),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke(CH.openExternal, url),
   pullModels: (models: string[]): Promise<void> => ipcRenderer.invoke(CH.modelPull, models),
   onPullProgress: (cb: (p: ModelPullProgressMsg) => void): (() => void) =>
@@ -100,6 +101,7 @@ const companion = {
   onCursor: (cb: (t: { x: number; y: number }) => void) => () => void;
   onBootstrapStatus: (cb: (s: BootstrapStatusMsg) => void) => () => void;
   getBootstrapStatus: () => Promise<BootstrapStatusMsg | null>;
+  refreshBootstrapStatus: () => Promise<BootstrapStatusMsg>;
   openExternal: (url: string) => Promise<void>;
   pullModels: (models: string[]) => Promise<void>;
   onPullProgress: (cb: (p: ModelPullProgressMsg) => void) => () => void;

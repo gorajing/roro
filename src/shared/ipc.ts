@@ -77,8 +77,9 @@ export const CH = {
   // Non-blocking memory/keychain readiness: warn the renderer, but never block a turn.
   memoryHealthStatus: 'memory:healthStatus', memoryHealthStatusGet: 'memory:healthStatusGet',
   // First-run bootstrap (M7b): MAIN pushes readiness (and serves it on demand to recover a missed push);
-  // renderer invokes a one-click pull; MAIN streams progress.
+  // renderer can ask MAIN to re-run the readiness probe after the user starts Ollama; MAIN streams pulls.
   bootstrapStatus: 'bootstrap:status', bootstrapStatusGet: 'bootstrap:statusGet',
+  bootstrapRefresh: 'bootstrap:refresh',
   modelPull: 'model:pull', modelPullProgress: 'model:pullProgress',
   // Packaged-app onboarding (Phase 1): persisted working repo lives in userData/config.json.
   configGet: 'config:get', configChooseWorkdir: 'config:chooseWorkdir',

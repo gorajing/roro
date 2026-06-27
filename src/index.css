@@ -714,9 +714,12 @@ body.floating-window #floating-stop.armed + #floating-error:not([hidden]) {
   z-index: 7;
   max-width: 92%;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   font-size: 12px;
+  text-align: center;
   border-radius: 12px;
   border: 1px solid rgba(255, 200, 90, 0.5);
   background: rgba(50, 40, 15, 0.95);
@@ -724,6 +727,10 @@ body.floating-window #floating-stop.armed + #floating-error:not([hidden]) {
   padding: 8px 14px;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+#bootstrap-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 #workdir-banner {
   top: 58px;
@@ -741,6 +748,8 @@ body.floating-window #floating-stop.armed + #floating-error:not([hidden]) {
   display: none;
 }
 #bootstrap-download,
+#bootstrap-get-ollama,
+#bootstrap-refresh,
 #workdir-choose,
 #memory-health-details,
 #memory-health-dismiss {
@@ -766,6 +775,8 @@ body.floating-window #floating-stop.armed + #floating-error:not([hidden]) {
   background: rgba(70, 95, 125, 0.85);
 }
 #bootstrap-download:disabled,
+#bootstrap-get-ollama:disabled,
+#bootstrap-refresh:disabled,
 #workdir-choose:disabled,
 #memory-health-details:disabled,
 #memory-health-dismiss:disabled {

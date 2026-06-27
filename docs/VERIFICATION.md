@@ -49,6 +49,35 @@ Run this after changes to:
 - `scripts/smoke-packaged-onboarding.mjs`
 - packaged startup/signing/fuse behavior in `forge.config.ts` or `src/build/macSigning.ts`
 
+## Packaged model setup smoke
+
+```sh
+npm run package
+npm run verify:packaged-model-setup
+```
+
+`scripts/smoke-packaged-model-setup.mjs` launches the real packaged app with a deterministic fake Ollama daemon that is
+reachable but starts with no models installed. It asserts the packaged renderer loads from `file://...app.asar`, the
+missing-model bootstrap banner is visible, debug/private bridges are absent, the public `getBootstrapStatus()` bridge
+lists the essential missing models, clicking the visible Download button streams pull progress through
+`model:pullProgress`, only the essential `qwen2.5:3b` and `nomic-embed-text` models are requested, and the public
+bootstrap status flips ready after the fake pulls complete. On macOS it uses a temporary unlocked user keychain for the
+run so packaged `safeStorage` can initialize without mutating stale login-keychain items.
+
+This is a packaged first-run setup smoke for the local-model path. It does **not** prove real network throughput, Ollama
+installer UX, real model quality, or a stranger's setup comprehension; it proves the packaged product bridge and banner
+wire the missing-model path correctly.
+
+Run this after changes to:
+
+- `src/main/bootstrapPlan.ts`
+- `src/main/ipc.ts` bootstrap/model-pull channels
+- `src/preload.ts` bootstrap/model-pull bridge exposure
+- `src/renderer/bootstrap/bootstrapBanner.ts`
+- `src/renderer/bootstrap/brainReadiness.ts`
+- packaged startup/signing/fuse behavior in `forge.config.ts` or `src/build/macSigning.ts`
+- `scripts/smoke-packaged-model-setup.mjs`
+
 ## Packaged first coding task smoke
 
 ```sh

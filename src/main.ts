@@ -17,13 +17,12 @@ import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorT
 import { cancelAllRuns } from './main/orchestrator';
 import { initOwnerId } from './main/identity';
 import { hydrateWorkdirConfig } from './main/configStore';
-import { loadBrain, loadMemory } from './main/siblings';
-import { bootstrapFailureMessage, bootstrapStatusFor, type OllamaProbe } from './main/bootstrapPlan';
+import { loadMemory } from './main/siblings';
 import type { BootstrapStatusMsg } from './shared/ipc';
-import { ollamaTags } from './brain/ollama';
 import { CH } from './shared/ipc';
 import { sendToWindow } from './main/safeSend';
-import { getBootstrapStatus, setBootstrapStatus } from './main/bootstrapStatusStore';
+import { getBootstrapStatus } from './main/bootstrapStatusStore';
+import { refreshBootstrapStatus } from './main/bootstrapRefresh';
 import { warmMemoryHealthAtStartup } from './main/memoryHealthStartup';
 import { memoryWarmupDisabled } from './main/memoryWarmupFlag';
 
@@ -36,58 +35,21 @@ const STARTUP_MEMORY_WARMUP_DELAY_MS = 3000;
  * dead and couples startup to Ollama being up). On failure we log loudly AND push a diagnostic caption
  * to the renderer once it's loaded, so the user sees WHY turns won't work (e.g. run `ollama serve`).
  */
-function notReadyStatus(message: string, status: BootstrapStatusMsg | null = null): BootstrapStatusMsg {
-  return {
-    needsOllamaInstall: false,
-    missing: [],
-    essentialBytes: 0,
-    ...status,
-    ready: false,
-    message,
-  };
-}
-
 async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
-  try {
-    const brain = await loadBrain();
-    const result = await brain.preflight();
-    console.log(`[main] brain preflight OK — ${brain.describeBrain()}; models:`, result.required);
-    const status: BootstrapStatusMsg = { ready: true, needsOllamaInstall: false, missing: [], essentialBytes: 0 };
-    setBootstrapStatus(status);
-    const send = (): void => {
-      sendToWindow(win, CH.bootstrapStatus, status);
-    };
-    if (!win.isDestroyed() && !win.webContents.isDestroyed() && win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
-    else send();
-  } catch (err) {
-    const baseMessage = `Local brain unavailable: ${(err as Error).message}`;
-    console.error(`[main] brain preflight FAILED — ${baseMessage}`);
-    // Turn the failure into ACTIONABLE first-run guidance (M7): for the local-Ollama provider, probe whether
-    // the daemon is up + which models it has, then disclose exactly what to install + the honest core-loop size
-    // (~2GB essentials, not the full ~8GB). A nebius failure is a cloud-key issue — skip the (pointless) probe.
-    let message = baseMessage;
-    let status: BootstrapStatusMsg | null = null;
-    if (process.env.BRAIN_PROVIDER !== 'nebius') {
-      let probe: OllamaProbe;
-      try {
-        probe = { kind: 'reachable', models: await ollamaTags() };
-      } catch (e) {
-        // A TIMEOUT means the daemon is up but wedged (reinstalling won't help — keep the accurate message);
-        // any other failure (connection refused) means it isn't running. ollamaFetchError tags timeouts.
-        probe = /timed out/i.test((e as Error)?.message ?? '') ? { kind: 'degraded' } : { kind: 'unreachable' };
-      }
-      message = bootstrapFailureMessage(baseMessage, 'ollama', probe);
-      status = bootstrapStatusFor(probe); // structured status → the renderer's one-click download banner (M7b)
-    }
-    status = notReadyStatus(message, status);
-    setBootstrapStatus(status); // serve it on demand (race recovery), in addition to the push below
-    const send = (): void => {
-      sendToWindow(win, CH.actionEvent, { kind: 'message', runId: 'preflight', text: `⚠️ ${message}`, ts: Date.now() });
-      sendToWindow(win, CH.bootstrapStatus, status);
-    };
-    if (!win.isDestroyed() && !win.webContents.isDestroyed() && win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
-    else send();
+  const result = await refreshBootstrapStatus();
+  if (result.ok) {
+    console.log(`[main] brain preflight OK — ${result.brainDescription}; models:`, result.required);
+  } else {
+    console.error(`[main] brain preflight FAILED — ${result.message}`);
   }
+  const send = (): void => {
+    if (!result.ok) {
+      sendToWindow(win, CH.actionEvent, { kind: 'message', runId: 'preflight', text: `⚠️ ${result.message}`, ts: Date.now() });
+    }
+    sendToWindow(win, CH.bootstrapStatus, result.status);
+  };
+  if (!win.isDestroyed() && !win.webContents.isDestroyed() && win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
+  else send();
 }
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.

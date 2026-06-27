@@ -34,6 +34,8 @@ interface CompanionBridgeLike {
   onBootstrapStatus?(cb: (s: BootstrapStatusMsg) => void): () => void;
   /** Fetch the current readiness on demand — recovers a push missed before subscribing (the startup race). */
   getBootstrapStatus?(): Promise<BootstrapStatusMsg | null>;
+  /** Re-run MAIN's local brain/model readiness probe. */
+  refreshBootstrapStatus?(): Promise<BootstrapStatusMsg>;
   /** Open an allowlisted external URL (the Ollama download page) in the default browser. */
   openExternal?(url: string): Promise<void>;
   pullModels?(models: string[]): Promise<void>;

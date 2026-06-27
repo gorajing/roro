@@ -4,13 +4,14 @@ Roro is **local-first**: the brain runs on a local Ollama daemon and memory is a
 in-process PGlite + pgvector store. The default path needs **no API keys** and makes
 no network calls. The steps below bring the full app alive on your Mac.
 
-## 1. Local brain — install Ollama + pull models
+## 1. Local brain — install Ollama + pull core models
 
 ```sh
 ollama serve                  # macOS: Ollama.app starts this automatically
 ollama pull qwen2.5:3b        # reasoning (decide)
-ollama pull qwen2.5vl:7b      # vision (describeScreen) — needs substantial RAM (~13-17GB)
 ollama pull nomic-embed-text  # embeddings (768-dim)
+# Optional later, for screen understanding:
+ollama pull qwen2.5vl:7b      # vision (describeScreen) — needs substantial RAM (~13-17GB)
 ```
 
 On boot, `main` runs a non-blocking brain preflight: success logs the active model;
@@ -127,6 +128,7 @@ actually be muted.
 - `npx tsc --noEmit -p tsconfig.json` → 0 errors
 - `npx vitest run --no-file-parallelism` → full deterministic suite
 - `npm run verify:floating` → on-screen smoke for the floating Ask (needs a display)
+- `npm run verify:packaged-model-setup` → packaged missing-model banner through one-click core model pull
 - `npm run verify:typed-live-turn` → default typed prompt through public `turnRun`
 - `npm run verify:floating-live-turn` → floating Ask through public `turnRun`
 
