@@ -26,6 +26,7 @@
     "verify:packaged-live-memory-turn": "RORO_PACKAGED_MEMORY_LIVE_TURN=1 node scripts/smoke-packaged-memory.mjs",
     "verify:packaged-natural-memory-turn": "RORO_PACKAGED_MEMORY_NATURAL_LANGUAGE_TURN=1 node scripts/smoke-packaged-memory.mjs",
     "verify:packaged-onboarding": "node scripts/smoke-packaged-onboarding.mjs",
+    "verify:packaged-first-task": "node scripts/smoke-packaged-first-task.mjs",
     "verify:release-artifact": "node scripts/verify-release-artifact.mjs --mode default",
     "verify:release-artifact:dmg": "node scripts/verify-release-artifact.mjs --mode default --require-dmg",
     "verify:release-artifact:signed": "node scripts/verify-release-artifact.mjs --mode signed",

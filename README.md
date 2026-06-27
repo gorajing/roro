@@ -186,6 +186,7 @@ npm run verify:packaged-memory-health # packaged Keychain/memory-paused UX stays
 npm run verify:packaged-live-memory-turn  # packaged relaunch -> live Ollama turn uses recalled memory
 npm run verify:packaged-natural-memory-turn # packaged natural-language teach -> relaunch -> recall turn
 npm run verify:packaged-onboarding
+npm run verify:packaged-first-task # packaged persisted project -> first typed coding task writes a file
 
 # Developer-ID release path, after exporting APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID:
 npm run verify:signing-readiness # strict Developer-ID env/cert/tool doctor before npm run make
@@ -206,6 +207,7 @@ What is working:
 - packaged same-build memory persistence smoke: a real packaged app writes and recalls an observation across relaunch
 - packaged live-memory turn smoke: with local Ollama ready, a real packaged turn narrates a recalled value after relaunch
 - packaged natural-memory turn smoke: with local Ollama ready, a real packaged turn learns a stated preference, relaunches, and uses it
+- packaged first-task smoke: a real packaged app with persisted project config verifies the public executor-readiness bridge, then runs a typed coding task through public `turnRun` and Codex event handling
 - release/signing doctor: CI checks the unsigned path, and a strict local doctor fails loud before Developer-ID `make`
 - signing auth doctor: with Apple env set, verifies `notarytool` credentials before uploading a build
 - DMG release artifact: macOS CI builds a versioned `.dmg` and verifies it mounts with `Roro.app`

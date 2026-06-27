@@ -185,7 +185,7 @@ describe('bootstrap typed prompt Stop lifecycle', () => {
     document.body.innerHTML = '';
   });
 
-  it('arms Stop immediately after an accepted submit before run.started', async () => {
+  it('arms Stop after readiness accepts the submit before run.started', async () => {
     const h = await setup();
 
     h.input.value = '  explain the status  ';

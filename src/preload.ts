@@ -9,7 +9,7 @@
 // subscription returns an unsubscribe fn so the renderer can avoid listener leaks.
 import { contextBridge, ipcRenderer } from 'electron';
 import { CH } from './shared/ipc';
-import type { MicStatus, TurnInput, BootstrapStatusMsg, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg } from './shared/ipc';
+import type { MicStatus, TurnInput, BootstrapStatusMsg, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg } from './shared/ipc';
 import type { ActionEvent } from './shared/events';
 import type { Decision, DecideInput } from './shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch, ProfileFactSourceView, ProfileFactView } from './shared/memory';
@@ -77,6 +77,8 @@ const companion = {
     subscribe<ModelPullProgressMsg>(CH.modelPullProgress, cb),
   getWorkdirConfig: (): Promise<WorkdirConfigMsg> => ipcRenderer.invoke(CH.configGet),
   chooseWorkdir: (): Promise<WorkdirConfigMsg> => ipcRenderer.invoke(CH.configChooseWorkdir),
+  getExecutorReadiness: (agent?: AgentKindArg): Promise<ExecutorReadinessMsg> =>
+    ipcRenderer.invoke(CH.executorReadinessGet, agent),
   onMemoryHealthStatus: (cb: (s: MemoryHealthStatusMsg) => void): (() => void) =>
     subscribe<MemoryHealthStatusMsg>(CH.memoryHealthStatus, cb),
   getMemoryHealthStatus: (): Promise<MemoryHealthStatusMsg | null> => ipcRenderer.invoke(CH.memoryHealthStatusGet),
@@ -103,6 +105,7 @@ const companion = {
   onPullProgress: (cb: (p: ModelPullProgressMsg) => void) => () => void;
   getWorkdirConfig: () => Promise<WorkdirConfigMsg>;
   chooseWorkdir: () => Promise<WorkdirConfigMsg>;
+  getExecutorReadiness: (agent?: AgentKindArg) => Promise<ExecutorReadinessMsg>;
   onMemoryHealthStatus: (cb: (s: MemoryHealthStatusMsg) => void) => () => void;
   getMemoryHealthStatus: () => Promise<MemoryHealthStatusMsg | null>;
 };

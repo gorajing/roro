@@ -171,6 +171,7 @@ describe('config IPC — packaged-app workdir onboarding spine', () => {
     expect(h.handlers.has(CH.turnRun)).toBe(true);
     expect(h.handlers.has(CH.memoryProfile)).toBe(true);
     expect(h.handlers.has(CH.memoryHealthStatusGet)).toBe(true);
+    expect(h.handlers.has(CH.executorReadinessGet)).toBe(true);
 
     h.handlers.clear();
     process.env.RORO_DEBUG_BRIDGE = '1';

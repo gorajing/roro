@@ -48,12 +48,15 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
 
 describe('orchestrator cancelTask pre-executor preempt', () => {
   let savedAllowCwd: string | undefined;
+  let savedCodexBin: string | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
     sent.length = 0;
     savedAllowCwd = process.env.RORO_ALLOW_CWD;
+    savedCodexBin = process.env.RORO_CODEX_BIN;
     process.env.RORO_ALLOW_CWD = '1';
+    process.env.RORO_CODEX_BIN = process.execPath;
     h.memory.recall.mockResolvedValue([]);
     h.memory.getProfile.mockResolvedValue([]);
     h.memory.remember.mockResolvedValue({ id: 'x', owner_id: 'O', session_id: 's', kind: 'observation', text: '', payload: null, superseded: false, created_at: 't' });
@@ -67,6 +70,8 @@ describe('orchestrator cancelTask pre-executor preempt', () => {
   afterEach(() => {
     if (savedAllowCwd === undefined) delete process.env.RORO_ALLOW_CWD;
     else process.env.RORO_ALLOW_CWD = savedAllowCwd;
+    if (savedCodexBin === undefined) delete process.env.RORO_CODEX_BIN;
+    else process.env.RORO_CODEX_BIN = savedCodexBin;
   });
 
   it('no-id Stop during decide marks the latest turn stopped and never dispatches the executor', async () => {

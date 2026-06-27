@@ -39,11 +39,14 @@ const flush = (): Promise<void> => new Promise((r) => setImmediate(r));
 
 describe('orchestrator: a no-verdict stream fails loud (no false run.completed)', () => {
   let savedAllowCwd: string | undefined;
+  let savedCodexBin: string | undefined;
   beforeEach(() => {
     vi.clearAllMocks();
     sent.length = 0;
     savedAllowCwd = process.env.RORO_ALLOW_CWD;
+    savedCodexBin = process.env.RORO_CODEX_BIN;
     process.env.RORO_ALLOW_CWD = '1';
+    process.env.RORO_CODEX_BIN = process.execPath;
     h.memory.recall.mockResolvedValue([]);
     h.memory.getProfile.mockResolvedValue([]);
     h.memory.remember.mockResolvedValue({ id: 'x', owner_id: 'O', session_id: 's', kind: 'observation', text: '', payload: null, superseded: false, created_at: 't' });
@@ -53,6 +56,8 @@ describe('orchestrator: a no-verdict stream fails loud (no false run.completed)'
   afterEach(() => {
     if (savedAllowCwd === undefined) delete process.env.RORO_ALLOW_CWD;
     else process.env.RORO_ALLOW_CWD = savedAllowCwd;
+    if (savedCodexBin === undefined) delete process.env.RORO_CODEX_BIN;
+    else process.env.RORO_CODEX_BIN = savedCodexBin;
   });
 
   it('synthesizes run.failed (not run.completed) when the executor stream ends with no terminal event', async () => {

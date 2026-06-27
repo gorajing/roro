@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveExecutable } from './resolveBin';
+import { resolveExecutable, resolveExecutableDetails } from './resolveBin';
 
 function deps(present: string[]) {
   return {
@@ -28,5 +28,28 @@ describe('resolveExecutable', () => {
 
   it('falls back to the bare name when nowhere found (spawn ENOENTs loud)', () => {
     expect(resolveExecutable('codex', undefined, deps([]))).toBe('codex');
+  });
+
+  it('reports where the executable was resolved from', () => {
+    expect(resolveExecutableDetails('codex', '/custom/codex', deps([]))).toEqual({
+      path: '/custom/codex',
+      source: 'env',
+      found: false,
+    });
+    expect(resolveExecutableDetails('codex', undefined, deps(['/opt/homebrew/bin/codex']))).toEqual({
+      path: '/opt/homebrew/bin/codex',
+      source: 'path',
+      found: true,
+    });
+    expect(resolveExecutableDetails('codex', undefined, deps(['/home/u/.local/bin/codex']))).toEqual({
+      path: '/home/u/.local/bin/codex',
+      source: 'common',
+      found: true,
+    });
+    expect(resolveExecutableDetails('codex', undefined, deps([]))).toEqual({
+      path: 'codex',
+      source: 'bare',
+      found: false,
+    });
   });
 });

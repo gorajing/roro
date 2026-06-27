@@ -45,6 +45,19 @@ export interface WorkdirConfigMsg {
   source: WorkdirConfigSource;
 }
 
+export type ExecutorReadinessSource = 'env' | 'path' | 'common' | 'bare';
+
+/** Read-only product readiness for the local executor CLI used by coding turns. */
+export interface ExecutorReadinessMsg {
+  ready: boolean;
+  agent: 'codex' | 'claude';
+  command: string;
+  envVar: string;
+  path: string;
+  source: ExecutorReadinessSource;
+  message: string;
+}
+
 export const CH = {
   micStatus: 'mic:status', micRequest: 'mic:request',
   windowMoveBy: 'window:moveBy',
@@ -69,6 +82,8 @@ export const CH = {
   modelPull: 'model:pull', modelPullProgress: 'model:pullProgress',
   // Packaged-app onboarding (Phase 1): persisted working repo lives in userData/config.json.
   configGet: 'config:get', configChooseWorkdir: 'config:chooseWorkdir',
+  // First-task readiness: product-safe check that the default local executor can start.
+  executorReadinessGet: 'executor:readinessGet',
   // Open an allowlisted external URL in the default browser (the Ollama download page).
   openExternal: 'shell:openExternal',
 } as const;

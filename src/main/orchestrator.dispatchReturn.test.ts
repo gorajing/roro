@@ -32,12 +32,15 @@ import { runTurn } from './orchestrator';
 
 describe('orchestrator dispatch-return: turnRun resolves at dispatch', () => {
   let savedAllowCwd: string | undefined;
+  let savedCodexBin: string | undefined;
   beforeEach(() => {
     vi.clearAllMocks();
     // Make dispatch deterministic regardless of .env / CI: this turn must reach the executor, so opt into
     // cwd as the repo (the run_agent path now fails loud without a chosen repo — see orchestrator.workdir.test).
     savedAllowCwd = process.env.RORO_ALLOW_CWD;
+    savedCodexBin = process.env.RORO_CODEX_BIN;
     process.env.RORO_ALLOW_CWD = '1';
+    process.env.RORO_CODEX_BIN = process.execPath;
     h.memory.recall.mockResolvedValue([]);
     h.memory.getProfile.mockResolvedValue([]);
     h.memory.remember.mockResolvedValue({ id: 'x', owner_id: 'O', session_id: 's', kind: 'observation', text: '', payload: null, superseded: false, created_at: 't' });
@@ -47,6 +50,8 @@ describe('orchestrator dispatch-return: turnRun resolves at dispatch', () => {
   afterEach(() => {
     if (savedAllowCwd === undefined) delete process.env.RORO_ALLOW_CWD;
     else process.env.RORO_ALLOW_CWD = savedAllowCwd;
+    if (savedCodexBin === undefined) delete process.env.RORO_CODEX_BIN;
+    else process.env.RORO_CODEX_BIN = savedCodexBin;
   });
 
   it('returns {runId} before the executor run reaches its terminal event', async () => {

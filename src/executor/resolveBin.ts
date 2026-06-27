@@ -15,14 +15,40 @@ export interface ResolveDeps {
   extraDirs: string[];
 }
 
-export function resolveExecutable(name: string, envOverride: string | undefined, deps: ResolveDeps): string {
-  if (envOverride) return envOverride; // explicit override wins — trust the operator
-  for (const dir of [...deps.pathDirs, ...deps.extraDirs]) {
+export type ExecutableResolutionSource = 'env' | 'path' | 'common' | 'bare';
+
+export interface ExecutableResolution {
+  path: string;
+  source: ExecutableResolutionSource;
+  found: boolean;
+}
+
+export function resolveExecutableDetails(
+  name: string,
+  envOverride: string | undefined,
+  deps: ResolveDeps,
+): ExecutableResolution {
+  if (envOverride) {
+    return { path: envOverride, source: 'env', found: deps.exists(envOverride) };
+  }
+
+  for (const dir of deps.pathDirs) {
     if (!dir) continue;
     const candidate = join(dir, name);
-    if (deps.exists(candidate)) return candidate;
+    if (deps.exists(candidate)) return { path: candidate, source: 'path', found: true };
   }
-  return name; // last resort: spawn resolves via PATH and ENOENTs loud if it's truly absent
+
+  for (const dir of deps.extraDirs) {
+    if (!dir) continue;
+    const candidate = join(dir, name);
+    if (deps.exists(candidate)) return { path: candidate, source: 'common', found: true };
+  }
+
+  return { path: name, source: 'bare', found: false };
+}
+
+export function resolveExecutable(name: string, envOverride: string | undefined, deps: ResolveDeps): string {
+  return resolveExecutableDetails(name, envOverride, deps).path;
 }
 
 const COMMON_BIN_DIRS = [

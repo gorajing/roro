@@ -49,6 +49,40 @@ Run this after changes to:
 - `scripts/smoke-packaged-onboarding.mjs`
 - packaged startup/signing/fuse behavior in `forge.config.ts` or `src/build/macSigning.ts`
 
+## Packaged first coding task smoke
+
+```sh
+npm run package
+npm run verify:packaged-first-task
+```
+
+`scripts/smoke-packaged-first-task.mjs` launches the real packaged app with disposable app state, a persisted
+`userData/config.json` project, a deterministic fake Ollama server, and a fake Codex executable override. On macOS it
+also installs a temporary unlocked user keychain for the run, then restores the original keychain defaults; this keeps
+the smoke deterministic while still exercising packaged `safeStorage` on the product `turnRun` path.
+
+The smoke asserts the renderer loads from `file://.../Roro.app/Contents/Resources/app.asar`, the default typed surface
+is active, no debug/private bridges are exposed, `getWorkdirConfig()` hydrates the persisted project, brain readiness is
+green, the public `getExecutorReadiness()` bridge resolves the fake Codex override, a typed submit reaches public
+`turnRun`, the action stream includes a memory status beat, fake Codex starts and completes a run, a file is written
+under the chosen project, the typed UI returns to the ready state, the executor argv uses
+`exec --json --skip-git-repo-check -s workspace-write -C <project>`, and the packaged logs contain no Keychain/EPIPE
+crash signatures. Main-process unit tests cover the fail-closed `run_agent` readiness boundary for missing executors.
+
+This is an engineering first-task gate for the real `.app`. It does **not** prove a signed/notarized clean-Mac install,
+real Codex authentication, real model quality, non-founder comprehension, or cross-update memory durability.
+
+Run this after changes to:
+
+- `src/executor/resolveBin.ts`
+- `src/main/executorReadiness.ts`
+- `src/main/orchestrator.ts` `run_agent` dispatch/readiness behavior
+- `src/main/ipc.ts` executor-readiness channels
+- `src/preload.ts` product bridge exposure
+- typed or floating Ask executor/workdir/brain gating
+- packaged startup/signing/fuse behavior in `forge.config.ts` or `src/build/macSigning.ts`
+- `scripts/smoke-packaged-first-task.mjs`
+
 ## Memory/keychain health diagnostic
 
 ```sh
@@ -268,7 +302,7 @@ npx vitest run --no-file-parallelism src/main/orchestrator.stopSlotRetention.tes
 npm run verify:typed-live-turn
 ```
 
-The focused test covers immediate Stop arming, no-id early cancel, late targeted recancel, stale runEnd
+The focused test covers Stop arming after readiness gates accept a turn, no-id early cancel, late targeted recancel, stale runEnd
 guarding, neutral `Stopped.` copy, compact post-turn receipts (`Done.`, changed-file count, memory
 checked/used), receipt reset between turns, workdir-cancel gating, and local-brain-not-ready gating. The
 packaged onboarding and EPIPE smokes additionally assert that Stop starts disabled and stays disabled when the
@@ -281,8 +315,8 @@ escalates an ignored abort from `SIGTERM` to `SIGKILL`.
 
 `scripts/smoke-typed-live-turn.mjs` launches the default, non-floating Electron window with fake local
 Ollama/Codex services and drives the real `#prompt-form` through the public `window.companion.turnRun`
-bridge. It asserts the default-window DOM is visible, debug bridges are absent, Stop arms before any
-`run.started`, pre-executor Stop emits scoped `run.failed: stopped` plus `runEnd`, fake Codex receives no
+bridge. It asserts the default-window DOM is visible, debug bridges are absent, Stop arms after readiness gates accept
+and before any `run.started`, pre-executor Stop emits scoped `run.failed: stopped` plus `runEnd`, fake Codex receives no
 stopped-task invocation, the status copy stays neutral, cooperative active-executor Stop emits scoped
 `run.failed: aborted` after fake Codex has emitted `run.started` and a started `file_change`, fake Codex
 records `SIGTERM` without writing the aborted file, and a later answer turn recovers the form. This smoke
@@ -295,7 +329,7 @@ Manual full-window checklist:
 | # | Action | Expected on screen |
 |---|--------|--------------------|
 | 1 | App boots in the default window | Start is enabled, Stop says `Stop` and is disabled |
-| 2 | Submit a non-empty prompt with project + brain ready | Start disables, typed text stays visible, Stop enables immediately, status says `Thinking... click Stop if you need to pause.` |
+| 2 | Submit a non-empty prompt with project + brain ready | Start disables, typed text stays visible, Stop enables after readiness accepts the turn, status says `Thinking... click Stop if you need to pause.` |
 | 3 | Click Stop before `run.started` | Stop says `Stopping...`, status says `Stopping...`, and the turn ends with neutral `Stopped.` copy |
 | 4 | Click Stop after `run.started` on an active executor task | Stop says `Stopping...`, the executor is aborted, no completed file change lands, and the turn ends with neutral `Stopped.` copy |
 | 5 | Let a successful turn finish | Status shows a compact receipt such as `Done. Memory checked.` or `Done. Changed 1 file. Memory used.` |
@@ -365,7 +399,7 @@ Start the app (`ollama serve` first if you want a real turn): `npm start`.
 | 1 | App boots | Collapsed "Ask Roro…" pill visible; no Stop pill; cat idle |
 | 2 | Click the pill (or ⌘⇧Space) | Input expands and is focused; pill chrome hidden |
 | 3 | Press Enter on an **empty** input | Nothing happens — no thinking flash, stays expanded |
-| 4 | Type "add a logout route" + Enter | Cat snaps to *thinking* immediately (<100ms); pill shows `tasked: add a logout route`; Stop appears before any executor event |
+| 4 | Type "add a logout route" + Enter | After readiness accepts the turn, the cat snaps to *thinking*, the pill shows `tasked: add a logout route`, and Stop appears before any executor event |
 | 5 | While a `run_agent` turn runs | `#floating-stop` remains visible with the `armed` class |
 | 6 | Click Stop | Run cancels; Stop shows `Stopping...`, then disarms/hides; Ask collapses and shows neutral `Stopped.` copy |
 | 7 | An answer/clarify turn (no executor run) | Ask still collapses when the turn ends (universal `runEnd`) and shows a success receipt such as `Done. Memory checked.` |

@@ -105,25 +105,29 @@ describe('floatingAsk shell (jsdom)', () => {
     h.pill.click();
     h.input.value = '  add a logout route  ';
     submit(h.form);
+    await flush();
     expect(h.form.classList.contains('tasked')).toBe(true);
     expect(h.driver.setState).toHaveBeenCalledWith('thinking');
-    await flush();
     expect(h.turnRun).toHaveBeenCalledWith({ transcript: 'add a logout route', sessionId: 'sess' });
   });
 
-  it('arms Stop immediately after an accepted submit before run.started arrives', () => {
+  it('arms Stop after readiness accepts the submit before run.started arrives', async () => {
     h.pill.click();
     h.input.value = 'do it';
     submit(h.form);
+    await flush();
     expect(h.form.classList.contains('tasked')).toBe(true);
     expect(h.stop.classList.contains('armed')).toBe(true);
     expect(h.stop.textContent).toBe('Stop');
   });
 
-  it('pre-run.started Stop click cancels the latest turn with no run id and shows Stopping feedback', () => {
+  it('pre-run.started Stop click cancels the latest turn with no run id and shows Stopping feedback', async () => {
+    const turn = deferred<{ runId: string }>();
+    h.turnRun.mockReturnValueOnce(turn.promise);
     h.pill.click();
     h.input.value = 'do it';
     submit(h.form);
+    await flush();
     h.stop.click();
     expect(h.cancelTask).toHaveBeenCalledWith(undefined);
     expect(h.stop.classList.contains('armed')).toBe(true);
@@ -136,6 +140,7 @@ describe('floatingAsk shell (jsdom)', () => {
     h.pill.click();
     h.input.value = 'do it';
     submit(h.form);
+    await flush();
     h.stop.click();
     expect(h.cancelTask).toHaveBeenCalledWith(undefined);
 
@@ -150,6 +155,7 @@ describe('floatingAsk shell (jsdom)', () => {
     h.pill.click();
     h.input.value = 'do it';
     submit(h.form);
+    await flush();
     h.stop.click();
     h.fireRunEnd();
 
@@ -161,10 +167,11 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.error.classList.contains('neutral')).toBe(true);
   });
 
-  it('run.started arms the Stop pill; the universal runEnd collapses the Ask', () => {
+  it('run.started arms the Stop pill; the universal runEnd collapses the Ask', async () => {
     h.pill.click();
     h.input.value = 'do it';
     submit(h.form);
+    await flush();
     h.fireAction(started);
     expect(h.stop.classList.contains('armed')).toBe(true);
     h.fireRunEnd();
@@ -172,10 +179,11 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.stop.classList.contains('armed')).toBe(false);
   });
 
-  it('shows a compact success receipt after an answer turn', () => {
+  it('shows a compact success receipt after an answer turn', async () => {
     h.pill.click();
     h.input.value = 'what did we decide?';
     submit(h.form);
+    await flush();
     h.fireAction(memoryUsed);
     h.fireRunEnd();
     expect(h.form.classList.contains('collapsed')).toBe(true);
@@ -184,10 +192,11 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.error.textContent).toBe('Done. Memory used.');
   });
 
-  it('shows changed files and memory in the success receipt after an executor turn', () => {
+  it('shows changed files and memory in the success receipt after an executor turn', async () => {
     h.pill.click();
     h.input.value = 'edit it';
     submit(h.form);
+    await flush();
     h.fireAction(started);
     h.fireAction(memoryUsed);
     h.fireAction({
@@ -205,10 +214,11 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.error.textContent).toBe('Done. Changed 1 file. Memory used.');
   });
 
-  it('does not leak receipt context into the next floating turn', () => {
+  it('does not leak receipt context into the next floating turn', async () => {
     h.pill.click();
     h.input.value = 'edit it';
     submit(h.form);
+    await flush();
     h.fireAction(started);
     h.fireAction(memoryUsed);
     h.fireAction({
@@ -225,7 +235,9 @@ describe('floatingAsk shell (jsdom)', () => {
 
     h.pill.click();
     h.input.value = 'what now?';
+    h.turnRun.mockResolvedValueOnce({ runId: 'r2' });
     submit(h.form);
+    await flush();
     h.fireRunEnd('r2');
 
     expect(h.error.hidden).toBe(false);
@@ -251,10 +263,11 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.error.textContent).toBe('Done.');
   });
 
-  it('keeps actionable failure copy visible after runEnd collapses the Ask', () => {
+  it('keeps actionable failure copy visible after runEnd collapses the Ask', async () => {
     h.pill.click();
     h.input.value = 'do it';
     submit(h.form);
+    await flush();
     h.fireAction(started);
     h.fireAction({ kind: 'run.failed', runId: 'r1', ok: false, error: 'spawn codex ENOENT', ts: 2 });
     h.fireRunEnd();
@@ -267,10 +280,11 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.error.textContent).not.toContain('spawn codex ENOENT');
   });
 
-  it('shows neutral stopped copy instead of a red task failure after user cancellation', () => {
+  it('shows neutral stopped copy instead of a red task failure after user cancellation', async () => {
     h.pill.click();
     h.input.value = 'do it';
     submit(h.form);
+    await flush();
     h.stop.click();
     h.fireAction({ kind: 'run.failed', runId: 'r1', ok: false, error: 'stopped', ts: 2 });
     h.fireRunEnd();
@@ -282,10 +296,11 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.error.textContent).not.toContain('Task hit a problem');
   });
 
-  it('clears the previous failure when the user summons Ask again', () => {
+  it('clears the previous failure when the user summons Ask again', async () => {
     h.pill.click();
     h.input.value = 'do it';
     submit(h.form);
+    await flush();
     h.fireAction({ kind: 'run.failed', runId: 'r1', ok: false, error: 'spawn codex ENOENT', ts: 2 });
     h.fireRunEnd('r1');
     expect(h.error.hidden).toBe(false);
@@ -293,21 +308,25 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.error.hidden).toBe(true);
   });
 
-  it('Stop click cancels by the captured runId', () => {
+  it('Stop click cancels by the captured runId', async () => {
     h.pill.click();
     h.input.value = 'do it';
     submit(h.form);
+    await flush();
     h.fireAction(started);
     h.stop.click();
     expect(h.cancelTask).toHaveBeenCalledWith('r1');
   });
 
   it('recovers from a rejected turnRun (never stuck in tasked)', async () => {
-    h.turnRun.mockRejectedValueOnce(new Error('ipc down'));
+    let rejectTurn!: (err: Error) => void;
+    h.turnRun.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectTurn = reject; }));
     h.pill.click();
     h.input.value = 'do it';
     submit(h.form);
+    await flush();
     expect(h.form.classList.contains('tasked')).toBe(true);
+    rejectTurn(new Error('ipc down'));
     await flush(); // flush the .catch
     expect(h.form.classList.contains('collapsed')).toBe(true);
   });
