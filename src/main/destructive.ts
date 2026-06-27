@@ -5,11 +5,10 @@
 // makes the gate worthless. Finer "outside workdir()" detection is approximated by home/system roots
 // (free-text path parsing can't reliably tell "/health" the route from "/health" the file).
 //
-// ARCHITECTURAL LIMIT (defense-in-depth, NOT a sandbox): this inspects the TASK PROMPT, not the
-// agent's actual argv at execution. A paraphrased/obfuscated instruction can evade it, and an agent
-// can still emit a destructive command MID-RUN unguarded. True enforcement would gate at command
-// emission (the `command` ActionEvent), aborting the run on a destructive argv — tracked as a
-// follow-up. The high-confidence set below is the cheap, alarm-fatigue-free first line.
+// This classifier is used twice: before dispatch on the user's/task text (to ask for an explicit
+// confirm) and inside the orchestrator on started `command` ActionEvents (to abort an unapproved
+// destructive argv). It is still defense-in-depth, not a sandbox: a malicious/opaque subprocess can
+// evade text inspection. The high-confidence set below is the cheap, alarm-fatigue-free safety line.
 
 export interface DestructiveVerdict {
   destructive: boolean;
