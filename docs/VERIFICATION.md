@@ -96,6 +96,7 @@ Run this after changes to:
 ```sh
 npm run verify:packaged-memory
 npm run verify:packaged-live-memory-turn   # optional; requires local Ollama + required models
+npm run verify:packaged-natural-memory-turn # optional; requires local Ollama + required models
 ```
 
 `scripts/smoke-packaged-memory.mjs` launches the real packaged app with disposable `cwd` and `--user-data-dir`. On macOS
@@ -112,11 +113,15 @@ proves recall degrades to recency when embeddings are unavailable. `npm run veri
 `RORO_PACKAGED_MEMORY_LIVE_TURN=1`: the same packaged app keeps live Ollama enabled, then after relaunch it asks
 `window.companion.turnRun` about a remembered smoke value and asserts the action stream includes a memory beat and a
 narration containing that value.
+`npm run verify:packaged-natural-memory-turn` also keeps live Ollama enabled, teaches a stated preference through
+packaged `turnRun`, waits for the extracted profile fact, relaunches, asks about it through a later turn, and asserts
+the visible floating Ask receipt reads `Done. Memory used.` after recall.
 
 The live mode proves packaged same-build encrypted recall can feed a live turn/narration after relaunch. It does **not**
 replace the Phase 0 non-founder magic-moment validation, the Developer-ID/notarized clean-Mac install, or cross-update
 memory durability. Because the smoke seeds the value directly through the memory bridge, it also does **not** prove
-natural-language extraction quality.
+natural-language extraction quality. The natural-language mode closes that specific automated gap, but still does not
+replace the non-founder or clean-Mac signed-build gates.
 
 Run this after changes to:
 

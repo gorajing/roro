@@ -1,4 +1,4 @@
-import type { ActionEvent } from '../../shared/events';
+import { parseMemoryStatus, type ActionEvent } from '../../shared/events';
 import { isStoppedTerminalError } from '../../shared/stopped';
 import { actionableErrorCopy } from './errorCopy';
 
@@ -11,8 +11,8 @@ export interface TurnReceipt {
 
 export interface TurnReceiptState {
   memorySeen: boolean;
-  memoryKnown: number;
-  memoryRelated: number;
+  factCount: number;
+  episodeCount: number;
   changedFiles: Set<string>;
   terminal: 'completed' | 'failed' | null;
   error: string | null;
@@ -20,18 +20,12 @@ export interface TurnReceiptState {
 
 export const initialTurnReceiptState = (): TurnReceiptState => ({
   memorySeen: false,
-  memoryKnown: 0,
-  memoryRelated: 0,
+  factCount: 0,
+  episodeCount: 0,
   changedFiles: new Set(),
   terminal: null,
   error: null,
 });
-
-function memoryCounts(text: string): { known: number; related: number } | null {
-  const match = text.match(/^Memory: (\d+) known .*?(\d+) related/);
-  if (!match) return null;
-  return { known: Number(match[1]), related: Number(match[2]) };
-}
 
 export function reduceTurnReceipt(state: TurnReceiptState, event: ActionEvent): TurnReceiptState {
   const next: TurnReceiptState = {
@@ -40,11 +34,11 @@ export function reduceTurnReceipt(state: TurnReceiptState, event: ActionEvent): 
   };
 
   if (event.kind === 'status') {
-    const counts = memoryCounts(event.text);
+    const counts = parseMemoryStatus(event.text);
     if (counts) {
       next.memorySeen = true;
-      next.memoryKnown = counts.known;
-      next.memoryRelated = counts.related;
+      next.factCount = counts.factCount;
+      next.episodeCount = counts.episodeCount;
     }
     return next;
   }
@@ -76,7 +70,7 @@ function filePhrase(count: number): string | null {
 
 function memoryPhrase(state: TurnReceiptState): string | null {
   if (!state.memorySeen) return null;
-  return state.memoryKnown > 0 || state.memoryRelated > 0 ? 'Memory used.' : 'Memory checked.';
+  return state.factCount > 0 || state.episodeCount > 0 ? 'Memory used.' : 'Memory checked.';
 }
 
 export function receiptForTurnEnd(state: TurnReceiptState, cancelRequested = false): TurnReceipt {
