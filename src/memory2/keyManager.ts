@@ -18,11 +18,11 @@ import { createAesGcmCipher, type Cipher } from './cipher';
 /** The OS-keychain seam. Production = Electron safeStorage (index.ts); tests = a reversible fake. */
 export interface KeyWrapper {
   /** True only when a real OS keychain backend is selected (not a plaintext/unknown fallback). */
-  available(): boolean;
+  available(): Promise<boolean>;
   /** Wrap the raw DEK with the OS key -> an opaque token safe to persist. */
-  wrap(plaintext: Buffer): string;
+  wrap(plaintext: Buffer): Promise<string>;
   /** Recover the raw DEK; throws if the OS key changed / token is corrupt. */
-  unwrap(token: string): Buffer;
+  unwrap(token: string): Promise<Buffer>;
   /** Human-readable backend description (for error messages). */
   describe(): string;
 }
@@ -39,7 +39,7 @@ interface KeyFile {
 /** Load the per-store DEK (creating + persisting it on first run), return a Cipher bound to it. */
 export async function loadOrCreateCipher(opts: { dir: string; wrapper: KeyWrapper }): Promise<Cipher> {
   const { dir, wrapper } = opts;
-  if (!wrapper.available()) {
+  if (!(await wrapper.available())) {
     throw new Error(
       `memory2: OS keychain unavailable (${wrapper.describe()}) — cannot encrypt memory at rest, and ` +
         `encrypt-by-default will not silently store plaintext. Run on a system with a real keychain backend.`,
@@ -58,7 +58,7 @@ export async function loadOrCreateCipher(opts: { dir: string; wrapper: KeyWrappe
     }
     let dek: Buffer;
     try {
-      dek = wrapper.unwrap(parsed.wrappedDek);
+      dek = await wrapper.unwrap(parsed.wrappedDek);
     } catch (err) {
       // The OS key changed (or the wrapped DEK is corrupt): the corpus is unrecoverable with this key.
       // Fail loud — do NOT reinitialize, which would orphan every encrypted entry.
@@ -75,7 +75,7 @@ export async function loadOrCreateCipher(opts: { dir: string; wrapper: KeyWrappe
 
   // First run: mint a DEK, wrap it, persist durably (tmp -> rename), return the cipher.
   const dek = randomBytes(DEK_BYTES);
-  const file: KeyFile = { version: KEY_VERSION, wrappedDek: wrapper.wrap(dek) };
+  const file: KeyFile = { version: KEY_VERSION, wrappedDek: await wrapper.wrap(dek) };
   const tmp = `${keyPath}.tmp`;
   await writeFile(tmp, JSON.stringify(file), { mode: 0o600 });
   await rename(tmp, keyPath);

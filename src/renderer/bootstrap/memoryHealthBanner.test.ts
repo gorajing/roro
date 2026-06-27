@@ -53,7 +53,7 @@ describe('mountMemoryHealthBanner — non-blocking memory/keychain diagnostic', 
     const text = q('#memory-health-banner')?.textContent ?? '';
     expect(text).toMatch(/lives on this Mac/);
     expect(text).toMatch(/not a cloud login or API key issue/i);
-    expect(text).toMatch(/Roro Key/);
+    expect(text).toMatch(/Roro paused encrypted memory/);
   });
 
   it('dismisses only the current degraded snapshot', () => {

@@ -31,7 +31,7 @@ Run this after changes to:
 ## Memory/keychain health diagnostic
 
 ```sh
-npx vitest run --no-file-parallelism src/main/memoryHealthStatusStore.test.ts src/main/memoryHealthStartup.test.ts src/main/ipc.memory.test.ts src/preload.exposure.test.ts src/renderer/bootstrap/memoryHealthBanner.test.ts src/renderer/bootstrap.typedPrompt.test.ts src/renderer/memory/forgetPanel.test.ts
+npx vitest run --no-file-parallelism src/memory2/keyManager.test.ts src/memory2/safeStorageWrapper.test.ts src/main/memoryHealthStatusStore.test.ts src/main/memoryHealthStartup.test.ts src/main/ipc.memory.test.ts src/preload.exposure.test.ts src/renderer/bootstrap/memoryHealthBanner.test.ts src/renderer/bootstrap.typedPrompt.test.ts src/renderer/memory/forgetPanel.test.ts
 npx tsc --noEmit -p tsconfig.json
 ```
 
@@ -53,13 +53,18 @@ npm run verify:packaged-memory-health
 `getMemoryHealthStatus()` returns `degraded/keychain-unavailable`, the startup banner is visible with local Keychain
 copy, the Memory panel shows the same health-aware copy, and a non-memory answer turn still reaches `runEnd` without
 `run.failed`. The flag is stripped from unrelated packaged smokes and is forbidden in default release verification.
+The production safeStorage wrapper uses Electron's async encryption API so memory can degrade through the in-app
+memory-health path instead of calling the synchronous Keychain API that can surface a native "Keychain Not Found" modal.
 
 Run this after changes to:
 
 - `src/main/memoryHealth*.ts`
 - `src/main.ts` memory warmup wiring
+- `src/main/siblings.ts` memory module loading
 - `src/shared/ipc.ts` memory health channels/types
 - `src/preload.ts` memory health bridge
+- `src/memory2/keyManager.ts`
+- `src/memory2/safeStorageWrapper.ts`
 - `src/renderer/bootstrap/memoryHealthBanner.ts`
 - `src/renderer/memory/forgetPanel.ts`
 - `src/renderer/bootstrap.ts` banner mounting

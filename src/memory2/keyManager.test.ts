@@ -8,10 +8,10 @@ import { loadOrCreateCipher, type KeyWrapper } from './keyManager';
 // simulates a keychain rotation that can no longer unwrap a previously-wrapped DEK.
 function fakeWrapper(secret = 'os-key', avail = true): KeyWrapper {
   return {
-    available: () => avail,
+    available: async () => avail,
     describe: () => `fake(${secret})`,
-    wrap: (buf) => `wrapped:${secret}:${buf.toString('base64')}`,
-    unwrap: (tok) => {
+    wrap: async (buf) => `wrapped:${secret}:${buf.toString('base64')}`,
+    unwrap: async (tok) => {
       const [prefix, s, b64] = tok.split(':');
       if (prefix !== 'wrapped' || s !== secret) throw new Error('fake wrapper: cannot unwrap (wrong OS key)');
       return Buffer.from(b64, 'base64');
