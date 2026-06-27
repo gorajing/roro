@@ -945,7 +945,7 @@ try {
         naturalTurn = await runRendererMemoryOp(
           cdp,
           floatingReceiptTurnExpression(naturalRecallTranscript, sessionB, LIVE_TURN_TIMEOUT_MS),
-          'natural-language recall turn with visible receipt',
+          'natural-language recall turn with receipt state',
           LIVE_TURN_TIMEOUT_MS + 5000,
         );
       }
@@ -1024,11 +1024,11 @@ try {
       JSON.stringify(naturalProfile?.facts ?? []),
     );
     check('natural-language relaunched fact source is the teach session', relaunchedFact?.source?.session_id === sessionA, JSON.stringify(relaunchedFact));
-    check('natural-language recall turn with visible receipt bridge resolved', second.naturalTurn?.ok, second.naturalTurn?.message);
+    check('natural-language recall turn with receipt-state bridge resolved', second.naturalTurn?.ok, second.naturalTurn?.message);
     check('natural-language recall turn completed with runEnd', natural?.ok === true && Boolean(natural.runEnd), natural?.message);
     check('natural-language recall runEnd matches turnRun result', natural?.runEnd?.runId === natural?.turnResult?.runId);
     check(
-      'natural-language visible receipt reports memory used',
+      'natural-language floating Ask receipt state reports memory used',
       natural?.receiptText === 'Done. Memory used.',
       natural?.receiptText || JSON.stringify(natural?.floatingState ?? {}),
     );
