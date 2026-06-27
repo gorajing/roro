@@ -64,8 +64,9 @@ required. The **two roles of the Developer-ID cert are now clear and separate:**
 > surface exposes the executor-readiness check, then can complete a first coding task through public `turnRun` and Codex
 > events. It still does not replace real Codex auth, signed/notarized clean-Mac validation, or non-founder validation.
 > Model-setup preflight: `npm run verify:packaged-model-setup` launches the real packaged app against a fake local
-> Ollama daemon with no models installed. It proves the packaged first-run banner shows the missing-model Download path,
-> streams pulls for only the essential local models, and flips the public bootstrap status ready.
+> Ollama host that starts unreachable, then comes online with no models installed. It proves the packaged first-run
+> banner shows Get Ollama/Recheck while the daemon is down, transitions in-app to the missing-model Download path after
+> Recheck, streams pulls for only the essential local models, and flips the public bootstrap status ready.
 
 ---
 
@@ -144,7 +145,7 @@ the happy packaged first-run workdir flow.
 - ✅ Stronger brain-readiness gate: typed and floating Ask block a coding turn when the startup preflight reports
   Ollama/models are not ready.
 - ✅ Packaged model-setup preflight: `npm run verify:packaged-model-setup` proves reachable-Ollama/missing-model setup
-  shows a visible Download action and completes the essential model pull path in the packaged app.
+  plus daemon-down → Recheck recovery in the packaged app, then completes the essential model pull path.
 - ✅ Project control in Settings: after first setup, the user can see the active repo and change the saved project
   without relaunching; `RORO_WORKDIR` remains an explicit read-only override.
 - ✅ Packaged first-task preflight: `npm run verify:packaged-first-task` proves the persisted project, local-brain
