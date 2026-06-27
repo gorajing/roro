@@ -148,9 +148,6 @@ const loadMemoryModule = makeLoader<MemoryModule>('memory', () =>
 );
 
 export async function loadMemory(): Promise<MemoryModule> {
-  if (process.env.RORO_MEMORY_HEALTH_SMOKE_FAIL === 'keychain') {
-    throw new Error('memory2: OS keychain unavailable (safeStorage(darwin/os-keychain)); forced by RORO_MEMORY_HEALTH_SMOKE_FAIL=keychain');
-  }
   return loadMemoryModule();
 }
 export const loadVision = makeLoader<VisionModule>('vision', () =>

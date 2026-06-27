@@ -11,7 +11,7 @@ const GENERIC_SUMMARY = "Local memory is paused. Roro can still code; memories w
 const DETAILS =
   "Roro's encrypted memory lives on this Mac and uses macOS Keychain to unlock it. This is not a cloud login or API key issue.";
 const KEYCHAIN_DETAIL =
-  'If macOS showed "Keychain Not Found" for "Roro Key", restart Roro after Keychain is available.';
+  'Roro paused encrypted memory because macOS Keychain is unavailable. Fix Keychain, then relaunch Roro.';
 
 function statusKey(status: MemoryHealthStatusMsg): string {
   return `${status.checkedAt}:${status.reason ?? ''}`;

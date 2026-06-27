@@ -10,26 +10,33 @@
 import type { KeyWrapper } from './keyManager';
 
 export interface SafeStorageLike {
-  isEncryptionAvailable(): boolean;
-  encryptString(plainText: string): Buffer;
-  decryptString(encrypted: Buffer): string;
+  isEncryptionAvailable?(): boolean;
+  encryptString?(plainText: string): Buffer;
+  decryptString?(encrypted: Buffer): string;
+  isAsyncEncryptionAvailable(): Promise<boolean>;
+  encryptStringAsync(plainText: string): Promise<Buffer>;
+  decryptStringAsync(encrypted: Buffer): Promise<{ shouldReEncrypt: boolean; result: string }>;
   getSelectedStorageBackend?(): string;
 }
 
 const INSECURE_LINUX_BACKENDS = new Set(['basic_text', 'unknown']);
+declare const process: { env: Record<string, string | undefined> };
 
 export function buildSafeStorageWrapper(ss: SafeStorageLike, platform: string): KeyWrapper {
   const backend = (): string =>
     platform === 'linux' && ss.getSelectedStorageBackend ? ss.getSelectedStorageBackend() : 'os-keychain';
+  const forcedKeychainFailure = (): boolean => process.env.RORO_MEMORY_HEALTH_SMOKE_FAIL === 'keychain';
   return {
-    available(): boolean {
-      if (!ss.isEncryptionAvailable()) return false;
+    async available(): Promise<boolean> {
+      if (forcedKeychainFailure()) return false;
       if (platform === 'linux' && INSECURE_LINUX_BACKENDS.has(backend())) return false;
-      return true;
+      return ss.isAsyncEncryptionAvailable();
     },
-    describe: () => `safeStorage(${platform}/${backend()})`,
+    describe: () => `safeStorage(${platform}/${backend()}${forcedKeychainFailure() ? '; forced keychain unavailable' : ''})`,
     // The DEK is binary; safeStorage works on strings, so wrap/unwrap go through base64.
-    wrap: (plaintext: Buffer): string => ss.encryptString(plaintext.toString('base64')).toString('base64'),
-    unwrap: (token: string): Buffer => Buffer.from(ss.decryptString(Buffer.from(token, 'base64')), 'base64'),
+    wrap: async (plaintext: Buffer): Promise<string> =>
+      (await ss.encryptStringAsync(plaintext.toString('base64'))).toString('base64'),
+    unwrap: async (token: string): Promise<Buffer> =>
+      Buffer.from((await ss.decryptStringAsync(Buffer.from(token, 'base64'))).result, 'base64'),
   };
 }
