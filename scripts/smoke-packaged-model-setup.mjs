@@ -1,8 +1,9 @@
 // scripts/smoke-packaged-model-setup.mjs - packaged local-model setup smoke.
 //
-// This launches the real packaged .app with a fake Ollama daemon that starts with no
-// models installed. It proves the packaged first-run banner exposes the public model
-// setup path: missing essentials -> Download button -> streamed pulls -> ready status.
+// This launches the real packaged .app against an initially unreachable Ollama host,
+// then starts a fake Ollama daemon on that same host with no models installed. It
+// proves both public model setup branches:
+// Ollama unreachable -> Recheck -> missing essentials -> Download -> ready status.
 //
 // Run after `npm run package`: npm run verify:packaged-model-setup
 
@@ -67,8 +68,8 @@ function sendJson(res, body) {
   res.end(JSON.stringify(body));
 }
 
-async function startFakeOllama() {
-  const port = await freePort();
+async function startFakeOllama(port) {
+  port ||= await freePort();
   const installed = new Set();
   const pulls = [];
   const server = createHttpServer(async (req, res) => {
@@ -84,9 +85,9 @@ async function startFakeOllama() {
         pulls.push(model);
         res.writeHead(200, { 'content-type': 'application/x-ndjson' });
         res.write(`${JSON.stringify({ status: 'pulling manifest' })}\n`);
-        await sleep(50);
+        await sleep(100);
         res.write(`${JSON.stringify({ status: 'downloading', total: 100, completed: 50 })}\n`);
-        await sleep(50);
+        await sleep(500);
         res.write(`${JSON.stringify({ status: 'verifying sha256 digest', total: 100, completed: 100 })}\n`);
         installed.add(model);
         res.end(`${JSON.stringify({ status: 'success' })}\n`);
@@ -108,8 +109,9 @@ async function startFakeOllama() {
     server.once('error', reject);
     server.listen(port, '127.0.0.1', resolveListen);
   });
+  const host = `http://127.0.0.1:${port}`;
   return {
-    host: `http://127.0.0.1:${port}`,
+    host,
     pulls,
     installed,
     close: () => new Promise((resolveClose) => server.close(resolveClose)),
@@ -419,57 +421,63 @@ try {
   await mkdir(cwd, { recursive: true });
   await mkdir(userDataDir, { recursive: true });
   restoreKeychain = protectKeychainRestore(installTemporaryKeychain(root));
-  fakeOllama = await startFakeOllama();
+  const ollamaPort = await freePort();
+  const ollamaHost = `http://127.0.0.1:${ollamaPort}`;
   const port = await freePort();
 
   console.log(
     `[smoke] launching packaged app for model setup ` +
-      `(userData=${userDataDir}, RORO_DEBUG_PORT=${port}, Ollama=${fakeOllama.host})...`,
+      `(userData=${userDataDir}, RORO_DEBUG_PORT=${port}, Ollama initially down at ${ollamaHost})...`,
   );
-  run = launchApp({ cwd, userDataDir, port, ollamaHost: fakeOllama.host });
+  run = launchApp({ cwd, userDataDir, port, ollamaHost });
   const target = await waitForRendererTarget(port, run.child);
   cdp = cdpClient(target.webSocketDebuggerUrl);
   await cdp.ready;
   await cdp.send('Runtime.enable');
   await cdp.send('Page.enable');
 
-  const initial = await waitFor(
+  const down = await waitFor(
     cdp,
     `(() => {
       const banner = document.getElementById('bootstrap-banner');
-      const download = document.getElementById('bootstrap-download');
-      if (!banner || banner.hidden || !download) return false;
+      const get = document.getElementById('bootstrap-get-ollama');
+      const refresh = document.getElementById('bootstrap-refresh');
+      if (!banner || banner.hidden || !get || !refresh) return false;
       const status = window.companion?.getBootstrapStatus;
       return {
         href: location.href,
         bodyText: document.body.innerText.slice(0, 1000),
         bannerText: banner.textContent ?? '',
-        downloadText: download.textContent ?? '',
-        downloadDisabled: download.disabled,
-        getOllamaExists: Boolean(document.getElementById('bootstrap-get-ollama')),
+        getText: get.textContent ?? '',
+        refreshText: refresh.textContent ?? '',
+        refreshDisabled: refresh.disabled,
+        downloadExists: Boolean(document.getElementById('bootstrap-download')),
         runTaskType: typeof window.companion?.runTask,
         brainDecideType: typeof window.brain?.decide,
         memoryRememberType: typeof window.memory?.remember,
         bootstrapStatusType: typeof status,
+        bootstrapRefreshType: typeof window.companion?.refreshBootstrapStatus,
       };
     })()`,
     BOOT_TIMEOUT_MS,
-    'packaged missing-model banner',
+    'packaged Ollama-unreachable banner',
   );
 
   check(
     'packaged renderer URL is file:// app.asar',
-    initial.href.startsWith('file://') && initial.href.includes('/Roro.app/Contents/Resources/app.asar/'),
-    JSON.stringify(initial),
+    down.href.startsWith('file://') && down.href.includes('/Roro.app/Contents/Resources/app.asar/'),
+    JSON.stringify(down),
   );
-  check('renderer body is not blank', initial.bodyText.includes('Roro'), JSON.stringify(initial));
-  check('missing-model banner is visible', /core models/i.test(initial.bannerText), initial.bannerText);
-  check('download button discloses size', /Download \(~2\.2 GB\)/.test(initial.downloadText), initial.downloadText);
-  check('Ollama install button is absent when daemon is reachable', initial.getOllamaExists === false, JSON.stringify(initial));
-  check('debug runTask bridge is absent', initial.runTaskType === 'undefined', JSON.stringify(initial));
-  check('direct brain decide bridge is absent', initial.brainDecideType === 'undefined', JSON.stringify(initial));
-  check('direct memory remember bridge is absent', initial.memoryRememberType === 'undefined', JSON.stringify(initial));
-  check('public bootstrap status bridge exists', initial.bootstrapStatusType === 'function', JSON.stringify(initial));
+  check('renderer body is not blank', down.bodyText.includes('Roro'), JSON.stringify(down));
+  check('Ollama-unreachable banner is visible', /reachable yet/i.test(down.bannerText), down.bannerText);
+  check('Get Ollama button is visible when daemon is down', /Get Ollama/i.test(down.getText), JSON.stringify(down));
+  check('Recheck button is visible when daemon is down', /check again/i.test(down.refreshText), JSON.stringify(down));
+  check('download button is absent when daemon is down', down.downloadExists === false, JSON.stringify(down));
+  check('debug runTask bridge is absent', down.runTaskType === 'undefined', JSON.stringify(down));
+  check('direct brain decide bridge is absent', down.brainDecideType === 'undefined', JSON.stringify(down));
+  check('direct memory remember bridge is absent', down.memoryRememberType === 'undefined', JSON.stringify(down));
+  check('public bootstrap status bridge exists', down.bootstrapStatusType === 'function', JSON.stringify(down));
+  check('public bootstrap refresh bridge exists', down.bootstrapRefreshType === 'function', JSON.stringify(down));
 
   const beforeStatus = await evaluate(
     cdp,
@@ -477,12 +485,93 @@ try {
       .then((status) => ({ ok: true, status }))
       .catch((err) => ({ ok: false, message: String(err?.message || err) }))`,
     { awaitPromise: true },
-    'initial bootstrap status',
+    'initial daemon-down bootstrap status',
   );
   check('initial bootstrap status resolves', beforeStatus.ok === true, JSON.stringify(beforeStatus));
   check('initial bootstrap status is not ready', beforeStatus.status?.ready === false, JSON.stringify(beforeStatus));
-  check('initial bootstrap status lists essential missing models', REQUIRED_PULLS.every((name) =>
-    beforeStatus.status?.missing?.some((model) => model.name === name)), JSON.stringify(beforeStatus));
+  check('initial bootstrap status asks for Ollama install/start', beforeStatus.status?.needsOllamaInstall === true, JSON.stringify(beforeStatus));
+
+  const checkingDown = await evaluate(
+    cdp,
+    `(() => {
+      const refresh = document.getElementById('bootstrap-refresh');
+      refresh?.click();
+      const banner = document.getElementById('bootstrap-banner');
+      return {
+        text: banner?.textContent ?? '',
+        refreshDisabled: refresh?.disabled ?? null,
+        downloadExists: Boolean(document.getElementById('bootstrap-download')),
+      };
+    })()`,
+    {},
+    'click recheck while Ollama is still down',
+  );
+  check('recheck shows checking state while daemon is down', /Checking local brain/i.test(checkingDown.text), JSON.stringify(checkingDown));
+  check('recheck disables while daemon-down probe runs', checkingDown.refreshDisabled === true, JSON.stringify(checkingDown));
+  check('recheck does not reveal Download while daemon is down', checkingDown.downloadExists === false, JSON.stringify(checkingDown));
+  const stillDown = await waitFor(
+    cdp,
+    `(() => {
+      const banner = document.getElementById('bootstrap-banner');
+      const refresh = document.getElementById('bootstrap-refresh');
+      if (!banner || banner.hidden || !refresh || refresh.disabled) return false;
+      if (document.getElementById('bootstrap-download')) return false;
+      return { text: banner.textContent ?? '', refreshText: refresh.textContent ?? '' };
+    })()`,
+    PULL_TIMEOUT_MS,
+    'packaged Ollama recheck still down',
+  );
+  check('recheck while daemon is down stays retryable', /reachable yet/i.test(stillDown.text), JSON.stringify(stillDown));
+
+  fakeOllama = await startFakeOllama(ollamaPort);
+  console.log(`[smoke] fake Ollama is now listening at ${fakeOllama.host}; clicking Recheck...`);
+  check('fake Ollama starts on the app Ollama host', fakeOllama.host === ollamaHost, fakeOllama.host);
+  await evaluate(
+    cdp,
+    `(() => {
+      document.getElementById('bootstrap-refresh')?.click();
+      return true;
+    })()`,
+    {},
+    'click packaged Ollama recheck after daemon starts',
+  );
+
+  const initial = await waitFor(
+    cdp,
+    `(() => {
+      const banner = document.getElementById('bootstrap-banner');
+      const download = document.getElementById('bootstrap-download');
+      if (!banner || banner.hidden || !download) return false;
+      return {
+        bannerText: banner.textContent ?? '',
+        downloadText: download.textContent ?? '',
+        downloadDisabled: download.disabled,
+        getOllamaExists: Boolean(document.getElementById('bootstrap-get-ollama')),
+        refreshExists: Boolean(document.getElementById('bootstrap-refresh')),
+      };
+    })()`,
+    BOOT_TIMEOUT_MS,
+    'packaged missing-model banner after recheck',
+  );
+
+  check('missing-model banner is visible after daemon starts', /core models/i.test(initial.bannerText), initial.bannerText);
+  check('download button discloses size', /Download \(~2\.2 GB\)/.test(initial.downloadText), initial.downloadText);
+  check('Ollama install button is absent when daemon is reachable', initial.getOllamaExists === false, JSON.stringify(initial));
+  check('manual recheck remains available for manual model pulls', initial.refreshExists === true, JSON.stringify(initial));
+
+  const missingStatus = await evaluate(
+    cdp,
+    `window.companion.getBootstrapStatus()
+      .then((status) => ({ ok: true, status }))
+      .catch((err) => ({ ok: false, message: String(err?.message || err) }))`,
+    { awaitPromise: true },
+    'missing-model bootstrap status',
+  );
+  check('missing-model bootstrap status resolves', missingStatus.ok === true, JSON.stringify(missingStatus));
+  check('missing-model bootstrap status is not ready', missingStatus.status?.ready === false, JSON.stringify(missingStatus));
+  check('missing-model bootstrap status no longer asks to install Ollama', missingStatus.status?.needsOllamaInstall === false, JSON.stringify(missingStatus));
+  check('missing-model bootstrap status lists essential missing models', REQUIRED_PULLS.every((name) =>
+    missingStatus.status?.missing?.some((model) => model.name === name)), JSON.stringify(missingStatus));
 
   await evaluate(
     cdp,
@@ -500,13 +589,13 @@ try {
       const banner = document.getElementById('bootstrap-banner');
       const download = document.getElementById('bootstrap-download');
       const text = banner?.textContent ?? '';
-      if (!/Downloading /.test(text) && !download?.disabled) return false;
+      if (!/Downloading qwen2\.5:3b/.test(text) || !/50%/.test(text)) return false;
       return { text, disabled: download?.disabled ?? null };
     })()`,
     PULL_TIMEOUT_MS,
     'packaged model download progress',
   );
-  check('download progress is visible', /Downloading /.test(inFlight.text) || inFlight.disabled === true, JSON.stringify(inFlight));
+  check('download progress is visible', /Downloading qwen2\.5:3b/.test(inFlight.text) && /50%/.test(inFlight.text), JSON.stringify(inFlight));
 
   const readyUi = await waitFor(
     cdp,
@@ -525,15 +614,15 @@ try {
   check('models-ready copy is visible', /Models ready/i.test(readyUi.text), JSON.stringify(readyUi));
   check('download button is removed after success', readyUi.downloadExists === false, JSON.stringify(readyUi));
 
-  const afterStatus = await evaluate(
+  const afterStatus = await waitFor(
     cdp,
     `window.companion.getBootstrapStatus()
-      .then((status) => ({ ok: true, status }))
-      .catch((err) => ({ ok: false, message: String(err?.message || err) }))`,
-    { awaitPromise: true },
+      .then((status) => status?.ready ? ({ ok: true, status }) : false)`,
+    PULL_TIMEOUT_MS,
     'ready bootstrap status',
+    { awaitPromise: true },
   );
-  check('ready bootstrap status resolves', afterStatus.ok === true, JSON.stringify(afterStatus));
+  check('ready bootstrap status resolves after MAIN refresh', afterStatus.ok === true, JSON.stringify(afterStatus));
   check('ready bootstrap status is ready', afterStatus.status?.ready === true, JSON.stringify(afterStatus));
   check('ready bootstrap status has no missing models', afterStatus.status?.missing?.length === 0, JSON.stringify(afterStatus));
   check('fake Ollama pulled exactly the essential models', JSON.stringify(fakeOllama.pulls) === JSON.stringify(REQUIRED_PULLS), JSON.stringify(fakeOllama.pulls));
