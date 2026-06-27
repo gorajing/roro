@@ -127,6 +127,8 @@ actually be muted.
 - `npx tsc --noEmit -p tsconfig.json` → 0 errors
 - `npx vitest run --no-file-parallelism` → full deterministic suite
 - `npm run verify:floating` → on-screen smoke for the floating Ask (needs a display)
+- `npm run verify:typed-live-turn` → default typed prompt through public `turnRun`
+- `npm run verify:floating-live-turn` → floating Ask through public `turnRun`
 
 ## Known notes
 
