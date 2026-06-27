@@ -40,7 +40,7 @@ Off-response-path ("sleep-time") pass that distills recent **episodes → durabl
 TTL by category (facts≈∞, transient context short), access-frequency reinforcement (boost on hit), quality-gated writes (skip non-novel/contradictory). Fields (`last_accessed`, `ttl_category`, `importance`) exist from day 1; pruning lands later.
 
 ## Foundational choice 7 — Tracing/evals seam (designed-in)
-One-way observation tap at each seam (retrieve/form/consolidate/forget), persisting per-component scores (zuun's `parts`) + formation decisions + consolidation lineage to a local `RORO_TRACE=1` sink; correlated by `runId` + memory-row `id`. Substrate for offline evals → tune weights/decay/consolidation. Designed after the retrieval shape so it logs the right internals.
+One-way observation tap at each seam (retrieve/form/consolidate/forget), persisting per-component scores (zuun's `parts`) + formation decisions + consolidation lineage to a local `RORO_TRACE=1` sink. Current extraction traces correlate by `sessionId` + memory-row `id`; recall traces intentionally log candidate ids/scores without transcript text and do not yet carry a run/turn id. Substrate for offline evals → tune weights/decay/consolidation. Designed after the retrieval shape so it logs the right internals.
 
 ## Rebuild plan (preserve verified behavior)
 Current `main` has a PGlite-only store with green tests (cross-launch persistence, owner-scoping, supersede invariants). The rebuild must **keep those guarantees** while moving to dual-store + tiers:

@@ -4,6 +4,27 @@ Roro has opt-in Electron smokes that observe real packaged or rendered behavior 
 not in CI because they need a GUI/app launch environment, but they are the right gates when changing first-run,
 memory-persistence, or floating-window UX.
 
+## Cohort trace-to-eval review
+
+```sh
+npm run eval:trace-review -- /tmp/roro-cohort/tester-01-first-turn.roro-trace.jsonl --out /tmp/roro-cohort/tester-01.roro-trace-review.md
+npx vitest run --no-file-parallelism src/brain/eval/cohortTraceReview.test.ts src/brain/eval/fixtures.test.ts src/brain/eval/score.test.ts
+```
+
+`eval:trace-review` converts a local `RORO_TRACE=1` JSONL file into a privacy-preserving review packet. It summarizes
+event counts, extraction stages, fact keys, and recall candidate counts without printing transcripts, recall query text,
+memory result text, narration, or fact values. The packet is a triage artifact only: promote a case into
+`src/brain/eval/fixtures.ts` only after human labeling and redaction, then run `npm run eval:brain` to score the live
+brain. Raw traces, raw observer notes, and generated cohort packets stay local.
+
+Run this after changes to:
+
+- `src/memory2/tracer.ts`
+- `src/main/orchestrator.ts` extraction tracing
+- `src/brain/eval/cohortTraceReview*.ts`
+- `src/brain/eval/fixtures*.ts`
+- `src/brain/eval/runEval.ts`
+
 ## Packaged onboarding smoke
 
 ```sh
