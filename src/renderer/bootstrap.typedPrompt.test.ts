@@ -256,6 +256,111 @@ describe('bootstrap typed prompt Stop lifecycle', () => {
     expect(h.send.disabled).toBe(false);
     expect(h.cancel.disabled).toBe(true);
     expect(h.input.value).toBe('');
+    expect(h.status.textContent).toBe('Stopped.');
+  });
+
+  it('shows a compact memory receipt after an answer turn', async () => {
+    const h = await setup();
+
+    h.input.value = 'what did we decide?';
+    submit(h.form);
+    await flush();
+    h.action({ kind: 'status', runId: 'answer-run', text: 'Memory: 0 known facts, 0 related items', ts: 1 });
+    h.runEnd('answer-run');
+
+    expect(h.status.textContent).toBe('Done. Memory checked.');
+    expect(h.send.disabled).toBe(false);
+    expect(h.cancel.disabled).toBe(true);
+    expect(h.input.value).toBe('');
+  });
+
+  it('shows changed files and memory in the receipt after an executor turn', async () => {
+    const h = await setup();
+
+    h.input.value = 'edit it';
+    submit(h.form);
+    await flush();
+    h.action({ kind: 'run.started', runId: 'typed-run', agent: 'codex', ts: 1 });
+    h.action({ kind: 'status', runId: 'typed-run', text: 'Memory: 2 known facts, 1 related item', ts: 2 });
+    h.action({
+      kind: 'file_change',
+      runId: 'typed-run',
+      itemId: 'file-1',
+      status: 'completed',
+      files: [{ path: 'src/app.ts', op: 'update' }],
+      ts: 3,
+    });
+    h.action({ kind: 'run.completed', runId: 'typed-run', ok: true, finalText: 'done', ts: 4 });
+    h.runEnd('typed-run');
+
+    expect(h.status.textContent).toBe('Done. Changed 1 file. Memory used.');
+    expect(h.send.disabled).toBe(false);
+    expect(h.cancel.disabled).toBe(true);
+    expect(h.input.value).toBe('');
+  });
+
+  it('does not leak receipt context into the next typed turn', async () => {
+    const h = await setup();
+
+    h.input.value = 'edit it';
+    submit(h.form);
+    await flush();
+    h.action({ kind: 'run.started', runId: 'typed-run', agent: 'codex', ts: 1 });
+    h.action({ kind: 'status', runId: 'typed-run', text: 'Memory: 2 known facts, 1 related item', ts: 2 });
+    h.action({
+      kind: 'file_change',
+      runId: 'typed-run',
+      itemId: 'file-1',
+      status: 'completed',
+      files: [{ path: 'src/app.ts', op: 'update' }],
+      ts: 3,
+    });
+    h.action({ kind: 'run.completed', runId: 'typed-run', ok: true, finalText: 'done', ts: 4 });
+    h.runEnd('typed-run');
+    expect(h.status.textContent).toBe('Done. Changed 1 file. Memory used.');
+
+    h.input.value = 'what now?';
+    submit(h.form);
+    await flush();
+    h.runEnd('answer-run');
+
+    expect(h.status.textContent).toBe('Done.');
+    expect(h.send.disabled).toBe(false);
+    expect(h.cancel.disabled).toBe(true);
+    expect(h.input.value).toBe('');
+  });
+
+  it('keeps a runEnd-only cancellation neutral', async () => {
+    const h = await setup();
+
+    h.input.value = 'do it';
+    submit(h.form);
+    await flush();
+    h.cancel.click();
+    h.runEnd('pre-run-stop');
+
+    expect(h.status.textContent).toBe('Stopped.');
+    expect(h.send.disabled).toBe(false);
+    expect(h.cancel.disabled).toBe(true);
+    expect(h.input.value).toBe('');
+  });
+
+  it('keeps user-requested Stop neutral even when the terminal failure is noisy', async () => {
+    const h = await setup();
+
+    h.input.value = 'do it';
+    submit(h.form);
+    await flush();
+    h.action({ kind: 'run.started', runId: 'typed-run', agent: 'codex', ts: 1 });
+    h.cancel.click();
+    h.action({ kind: 'run.failed', runId: 'typed-run', ok: false, error: 'spawn codex ENOENT', ts: 2 });
+    h.runEnd('typed-run');
+
+    expect(h.status.textContent).toBe('Stopped.');
+    expect(h.status.textContent).not.toContain('Task hit a problem');
+    expect(h.send.disabled).toBe(false);
+    expect(h.cancel.disabled).toBe(true);
+    expect(h.input.value).toBe('');
   });
 
   it('does not arm Stop or clear the draft when workdir setup is cancelled', async () => {

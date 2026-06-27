@@ -388,6 +388,11 @@ body.floating-window #floating-error.neutral {
   background: rgba(24, 72, 50, 0.88);
   border-color: rgba(120, 220, 160, 0.45);
 }
+body.floating-window #floating-error.success {
+  color: #f4fff7;
+  background: rgba(18, 78, 48, 0.9);
+  border-color: rgba(126, 230, 164, 0.5);
+}
 body.floating-window #floating-stop.armed + #floating-error:not([hidden]) {
   bottom: 88px;
 }

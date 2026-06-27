@@ -17,7 +17,7 @@ function setup(over: {
   document.body.innerHTML = '<div id="app"></div>';
   const driver = { poke: vi.fn(), setState: vi.fn() };
   let actionCb: ((e: ActionEvent) => void) | null = null;
-  let runEndCb: (() => void) | null = null;
+  let runEndCb: ((p: { runId: string }) => void) | null = null;
   let focusAskCb: (() => void) | null = null;
   const turnRun = vi.fn().mockResolvedValue({ runId: 'r1' });
   const cancelTask = vi.fn().mockResolvedValue(undefined);
@@ -28,7 +28,7 @@ function setup(over: {
     ...(over.getWorkdirConfig ? { getWorkdirConfig: over.getWorkdirConfig } : {}),
     ...(over.chooseWorkdir ? { chooseWorkdir: over.chooseWorkdir } : {}),
     onActionEvent: (cb: (e: ActionEvent) => void): (() => void) => { actionCb = cb; return unsub; },
-    onRunEnd: (cb: () => void): (() => void) => { runEndCb = cb; return unsub; },
+    onRunEnd: (cb: (p: { runId: string }) => void): (() => void) => { runEndCb = cb; return unsub; },
     onFocusAsk: (cb: () => void): (() => void) => { focusAskCb = cb; return unsub; },
   });
   const unmount = mountFloatingAsk({
@@ -45,13 +45,14 @@ function setup(over: {
     stop: document.getElementById('floating-stop') as HTMLButtonElement,
     error: document.getElementById('floating-error') as HTMLElement,
     fireAction: (e: ActionEvent) => actionCb?.(e),
-    fireRunEnd: () => runEndCb?.(),
+    fireRunEnd: (runId = 'r1') => runEndCb?.({ runId }),
     fireFocusAsk: () => focusAskCb?.(),
   };
 }
 
 const submit = (form: HTMLElement) => form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
 const started: ActionEvent = { kind: 'run.started', runId: 'r1', agent: 'codex', ts: 1 };
+const memoryUsed: ActionEvent = { kind: 'status', runId: 'r1', text: 'Memory: 1 known fact, 0 related items', ts: 1 };
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r));
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
@@ -63,7 +64,7 @@ const smokeHook = () => (
     __roroFloatingAskSmoke?: {
       startTask(text: string): void;
       action(e: ActionEvent): void;
-      runEnd(): void;
+      runEnd(runId?: string): void;
       state(): { cancelRequests: Array<string | undefined> };
     };
   }
@@ -156,6 +157,8 @@ describe('floatingAsk shell (jsdom)', () => {
     await flush();
     expect(h.cancelTask).toHaveBeenCalledTimes(1);
     expect(h.cancelTask).toHaveBeenCalledWith(undefined);
+    expect(h.error.textContent).toBe('Stopped.');
+    expect(h.error.classList.contains('neutral')).toBe(true);
   });
 
   it('run.started arms the Stop pill; the universal runEnd collapses the Ask', () => {
@@ -167,6 +170,85 @@ describe('floatingAsk shell (jsdom)', () => {
     h.fireRunEnd();
     expect(h.form.classList.contains('collapsed')).toBe(true);
     expect(h.stop.classList.contains('armed')).toBe(false);
+  });
+
+  it('shows a compact success receipt after an answer turn', () => {
+    h.pill.click();
+    h.input.value = 'what did we decide?';
+    submit(h.form);
+    h.fireAction(memoryUsed);
+    h.fireRunEnd();
+    expect(h.form.classList.contains('collapsed')).toBe(true);
+    expect(h.error.hidden).toBe(false);
+    expect(h.error.classList.contains('success')).toBe(true);
+    expect(h.error.textContent).toBe('Done. Memory used.');
+  });
+
+  it('shows changed files and memory in the success receipt after an executor turn', () => {
+    h.pill.click();
+    h.input.value = 'edit it';
+    submit(h.form);
+    h.fireAction(started);
+    h.fireAction(memoryUsed);
+    h.fireAction({
+      kind: 'file_change',
+      runId: 'r1',
+      itemId: 'file-1',
+      status: 'completed',
+      files: [{ path: 'src/app.ts', op: 'update' }],
+      ts: 2,
+    });
+    h.fireAction({ kind: 'run.completed', runId: 'r1', ok: true, finalText: 'done', ts: 3 });
+    h.fireRunEnd();
+    expect(h.error.hidden).toBe(false);
+    expect(h.error.classList.contains('success')).toBe(true);
+    expect(h.error.textContent).toBe('Done. Changed 1 file. Memory used.');
+  });
+
+  it('does not leak receipt context into the next floating turn', () => {
+    h.pill.click();
+    h.input.value = 'edit it';
+    submit(h.form);
+    h.fireAction(started);
+    h.fireAction(memoryUsed);
+    h.fireAction({
+      kind: 'file_change',
+      runId: 'r1',
+      itemId: 'file-1',
+      status: 'completed',
+      files: [{ path: 'src/app.ts', op: 'update' }],
+      ts: 2,
+    });
+    h.fireAction({ kind: 'run.completed', runId: 'r1', ok: true, finalText: 'done', ts: 3 });
+    h.fireRunEnd('r1');
+    expect(h.error.textContent).toBe('Done. Changed 1 file. Memory used.');
+
+    h.pill.click();
+    h.input.value = 'what now?';
+    submit(h.form);
+    h.fireRunEnd('r2');
+
+    expect(h.error.hidden).toBe(false);
+    expect(h.error.classList.contains('success')).toBe(true);
+    expect(h.error.textContent).toBe('Done.');
+  });
+
+  it('ignores unrelated floating events and runEnd signals once the accepted run id is known', async () => {
+    h.pill.click();
+    h.input.value = 'do it';
+    submit(h.form);
+    await flush();
+
+    h.fireAction({ kind: 'status', runId: 'other-run', text: 'Memory: 4 known facts, 2 related items', ts: 1 });
+    h.fireAction({ kind: 'run.started', runId: 'r1', agent: 'codex', ts: 2 });
+    h.fireRunEnd('other-run');
+
+    expect(h.form.classList.contains('tasked')).toBe(true);
+    h.fireAction({ kind: 'run.completed', runId: 'r1', ok: true, finalText: 'done', ts: 3 });
+    h.fireRunEnd('r1');
+
+    expect(h.form.classList.contains('collapsed')).toBe(true);
+    expect(h.error.textContent).toBe('Done.');
   });
 
   it('keeps actionable failure copy visible after runEnd collapses the Ask', () => {
@@ -201,7 +283,11 @@ describe('floatingAsk shell (jsdom)', () => {
   });
 
   it('clears the previous failure when the user summons Ask again', () => {
+    h.pill.click();
+    h.input.value = 'do it';
+    submit(h.form);
     h.fireAction({ kind: 'run.failed', runId: 'r1', ok: false, error: 'spawn codex ENOENT', ts: 2 });
+    h.fireRunEnd('r1');
     expect(h.error.hidden).toBe(false);
     h.pill.click();
     expect(h.error.hidden).toBe(true);
@@ -294,9 +380,11 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.error.textContent).toBe('Stopped.');
     expect(h.error.classList.contains('neutral')).toBe(true);
 
-    smokeHook()?.runEnd();
+    smokeHook()?.runEnd('r1');
     expect(h.form.classList.contains('collapsed')).toBe(true);
     expect(h.error.hidden).toBe(false);
+    expect(h.error.textContent).toBe('Stopped.');
+    expect(h.error.classList.contains('neutral')).toBe(true);
 
     h.unmount();
     expect(smokeHook()).toBeUndefined();

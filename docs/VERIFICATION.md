@@ -206,9 +206,10 @@ npm run verify:typed-live-turn
 ```
 
 The focused test covers immediate Stop arming, no-id early cancel, late targeted recancel, stale runEnd
-guarding, neutral `Stopped.` copy, workdir-cancel gating, and local-brain-not-ready gating. The packaged
-onboarding and EPIPE smokes additionally assert that Stop starts disabled and stays disabled when the local
-brain blocks dispatch.
+guarding, neutral `Stopped.` copy, compact post-turn receipts (`Done.`, changed-file count, memory
+checked/used), receipt reset between turns, workdir-cancel gating, and local-brain-not-ready gating. The
+packaged onboarding and EPIPE smokes additionally assert that Stop starts disabled and stays disabled when the
+local brain blocks dispatch.
 
 The non-cooperative Stop path is unit-gated, not live-smoke-gated: `orchestrator.stopSlotRetention.test.ts`
 models an aborted executor stream that stays open after the Stop watchdog has ended the UI, and proves a
@@ -222,7 +223,9 @@ bridge. It asserts the default-window DOM is visible, debug bridges are absent, 
 stopped-task invocation, the status copy stays neutral, cooperative active-executor Stop emits scoped
 `run.failed: aborted` after fake Codex has emitted `run.started` and a started `file_change`, fake Codex
 records `SIGTERM` without writing the aborted file, and a later answer turn recovers the form. This smoke
-does not prove ignored-`SIGTERM` slot retention; the unit gate above does.
+does not prove ignored-`SIGTERM` slot retention; the unit gate above does. The final answer turn also proves
+the released prompt shows a compact `Done...` receipt instead of leaving the user guessing whether the turn
+finished.
 
 Manual full-window checklist:
 
@@ -232,7 +235,8 @@ Manual full-window checklist:
 | 2 | Submit a non-empty prompt with project + brain ready | Start disables, typed text stays visible, Stop enables immediately, status says `Thinking... click Stop if you need to pause.` |
 | 3 | Click Stop before `run.started` | Stop says `Stopping...`, status says `Stopping...`, and the turn ends with neutral `Stopped.` copy |
 | 4 | Click Stop after `run.started` on an active executor task | Stop says `Stopping...`, the executor is aborted, no completed file change lands, and the turn ends with neutral `Stopped.` copy |
-| 5 | Submit while project selection or local brain readiness blocks dispatch | Start remains enabled, Stop remains disabled, and the draft stays in the input |
+| 5 | Let a successful turn finish | Status shows a compact receipt such as `Done. Memory checked.` or `Done. Changed 1 file. Memory used.` |
+| 6 | Submit while project selection or local brain readiness blocks dispatch | Start remains enabled, Stop remains disabled, and the draft stays in the input |
 
 ## On-screen floating Ask + Stop
 
@@ -262,7 +266,7 @@ It is opt-in (needs a display + a vite build) and not in CI. Checks: `#floating-
 `expanded` with the input actually visible; the memory profile bridge responds before teardown; Escape
 → `collapsed`; smoke submit → `tasked` with trimmed pill copy and visible Stop before `run.started`;
 pre-run Stop calls the no-id cancel path and shows neutral `Stopped.` copy; universal `runEnd`
-collapses answer/clarify turns with no `run.started`; `run.started` keeps Stop visibly armed and
+collapses answer/clarify turns with no `run.started` and leaves a visible success receipt; `run.started` keeps Stop visibly armed and
 targets the captured run id; real `run.failed` disarms Stop, shows actionable error copy, hides raw
 spawn text, and the error remains visible after `runEnd` collapse until the next summon clears it.
 
@@ -270,7 +274,7 @@ spawn text, and the error remains visible after `runEnd` collapse until the next
 floating mode, leaves `RORO_FLOATING_SMOKE` and `RORO_DEBUG_BRIDGE` off, drives the visible Ask form,
 and verifies real `window.companion.turnRun` answer and executor turns over the public push stream.
 The answer turn must emit `ActionEvent`s, reach `runEnd`, avoid the coding executor, and collapse the
-floating Ask. In the deterministic fake-Ollama path, a delayed `run_agent` decision is stopped before
+floating Ask with a visible success receipt that reports whether memory was checked or used. In the deterministic fake-Ollama path, a delayed `run_agent` decision is stopped before
 `run.started`; it must emit neutral stopped copy, collapse from `runEnd`, and never launch fake Codex.
 The same fake path also stops a cooperative task after fake Codex has emitted `run.started` and a started
 `file_change`; it must emit scoped `run.failed: aborted`, record `SIGTERM`, never emit `run.completed`,
@@ -278,7 +282,8 @@ never complete/write the aborted file, collapse from `runEnd`, and show neutral 
 following executor success turn must launch Codex with the expected
 `exec --json --skip-git-repo-check -s workspace-write -C <project>` shape, keep Stop armed for the
 accepted/running turn, emit a completed `file_change` and `run.completed`, write inside the selected
-test project (disposable by default), disarm Stop, and collapse from `runEnd`. By default it uses tiny
+test project (disposable by default), disarm Stop, collapse from `runEnd`, and show a success receipt with
+the changed-file count. By default it uses tiny
 local fake Ollama and Codex servers/binaries so the product-loop proof is deterministic; set
 `RORO_FLOATING_LIVE_USE_REAL_OLLAMA=1` when you specifically want to validate the local model path.
 Ignored-`SIGTERM` slot retention remains covered by the unit gate above, not this live smoke. Keep it out
@@ -296,8 +301,9 @@ Start the app (`ollama serve` first if you want a real turn): `npm start`.
 | 4 | Type "add a logout route" + Enter | Cat snaps to *thinking* immediately (<100ms); pill shows `tasked: add a logout route`; Stop appears before any executor event |
 | 5 | While a `run_agent` turn runs | `#floating-stop` remains visible with the `armed` class |
 | 6 | Click Stop | Run cancels; Stop shows `Stopping...`, then disarms/hides; Ask collapses and shows neutral `Stopped.` copy |
-| 7 | An answer/clarify turn (no executor run) | Ask still collapses when the turn ends (universal `runEnd`) |
-| 8 | Press Esc while expanded | Collapses back to the "Ask Roro…" pill |
+| 7 | An answer/clarify turn (no executor run) | Ask still collapses when the turn ends (universal `runEnd`) and shows a success receipt such as `Done. Memory checked.` |
+| 8 | A successful executor turn completes | Ask collapses, Stop disarms, and the notice shows `Done. Changed N file(s).` plus memory status when available |
+| 9 | Press Esc while expanded | Collapses back to the "Ask Roro…" pill |
 
 A CSS regression shows up as: a state that doesn't visually change (e.g. input stays hidden when
 `expanded`), the Stop pill not appearing once a task is accepted, stopped copy looking like a red

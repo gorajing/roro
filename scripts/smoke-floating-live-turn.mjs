@@ -978,7 +978,13 @@ try {
   );
   check('floating Ask is collapsed after real runEnd', await evaluate(cdp, `document.getElementById('floating-ask')?.classList.contains('collapsed')`, {}, 'Ask collapse check'));
   check('floating Stop remains hidden for answer turn', await evaluate(cdp, `!document.getElementById('floating-stop')?.classList.contains('armed')`, {}, 'Stop hidden check'));
-  check('floating error remains hidden for successful answer turn', await evaluate(cdp, `document.getElementById('floating-error')?.hidden === true`, {}, 'error hidden check'));
+  const answerReceipt = await evaluate(cdp, `(() => {
+    const el = document.getElementById('floating-error');
+    return { hidden: el?.hidden, text: el?.textContent ?? '', success: el?.classList.contains('success') ?? false };
+  })()`, {}, 'answer receipt check');
+  check('floating receipt is visible for successful answer turn', answerReceipt.hidden === false, JSON.stringify(answerReceipt));
+  check('floating receipt has success tone for answer turn', answerReceipt.success === true, JSON.stringify(answerReceipt));
+  check('floating receipt reports memory result for answer turn', /^Done\. Memory (used|checked)\.$/.test(answerReceipt.text), JSON.stringify(answerReceipt));
 
   if (!USE_REAL_OLLAMA) {
     const stoppedTranscript = `${STOP_TRANSCRIPT}. Start a coding task that should be stopped before the executor starts.`;
@@ -1275,7 +1281,13 @@ try {
   );
   check('floating Ask is collapsed after executor runEnd', await evaluate(cdp, `document.getElementById('floating-ask')?.classList.contains('collapsed')`, {}, 'executor Ask collapse check'));
   check('floating Stop disarms after executor completion', await evaluate(cdp, `!document.getElementById('floating-stop')?.classList.contains('armed')`, {}, 'executor Stop disarmed check'));
-  check('floating error remains hidden for successful executor turn', await evaluate(cdp, `document.getElementById('floating-error')?.hidden === true`, {}, 'executor error hidden check'));
+  const executorReceipt = await evaluate(cdp, `(() => {
+    const el = document.getElementById('floating-error');
+    return { hidden: el?.hidden, text: el?.textContent ?? '', success: el?.classList.contains('success') ?? false };
+  })()`, {}, 'executor receipt check');
+  check('floating receipt is visible for successful executor turn', executorReceipt.hidden === false, JSON.stringify(executorReceipt));
+  check('floating receipt has success tone for executor turn', executorReceipt.success === true, JSON.stringify(executorReceipt));
+  check('floating receipt reports changed files for executor turn', /^Done\. Changed 1 file\.( Memory (used|checked)\.)?$/.test(executorReceipt.text), JSON.stringify(executorReceipt));
   const codexInvocations = await readFile(fakeCodexArgsFile, 'utf8')
     .then((text) => JSON.parse(text))
     .catch(() => []);
