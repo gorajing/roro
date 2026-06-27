@@ -26,11 +26,14 @@ const flush = (): Promise<void> => new Promise((r) => setImmediate(r));
 describe('orchestrator: run_agent fails loud when no repo is chosen', () => {
   let savedWorkdir: string | undefined;
   let savedAllowCwd: string | undefined;
+  let savedCodexBin: string | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
     savedWorkdir = process.env.RORO_WORKDIR;
     savedAllowCwd = process.env.RORO_ALLOW_CWD;
+    savedCodexBin = process.env.RORO_CODEX_BIN;
+    process.env.RORO_CODEX_BIN = process.execPath;
     h.memory.recall.mockResolvedValue([]);
     h.memory.getProfile.mockResolvedValue([]);
     h.memory.remember.mockResolvedValue({ id: 'x', owner_id: 'O', session_id: 's', kind: 'observation', text: '', payload: null, superseded: false, created_at: 't' });
@@ -42,6 +45,7 @@ describe('orchestrator: run_agent fails loud when no repo is chosen', () => {
     const restore = (k: string, v: string | undefined): void => { if (v === undefined) delete process.env[k]; else process.env[k] = v; };
     restore('RORO_WORKDIR', savedWorkdir);
     restore('RORO_ALLOW_CWD', savedAllowCwd);
+    restore('RORO_CODEX_BIN', savedCodexBin);
   });
 
   it('does NOT dispatch the executor when no repo is set (never touches cwd)', async () => {

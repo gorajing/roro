@@ -9,6 +9,7 @@ import type {
   MicStatus,
   TurnInput,
   WorkdirConfigMsg,
+  ExecutorReadinessMsg,
   BootstrapStatusMsg,
   MemoryHealthStatusMsg,
   ModelPullProgressMsg,
@@ -67,6 +68,8 @@ export interface CompanionBridge {
   getWorkdirConfig(): Promise<WorkdirConfigMsg>;
   /** Open the native project-folder picker and persist the chosen working repo. */
   chooseWorkdir(): Promise<WorkdirConfigMsg>;
+  /** Product-safe local executor readiness for the first coding task. */
+  getExecutorReadiness(agent?: AgentKindArg): Promise<ExecutorReadinessMsg>;
   /** Subscribe to non-blocking local memory/keychain health diagnostics; returns unsubscribe. */
   onMemoryHealthStatus(cb: (s: MemoryHealthStatusMsg) => void): () => void;
   /** Latest local memory/keychain health snapshot. */

@@ -12,6 +12,7 @@
 //   CH.runTask            -> orchestrator.runTask()            -> executor.getExecutor() (debug bridge only)
 //   CH.configGet          -> configStore.hydrateWorkdirConfig()
 //   CH.configChooseWorkdir-> native folder picker + configStore.persistWorkdirChoice()
+//   CH.executorReadinessGet -> executorReadiness.getExecutorReadiness()
 //   CH.cancelTask         -> orchestrator.cancelTask()
 //   CH.brainDecide        -> brain.decide()                    (sibling: src/brain; debug bridge only)
 //   CH.brainDescribeScreen-> brain.describeScreen()            (sibling: src/brain; debug bridge only)
@@ -27,7 +28,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { OpenDialogOptions } from 'electron';
 import { CH } from '../shared/ipc';
-import type { MicStatus, TurnInput, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg } from '../shared/ipc';
+import type { MicStatus, TurnInput, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg } from '../shared/ipc';
 import { ollamaTags, pullModel } from '../brain/ollama';
 import { bootstrapStatusFor, DEFAULT_MODEL_SPECS } from './bootstrapPlan';
 import { isAllowedExternalUrl } from './openExternalGuard';
@@ -43,6 +44,7 @@ import { loadBrain, loadMemory, loadVision } from './siblings';
 import { getOwnerId } from './identity';
 import { hydrateWorkdirConfig, persistWorkdirChoice } from './configStore';
 import { sendToWebContents } from './safeSend';
+import { getExecutorReadiness } from './executorReadiness';
 
 /** Coerce a renderer-supplied agent arg to a valid AgentKind (default codex). */
 function asAgentKind(v: unknown): AgentKind {
@@ -120,6 +122,8 @@ export function registerIpcHandlers(): void {
 
     return persistWorkdirChoice(app.getPath('userData'), result.filePaths[0], process.env);
   });
+  ipcMain.handle(CH.executorReadinessGet, (_e, agent?: AgentKind): Promise<ExecutorReadinessMsg> =>
+    getExecutorReadiness(asAgentKind(agent)));
 
   // ---- Brain (sibling: src/brain) ----
   // Direct brain invokes are a debug bridge. Product turns use CH.turnRun, while reasoning/content

@@ -32,6 +32,7 @@ import { resolveWorkdir, tryResolveWorkdir } from './workdir';
 import { repoId as deriveRepoId } from '../memory2/repoId';
 import { isPlausiblePreference, type FactExtractInput } from '../brain/extractFact';
 import { sendToFirstWindow } from './safeSend';
+import { getExecutorReadiness } from './executorReadiness';
 
 const RECALL_K = 5;
 // memory2 is the recall authority: it blend-ranks (relevance + recency + importance) and guarantees
@@ -586,14 +587,22 @@ async function actOnDecision(
         pushRunEnd(runId);
         return;
       }
-      // Speak the narration first, then run the coding agent on args.task.
-      if (decision.narration) emitNarration(runId, decision.narration);
       const task =
         typeof decision.args.task === 'string'
           ? decision.args.task
           : transcript;
       const agent: AgentKind =
         decision.args.agent === 'claude' ? 'claude' : DEFAULT_AGENT;
+
+      const readiness = await getExecutorReadiness(agent);
+      if (!readiness.ready) {
+        pushEvent({ kind: 'run.failed', runId, ok: false, error: readiness.message, ts: Date.now() });
+        pushRunEnd(runId);
+        return;
+      }
+
+      // Speak the narration once the selected coding agent is actually startable.
+      if (decision.narration) emitNarration(runId, decision.narration);
 
       // C1 destructive-confirm gate (BEFORE dispatch). A spoken/typed word can NEVER approve —
       // approval is only the dedicated CH.confirmResolve channel; 15s default-deny.

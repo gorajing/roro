@@ -46,13 +46,16 @@ async function flush(): Promise<void> {
 
 describe('orchestrator Stop slot retention', () => {
   let savedAllowCwd: string | undefined;
+  let savedCodexBin: string | undefined;
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     vi.clearAllMocks();
     sent.length = 0;
     savedAllowCwd = process.env.RORO_ALLOW_CWD;
+    savedCodexBin = process.env.RORO_CODEX_BIN;
     process.env.RORO_ALLOW_CWD = '1';
+    process.env.RORO_CODEX_BIN = process.execPath;
     h.memory.recall.mockResolvedValue([]);
     h.memory.getProfile.mockResolvedValue([]);
     h.memory.remember.mockResolvedValue({ id: 'x', owner_id: 'O', session_id: 's', kind: 'observation', text: '', payload: null, superseded: false, created_at: 't' });
@@ -69,6 +72,8 @@ describe('orchestrator Stop slot retention', () => {
     vi.useRealTimers();
     if (savedAllowCwd === undefined) delete process.env.RORO_ALLOW_CWD;
     else process.env.RORO_ALLOW_CWD = savedAllowCwd;
+    if (savedCodexBin === undefined) delete process.env.RORO_CODEX_BIN;
+    else process.env.RORO_CODEX_BIN = savedCodexBin;
   });
 
   it('keeps the single-executor slot occupied after Stop until the aborted stream truly ends', async () => {

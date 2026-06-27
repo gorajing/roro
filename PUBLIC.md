@@ -59,6 +59,10 @@ required. The **two roles of the Developer-ID cert are now clear and separate:**
 > packaged turn can learn a plainly stated preference, write it as a profile fact, fully relaunch, and use that fact in a
 > later turn. This narrows the extraction-quality engineering risk; it still does not replace the signed/notarized
 > clean-Mac gate or the non-founder "does this feel correct and useful?" test.
+> First-task preflight: `npm run verify:packaged-first-task` launches the real packaged app with persisted project
+> config, deterministic fake Ollama, a fake Codex override, and the product preload bridge. It proves the default typed
+> surface exposes the executor-readiness check, then can complete a first coding task through public `turnRun` and Codex
+> events. It still does not replace real Codex auth, signed/notarized clean-Mac validation, or non-founder validation.
 
 ---
 
@@ -138,6 +142,9 @@ the happy packaged first-run workdir flow.
   Ollama/models are not ready.
 - ✅ Project control in Settings: after first setup, the user can see the active repo and change the saved project
   without relaunching; `RORO_WORKDIR` remains an explicit read-only override.
+- ✅ Packaged first-task preflight: `npm run verify:packaged-first-task` proves the persisted project, local-brain
+  readiness, public selected-executor readiness bridge, and public `turnRun` path can produce a file change in the chosen
+  repo without debug bridges.
 
 **Exit:** a stranger who has never touched a terminal launches → is guided to pick a repo → sees honest model status with
 guided Ollama install + one-click model pull → types a task the executor runs to completion with any executor CLI auth

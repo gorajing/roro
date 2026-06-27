@@ -6,8 +6,8 @@
 // elsewhere; here we keep our own minimal, self-sufficient view so this
 // component's tsc is green in isolation.
 
-import type { ActionEvent } from '../../shared/events';
-import type { TurnInput, MicStatus, BootstrapStatusMsg, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg } from '../../shared/ipc';
+import type { ActionEvent, AgentKind } from '../../shared/events';
+import type { TurnInput, MicStatus, BootstrapStatusMsg, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg } from '../../shared/ipc';
 
 /** The slice of window.companion this component consumes. */
 interface CompanionBridgeLike {
@@ -42,6 +42,8 @@ interface CompanionBridgeLike {
   getWorkdirConfig?(): Promise<WorkdirConfigMsg>;
   /** Open the native folder picker and persist the selected working repo. */
   chooseWorkdir?(): Promise<WorkdirConfigMsg>;
+  /** Product-safe local executor readiness for the first coding task. */
+  getExecutorReadiness?(agent?: AgentKind): Promise<ExecutorReadinessMsg>;
   /** Non-blocking memory/keychain health. */
   onMemoryHealthStatus?(cb: (s: MemoryHealthStatusMsg) => void): () => void;
   getMemoryHealthStatus?(): Promise<MemoryHealthStatusMsg | null>;

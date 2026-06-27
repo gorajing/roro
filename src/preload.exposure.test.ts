@@ -66,6 +66,7 @@ describe('preload exposure gates', () => {
     expect(companion.onRunEnd).toEqual(expect.any(Function));
     expect(companion.onMemoryHealthStatus).toEqual(expect.any(Function));
     expect(companion.getMemoryHealthStatus).toEqual(expect.any(Function));
+    expect(companion.getExecutorReadiness).toEqual(expect.any(Function));
     expect(companion.runTask).toBeUndefined();
 
     expect(brain.onReasoning).toEqual(expect.any(Function));
