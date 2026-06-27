@@ -8,6 +8,7 @@ export const V0_DEFERRED_ENV_KEYS = [
   'RORO_WS5_STORE',
   'RORO_DEBUG_BRIDGE',
   'RORO_FLOATING_SMOKE',
+  'RORO_MEMORY_HEALTH_SMOKE_FAIL',
 ];
 
 export function stripV0DeferredEnv(env) {
@@ -19,7 +20,7 @@ export function enabledV0DeferredEnv(env) {
   return V0_DEFERRED_ENV_KEYS.filter((key) => {
     const value = env[key];
     if (value === undefined || value === '') return false;
-    if (key === 'LIVE2D_MODEL_URL' || key === 'RORO_VOICE_PACK') return true;
+    if (key === 'LIVE2D_MODEL_URL' || key === 'RORO_VOICE_PACK' || key === 'RORO_MEMORY_HEALTH_SMOKE_FAIL') return true;
     return value === '1';
   });
 }

@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mountForgetPanel } from './forgetPanel';
 import type { ProfileFactSourceView, ProfileFactView } from '../../shared/memory';
+import type { MemoryHealthStatusMsg } from '../../shared/ipc';
 
 interface Stub {
   profile: ReturnType<typeof vi.fn>;
@@ -9,6 +10,10 @@ interface Stub {
   verifyFact: ReturnType<typeof vi.fn>;
   factSource: ReturnType<typeof vi.fn>;
   forget: ReturnType<typeof vi.fn>;
+}
+
+interface CompanionStub {
+  getMemoryHealthStatus: ReturnType<typeof vi.fn>;
 }
 
 function fact(id: string, text: string, over: Partial<ProfileFactView> = {}): ProfileFactView {
@@ -23,7 +28,7 @@ function fact(id: string, text: string, over: Partial<ProfileFactView> = {}): Pr
   };
 }
 
-function setup(facts: ProfileFactView[] = []): Stub {
+function setup(facts: ProfileFactView[] = [], memoryHealth: MemoryHealthStatusMsg | null = null): Stub {
   document.body.innerHTML = '<div id="app"></div>';
   const stub: Stub = {
     profile: vi.fn().mockResolvedValue(facts),
@@ -36,6 +41,9 @@ function setup(facts: ProfileFactView[] = []): Stub {
     forget: vi.fn().mockResolvedValue(undefined),
   };
   (window as unknown as { memory: Stub }).memory = stub;
+  (window as unknown as { companion: CompanionStub }).companion = {
+    getMemoryHealthStatus: vi.fn().mockResolvedValue(memoryHealth),
+  };
   return stub;
 }
 
@@ -210,6 +218,25 @@ describe('mountForgetPanel — memory trust loop', () => {
     expect(q('.memory-error')?.textContent).toMatch(/couldn.t open/i);
     expect((q('#memory-panel') as HTMLElement).hidden).toBe(false);
     expect(q('.memory-row')).toBeNull();
+  });
+
+  it('uses memory health to explain a Keychain-paused profile failure', async () => {
+    const stub = setup([], {
+      state: 'degraded',
+      checkedAt: 1,
+      reason: 'keychain-unavailable',
+      message: 'Roro cannot reach the OS keychain.',
+    });
+    stub.profile.mockRejectedValueOnce(new Error('Keychain Not Found'));
+    mountForgetPanel();
+    click(q('#memory-toggle'));
+    await flush();
+
+    const text = q('.memory-error')?.textContent ?? '';
+    expect(text).toMatch(/Local memory is paused/);
+    expect(text).toMatch(/Roro can still code/);
+    expect(text).toMatch(/macOS Keychain/);
+    expect(text).not.toMatch(/cloud|API key/i);
   });
 
   it('recovers on reopen after a failed load', async () => {

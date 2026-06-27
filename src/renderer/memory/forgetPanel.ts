@@ -5,6 +5,7 @@
 // owner/key from the active profile. Fact and source text use textContent ONLY because they are user-authored.
 
 import type { ProfileFactSourceView, ProfileFactView } from '../../shared/memory';
+import type { MemoryHealthStatusMsg } from '../../shared/ipc';
 
 interface MemoryBridge {
   profile(): Promise<ProfileFactView[]>;
@@ -14,10 +15,18 @@ interface MemoryBridge {
   forget(id: string): Promise<void>;
 }
 
+interface CompanionBridge {
+  getMemoryHealthStatus?(): Promise<MemoryHealthStatusMsg | null>;
+}
+
 function bridge(): MemoryBridge {
   const memory = (window as unknown as { memory?: MemoryBridge }).memory;
   if (!memory) throw new Error('window.memory is unavailable');
   return memory;
+}
+
+function companionBridge(): CompanionBridge | undefined {
+  return (window as unknown as { companion?: CompanionBridge }).companion;
 }
 
 function button(className: string, label: string): HTMLButtonElement {
@@ -38,6 +47,16 @@ function sourceSummary(source: ProfileFactSourceView['source']): string {
     hour: 'numeric',
     minute: '2-digit',
   })}.`;
+}
+
+function memoryUnavailableCopy(status: MemoryHealthStatusMsg | null): string {
+  if (status?.state !== 'degraded') {
+    return "Roro couldn't open his memory. Close this panel and try again.";
+  }
+  if (status.reason === 'keychain-unavailable' || status.reason === 'memory-locked') {
+    return 'Local memory is paused. Roro can still code, but memories will not load or save until macOS Keychain is available and Roro is relaunched.';
+  }
+  return 'Local memory is paused. Roro can still code, but memories will not load or save until memory is available again.';
 }
 
 export function mountForgetPanel(host: HTMLElement = document.getElementById('app') ?? document.body): () => void {
@@ -83,9 +102,9 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
     singleState('memory-empty', "Roro hasn't saved any facts about you yet.");
   }
 
-  function errorState(): void {
+  function errorState(status: MemoryHealthStatusMsg | null = null): void {
     // textContent, never innerHTML (XSS invariant). Recovery is real: reopening re-runs refresh().
-    singleState('memory-error', "Roro couldn't open his memory. Close this panel and try again.");
+    singleState('memory-error', memoryUnavailableCopy(status));
   }
 
   function renderSourceDetail(view: ProfileFactSourceView): HTMLElement {
@@ -292,7 +311,13 @@ export function mountForgetPanel(host: HTMLElement = document.getElementById('ap
       list.replaceChildren(...facts.map(renderRow));
     } catch (e) {
       // Fail loud (console) but surface a friendly, recoverable state, never a silent blank panel.
-      errorState();
+      let health: MemoryHealthStatusMsg | null = null;
+      try {
+        health = await companionBridge()?.getMemoryHealthStatus?.() ?? null;
+      } catch {
+        health = null;
+      }
+      errorState(health);
       console.error('[memoryPanel] profile() failed:', e);
     }
   }
