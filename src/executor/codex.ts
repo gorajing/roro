@@ -19,7 +19,7 @@ import {
   Executor,
   newRunId,
 } from '../shared/events';
-import { resolveBin } from './resolveBin';
+import { executorPathEnv, resolveBin } from './resolveBin';
 import { armSigkillEscalation } from './abortKill';
 
 // Resolve the codex binary portably: RORO_CODEX_BIN override -> PATH -> common install dirs ->
@@ -248,7 +248,7 @@ export async function* runCodex(
 
   const child = spawn(CODEX_BIN, args, {
     stdio: ['ignore', 'pipe', 'pipe'], // stdin=/dev/null; no TTY hang
-    env: { ...process.env },
+    env: { ...process.env, PATH: executorPathEnv(CODEX_BIN, process.env) },
     signal: opts.signal,
   });
   // {signal} sends SIGTERM on abort; escalate to SIGKILL if the child ignores it.

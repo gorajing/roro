@@ -1,11 +1,15 @@
 // scripts/smoke-packaged-first-task.mjs — packaged first coding task smoke.
 //
 // This launches the real packaged .app with a persisted userData/config.json, a fake
-// local Ollama daemon, and a fake Codex binary. It proves the packaged product path
+// local Ollama daemon, and by default a fake Codex binary. It proves the packaged product path
 // exposes the public readiness bridge and can complete its first typed coding task:
 //   persisted project -> brain readiness -> public executor readiness check -> turnRun -> Codex JSONL -> file on disk.
 //
 // Run after `npm run package`: npm run verify:packaged-first-task
+//
+// For a human-owned release/cohort preflight, run `npm run verify:packaged-real-codex`.
+// That mode keeps fake Ollama for deterministic brain decisions, but uses the real local Codex CLI
+// and its real auth/config instead of injecting RORO_CODEX_BIN. It is intentionally opt-in and not a CI gate.
 
 import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
@@ -24,12 +28,15 @@ function appBinaryPath(rawPath) {
 }
 
 const APP_BIN = appBinaryPath(process.env.RORO_PACKAGED_APP);
+const REAL_CODEX = process.env.RORO_PACKAGED_FIRST_TASK_REAL_CODEX === '1';
+const REAL_CODEX_USE_ENV_BIN = process.env.RORO_PACKAGED_REAL_CODEX_USE_ENV_BIN === '1';
 const BOOT_TIMEOUT_MS = Number(process.env.RORO_PACKAGED_FIRST_TASK_BOOT_TIMEOUT_MS || 120_000);
-const TURN_TIMEOUT_MS = Number(process.env.RORO_PACKAGED_FIRST_TASK_TURN_TIMEOUT_MS || 180_000);
+const TURN_TIMEOUT_MS = Number(process.env.RORO_PACKAGED_FIRST_TASK_TURN_TIMEOUT_MS || (REAL_CODEX ? 300_000 : 180_000));
 const CDP_COMMAND_TIMEOUT_MS = Number(process.env.RORO_PACKAGED_FIRST_TASK_CDP_TIMEOUT_MS || 60_000);
 const KEEP = process.env.KEEP_RORO_SMOKE_HOME === '1';
 const TASK_FILE = 'roro-packaged-first-task-smoke.txt';
-const TASK_CONTENT = 'packaged first task ok\n';
+const TASK_CONTENT = 'packaged first task ok';
+const CODEX_MODE = REAL_CODEX ? 'real Codex CLI' : 'fake Codex';
 
 let nextId = 1;
 const failures = [];
@@ -122,7 +129,7 @@ async function startFakeOllama() {
             narration: 'On it. I will create the packaged first-task smoke file.',
             command: 'run_agent',
             args: {
-              task: `Create ${TASK_FILE} with exactly ${JSON.stringify(TASK_CONTENT)} as its contents.`,
+              task: `Create ${TASK_FILE} whose entire contents are exactly:\n${TASK_CONTENT}`,
               cwd: null,
             },
           }
@@ -229,15 +236,23 @@ exec ${shellQuote(process.execPath)} ${shellQuote(scriptPath)} "$@"
   await chmod(path, 0o755);
 }
 
-function smokeEnv({ port, ollamaHost, fakeCodexBin }) {
+function smokeEnv({ port, ollamaHost, fakeCodexBin, realCodex }) {
   const env = stripV0DeferredEnv({ ...process.env });
   Object.assign(env, {
     BRAIN_PROVIDER: 'ollama',
     OLLAMA_HOST: ollamaHost,
     OLLAMA_TIMEOUT_MS: '5000',
-    RORO_CODEX_BIN: fakeCodexBin,
     RORO_DEBUG_PORT: String(port),
   });
+  if (realCodex) {
+    // Simulate an ordinary packaged launch rather than a shell-rich dev launch: prove common-dir
+    // discovery (/opt/homebrew/bin, /usr/local/bin, etc.) unless a maintainer deliberately opts into
+    // an env override for a nonstandard Codex install.
+    env.PATH = process.env.RORO_PACKAGED_REAL_CODEX_PATH || '/usr/bin:/bin';
+    if (!REAL_CODEX_USE_ENV_BIN) delete env.RORO_CODEX_BIN;
+  } else {
+    env.RORO_CODEX_BIN = fakeCodexBin;
+  }
   delete env.RORO_WORKDIR;
   delete env.COMPANION_WORKDIR;
   delete env.RORO_ALLOW_CWD;
@@ -254,10 +269,10 @@ function smokeEnv({ port, ollamaHost, fakeCodexBin }) {
   return env;
 }
 
-function launchApp({ cwd, userDataDir, port, ollamaHost, fakeCodexBin }) {
+function launchApp({ cwd, userDataDir, port, ollamaHost, fakeCodexBin, realCodex }) {
   const child = spawn(APP_BIN, [`--user-data-dir=${userDataDir}`], {
     cwd,
-    env: smokeEnv({ port, ollamaHost, fakeCodexBin }),
+    env: smokeEnv({ port, ollamaHost, fakeCodexBin, realCodex }),
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
   });
@@ -542,21 +557,25 @@ try {
   await mkdir(dirname(configPath), { recursive: true });
   spawnSync('git', ['init', projectDir], { stdio: 'ignore' });
   await writeFile(configPath, JSON.stringify({ workdir: projectDir }, null, 2), 'utf8');
-  await writeFakeCodexBin(fakeCodexBin, fakeCodexArgsFile);
+  if (!REAL_CODEX) await writeFakeCodexBin(fakeCodexBin, fakeCodexArgsFile);
   restoreKeychain = protectKeychainRestore(installTemporaryKeychain(root));
   fakeOllama = await startFakeOllama();
   const port = await freePort();
 
   console.log(
-    `[smoke] launching packaged app for first coding task ` +
+    `[smoke] launching packaged app for first coding task with ${CODEX_MODE} ` +
       `(userData=${userDataDir}, project=${projectDir}, RORO_DEBUG_PORT=${port}, Ollama=${fakeOllama.host})...`,
   );
+  if (REAL_CODEX && !REAL_CODEX_USE_ENV_BIN) {
+    console.log('[smoke] real Codex mode strips RORO_CODEX_BIN and narrows PATH to prove packaged CLI discovery.');
+  }
   run = launchApp({
     cwd,
     userDataDir,
     port,
     ollamaHost: fakeOllama.host,
     fakeCodexBin,
+    realCodex: REAL_CODEX,
   });
 
   const target = await waitForRendererTarget(port, run.child);
@@ -567,9 +586,17 @@ try {
 
   await waitFor(
     cdp,
-    `!!document.getElementById('prompt-form') && !document.body?.classList.contains('floating-window')`,
+    `(() => {
+      if (!document.getElementById('prompt-form')) return false;
+      if (!document.getElementById('workdir-banner')) return false;
+      if (document.body?.classList.contains('floating-window')) return false;
+      return window.companion?.getWorkdirConfig?.()
+        .then((config) => config?.source === 'config' && config?.workdir === ${JSON.stringify(projectDir)})
+        .catch(() => false);
+    })()`,
     BOOT_TIMEOUT_MS,
-    'typed packaged prompt mount',
+    'typed packaged prompt and workdir banner mount',
+    { awaitPromise: true },
   );
 
   const initial = await evaluate(cdp, `(() => {
@@ -662,14 +689,28 @@ try {
     { awaitPromise: true },
     'executor readiness check',
   );
-  check(
-    'packaged executor readiness resolves to fake Codex override',
-    executorReadiness.ok === true &&
-      executorReadiness.status?.ready === true &&
-      executorReadiness.status?.source === 'env' &&
-      executorReadiness.status?.path === fakeCodexBin,
-    executorReadiness.message || JSON.stringify(executorReadiness.status),
-  );
+  if (REAL_CODEX) {
+    check(
+      'packaged executor readiness resolves to a real Codex CLI',
+      executorReadiness.ok === true &&
+        executorReadiness.status?.ready === true &&
+        executorReadiness.status?.agent === 'codex' &&
+        executorReadiness.status?.path !== fakeCodexBin &&
+        (REAL_CODEX_USE_ENV_BIN
+          ? executorReadiness.status?.source === 'env'
+          : ['common', 'path'].includes(executorReadiness.status?.source)),
+      executorReadiness.message || JSON.stringify(executorReadiness.status),
+    );
+  } else {
+    check(
+      'packaged executor readiness resolves to fake Codex override',
+      executorReadiness.ok === true &&
+        executorReadiness.status?.ready === true &&
+        executorReadiness.status?.source === 'env' &&
+        executorReadiness.status?.path === fakeCodexBin,
+      executorReadiness.message || JSON.stringify(executorReadiness.status),
+    );
+  }
 
   await evaluate(cdp, `(() => {
     window.__roroPackagedFirstTask = { events: [], runEnds: [] };
@@ -728,11 +769,18 @@ try {
   const memoryStatus = events.find((event) => event?.kind === 'status' && /^Memory:/.test(event.text ?? ''));
   check('packaged first task produced scoped events', events.length > 0, JSON.stringify(turn.allEvents ?? []));
   check('packaged first task emitted a memory status beat', Boolean(memoryStatus), JSON.stringify(events));
-  check('packaged first task emitted run.started from fake Codex', events.some((event) =>
+  check(`packaged first task emitted run.started from ${CODEX_MODE}`, events.some((event) =>
     event?.kind === 'run.started' &&
     event.agent === 'codex' &&
-    event.threadId === 'fake-codex-packaged-first-task'), JSON.stringify(events));
-  check('packaged first task emitted completed file_change', fileEvents.some((event) =>
+    (REAL_CODEX || event.threadId === 'fake-codex-packaged-first-task')), JSON.stringify(events));
+  check(`packaged first task emitted completed file_change${REAL_CODEX ? ' or wrote the file through a command' : ''}`, REAL_CODEX
+    ? (
+      fileEvents.some((event) =>
+        event.status === 'completed' &&
+        event.files?.some((file) => file.path?.endsWith(TASK_FILE))) ||
+      await readFile(join(projectDir, TASK_FILE), 'utf8').then((text) => text === TASK_CONTENT).catch(() => false)
+    )
+    : fileEvents.some((event) =>
     event.status === 'completed' &&
     event.files?.some((file) => file.path?.endsWith(TASK_FILE))), JSON.stringify(events));
   check('packaged first task emitted run.completed', events.some((event) => event?.kind === 'run.completed'), JSON.stringify(events));
@@ -764,29 +812,41 @@ try {
   );
   check('typed form returns to ready state after packaged first task', released.cancelText === 'Stop', JSON.stringify(released));
 
-  const codexInvocations = await readFile(fakeCodexArgsFile, 'utf8')
-    .then((text) => JSON.parse(text))
-    .catch(() => []);
-  const expectedCodexPrefix = ['exec', '--json', '--skip-git-repo-check', '-s', 'workspace-write', '-C', projectDir];
-  const receivedCodexArgs = Array.isArray(codexInvocations)
-    ? codexInvocations.map((invocation) => invocation?.args).filter(Array.isArray)
-    : [];
-  check(
-    'fake Codex received the packaged executor CLI shape',
-    receivedCodexArgs.some((args) =>
-      JSON.stringify(args.slice(0, expectedCodexPrefix.length)) === JSON.stringify(expectedCodexPrefix) &&
-      args.at(-1)?.includes(TASK_FILE)),
-    JSON.stringify(codexInvocations),
-  );
-  check(
-    'fake Codex wrote the requested project file',
-    await readFile(join(projectDir, TASK_FILE), 'utf8').then((text) => text === TASK_CONTENT).catch(() => false),
-  );
-  check(
-    'packaged app did not read a developer env workdir override',
-    !codexInvocations.some((invocation) => invocation?.repo === process.cwd()),
-    JSON.stringify(codexInvocations),
-  );
+  if (REAL_CODEX) {
+    check(
+      'real Codex wrote the requested project file',
+      await readFile(join(projectDir, TASK_FILE), 'utf8').then((text) => text === TASK_CONTENT).catch(() => false),
+    );
+    check(
+      'real Codex mode did not inject the fake executor override',
+      executorReadiness.status?.path !== fakeCodexBin && (REAL_CODEX_USE_ENV_BIN || executorReadiness.status?.source !== 'env'),
+      JSON.stringify(executorReadiness.status),
+    );
+  } else {
+    const codexInvocations = await readFile(fakeCodexArgsFile, 'utf8')
+      .then((text) => JSON.parse(text))
+      .catch(() => []);
+    const expectedCodexPrefix = ['exec', '--json', '--skip-git-repo-check', '-s', 'workspace-write', '-C', projectDir];
+    const receivedCodexArgs = Array.isArray(codexInvocations)
+      ? codexInvocations.map((invocation) => invocation?.args).filter(Array.isArray)
+      : [];
+    check(
+      'fake Codex received the packaged executor CLI shape',
+      receivedCodexArgs.some((args) =>
+        JSON.stringify(args.slice(0, expectedCodexPrefix.length)) === JSON.stringify(expectedCodexPrefix) &&
+        args.at(-1)?.includes(TASK_FILE)),
+      JSON.stringify(codexInvocations),
+    );
+    check(
+      'fake Codex wrote the requested project file',
+      await readFile(join(projectDir, TASK_FILE), 'utf8').then((text) => text === TASK_CONTENT).catch(() => false),
+    );
+    check(
+      'packaged app did not read a developer env workdir override',
+      !codexInvocations.some((invocation) => invocation?.repo === process.cwd()),
+      JSON.stringify(codexInvocations),
+    );
+  }
 
   const joinedLogs = run.logs.join('\n');
   check('packaged first-task logs have no memory keychain failure', !/OS keychain unavailable|memory store is locked|cannot encrypt memory|errSecAuthFailed/i.test(joinedLogs), joinedLogs.slice(-1000));
@@ -813,4 +873,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('\n[smoke] PASS — packaged first coding task completed through public turnRun.');
+console.log(`\n[smoke] PASS — packaged first coding task completed through public turnRun with ${CODEX_MODE}.`);

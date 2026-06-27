@@ -7,7 +7,7 @@
 // path that exists for no one.
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 
 export interface ResolveDeps {
   exists(path: string): boolean;
@@ -51,7 +51,7 @@ export function resolveExecutable(name: string, envOverride: string | undefined,
   return resolveExecutableDetails(name, envOverride, deps).path;
 }
 
-const COMMON_BIN_DIRS = [
+export const COMMON_BIN_DIRS = [
   '/opt/homebrew/bin',
   '/usr/local/bin',
   '/usr/bin',
@@ -65,7 +65,20 @@ const COMMON_BIN_DIRS = [
 export function resolveBin(name: string, envOverride: string | undefined): string {
   return resolveExecutable(name, envOverride, {
     exists: existsSync,
-    pathDirs: (process.env.PATH ?? '').split(':').filter(Boolean),
+    pathDirs: (process.env.PATH ?? '').split(delimiter).filter(Boolean),
     extraDirs: COMMON_BIN_DIRS,
   });
+}
+
+/** PATH for spawning a resolved executor CLI, including its runtime (for npm/bin env-node launchers). */
+export function executorPathEnv(binPath: string, env: { PATH?: string } = process.env): string {
+  const dirs: string[] = [];
+  const add = (dir: string | undefined): void => {
+    if (!dir || dirs.includes(dir)) return;
+    dirs.push(dir);
+  };
+  if (binPath.includes('/') || binPath.includes('\\')) add(dirname(binPath));
+  for (const dir of COMMON_BIN_DIRS) add(dir);
+  for (const dir of (env.PATH ?? '').split(delimiter)) add(dir);
+  return dirs.join(delimiter);
 }

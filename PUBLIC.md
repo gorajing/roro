@@ -63,6 +63,10 @@ required. The **two roles of the Developer-ID cert are now clear and separate:**
 > config, deterministic fake Ollama, a fake Codex override, and the product preload bridge. It proves the default typed
 > surface exposes the executor-readiness check, then can complete a first coding task through public `turnRun` and Codex
 > events. It still does not replace real Codex auth, signed/notarized clean-Mac validation, or non-founder validation.
+> Real-Codex preflight: `npm run verify:packaged-real-codex` keeps the deterministic fake Ollama brain but removes the
+> fake Codex override, so the packaged app must discover and run the user's real authenticated/configured Codex CLI against a disposable
+> project. This is the local executor-auth preflight before a cohort run; it still does not replace signed/notarized
+> clean-Mac validation, real model quality, or non-founder validation.
 > Model-setup preflight: `npm run verify:packaged-model-setup` launches the real packaged app against a fake local
 > Ollama host that starts unreachable, then comes online with no models installed. It proves the packaged first-run
 > banner shows Get Ollama/Recheck while the daemon is down, transitions in-app to the missing-model Download path after
@@ -151,6 +155,9 @@ the happy packaged first-run workdir flow.
 - ✅ Packaged first-task preflight: `npm run verify:packaged-first-task` proves the persisted project, local-brain
   readiness, public selected-executor readiness bridge, and public `turnRun` path can produce a file change in the chosen
   repo without debug bridges.
+- ✅ Opt-in real-Codex preflight: `npm run verify:packaged-real-codex` proves the same packaged path can discover and run
+  the user's authenticated/configured Codex CLI without the fake executor override. This is a local executor-auth readiness gate, not a
+  substitute for non-founder comprehension or signed/notarized clean-Mac validation.
 
 **Exit:** a stranger who has never touched a terminal launches → is guided to pick a repo → sees honest model status with
 guided Ollama install + one-click model pull → types a task the executor runs to completion with any executor CLI auth

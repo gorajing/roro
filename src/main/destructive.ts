@@ -59,3 +59,58 @@ export function classifyDestructive(task: string): DestructiveVerdict {
   }
   return { destructive: false };
 }
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function maskLeadingShellInterpreter(command: string): string {
+  return command.replace(
+    /^(\s*)(?:\/bin\/(?:bash|sh|zsh)|\/usr\/bin\/(?:bash|env|sh|zsh))(?=\s|$)/,
+    '$1<shell>',
+  );
+}
+
+const PATH_TOKEN_STOP_CLASS = String.raw`\s'"` + '`' + String.raw`<>|;&)({}\[\]`;
+
+function workspacePathTokenRe(alias: string): RegExp {
+  const escaped = escapeRegExp(alias);
+  return new RegExp(`${escaped}(?=$|/|[${PATH_TOKEN_STOP_CLASS}])[^${PATH_TOKEN_STOP_CLASS}]*`, 'g');
+}
+
+function containsWorkspaceParentTraversal(command: string, alias: string): boolean {
+  for (const match of command.matchAll(workspacePathTokenRe(alias))) {
+    const relativePart = match[0].slice(alias.length);
+    if (relativePart.split(/[\\/]+/).includes('..')) return true;
+  }
+  return false;
+}
+
+function maskWorkspacePathTokens(command: string, alias: string): string {
+  return command.replace(workspacePathTokenRe(alias), (pathToken) => `<workspace>${pathToken.slice(alias.length)}`);
+}
+
+/**
+ * Classify a real executor command in the context of the selected workspace.
+ * The generic system-path rule is meant to catch paths outside the repo; a repo
+ * may itself live under /var or /private/var in packaged smokes and macOS temp
+ * projects, so mask the active workspace root before applying the normal rules.
+ */
+export function classifyDestructiveCommand(
+  command: string,
+  workspacePath: string | undefined,
+): DestructiveVerdict {
+  const workspace = workspacePath?.trim().replace(/\/+$/, '');
+  if (!workspace) return classifyDestructive(maskLeadingShellInterpreter(command));
+  const workspaceAliases = new Set([workspace]);
+  if (workspace.startsWith('/var/')) workspaceAliases.add(`/private${workspace}`);
+  if (workspace.startsWith('/private/var/')) workspaceAliases.add(workspace.replace(/^\/private/, ''));
+  let masked = maskLeadingShellInterpreter(command);
+  for (const alias of [...workspaceAliases].sort((a, b) => b.length - a.length)) {
+    if (containsWorkspaceParentTraversal(masked, alias)) {
+      return { destructive: true, reason: 'parent-directory traversal from the workspace' };
+    }
+    masked = maskWorkspacePathTokens(masked, alias);
+  }
+  return classifyDestructive(masked);
+}
