@@ -295,7 +295,7 @@ authoritative fallback and what to run when changing `floatingAsk.ts` or `src/in
 ```sh
 npm run verify:floating
 npm run verify:floating-live-turn
-RORO_FLOATING_LIVE_USE_REAL_OLLAMA=1 npm run verify:floating-live-turn # optional model-quality pass
+RORO_FLOATING_LIVE_USE_REAL_OLLAMA=1 npm run verify:floating-live-turn # optional local-model path check
 ```
 
 `scripts/smoke-floating-ask.mjs` launches the real Electron renderer over the Chrome DevTools Protocol
@@ -316,7 +316,11 @@ spawn text, and the error remains visible after `runEnd` collapse until the next
 floating mode, leaves `RORO_FLOATING_SMOKE` and `RORO_DEBUG_BRIDGE` off, drives the visible Ask form,
 and verifies real `window.companion.turnRun` answer and executor turns over the public push stream.
 The answer turn must emit `ActionEvent`s, reach `runEnd`, avoid the coding executor, and collapse the
-floating Ask with a visible success receipt that reports whether memory was checked or used. In the deterministic fake-Ollama path, a delayed `run_agent` decision is stopped before
+floating Ask with a visible success receipt that reports whether memory was checked or used. In the
+deterministic fake-Ollama path, the answer narration must include the requested phrase exactly enough
+to prove the public event stream carried the model answer. In the optional real-Ollama path, the
+narration check accepts a substantive non-placeholder answer because that mode validates the local
+model path, not exact echo quality. Still in the deterministic fake-Ollama path, a delayed `run_agent` decision is stopped before
 `run.started`; it must emit neutral stopped copy, collapse from `runEnd`, and never launch fake Codex.
 The same fake path also stops a cooperative task after fake Codex has emitted `run.started` and a started
 `file_change`; it must emit scoped `run.failed: aborted`, record `SIGTERM`, never emit `run.completed`,
