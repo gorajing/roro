@@ -14,12 +14,13 @@ import { reduceRun, INITIAL_RUN_LIFECYCLE, type RunLifecycle } from '../events/r
 import { getCompanion } from '../events/bridge';
 import { ensureWorkdirReady, notifyWorkdirConfigured } from '../bootstrap/workdirSetup';
 import { actionableErrorCopy, isStoppedTerminalError, typedTurnEndStatus } from '../events/errorCopy';
+import { initialTurnReceiptState, receiptForTurnEnd, reduceTurnReceipt, type ReceiptTone, type TurnReceiptState } from '../events/turnReceipt';
 import type { ActionEvent } from '../../shared/events';
 
 interface FloatingAskSmokeHook {
   startTask(text: string): void;
   action(e: ActionEvent): void;
-  runEnd(): void;
+  runEnd(runId?: string): void;
   state(): {
     ask: AskState;
     run: RunLifecycle;
@@ -76,11 +77,15 @@ export function mountFloatingAsk(opts: {
   let acceptedRunId: string | null = null;
   let turnSerial = 0;
   let activeTurnSerial = 0;
+  let receiptRunId: string | null = null;
+  let receiptCancelRequested = false;
+  let receiptState: TurnReceiptState = initialTurnReceiptState();
   const smokeCancelRequests: Array<string | undefined> = [];
 
-  function showNotice(message: string, tone: 'error' | 'neutral'): void {
+  function showNotice(message: string, tone: ReceiptTone): void {
     error.textContent = message;
     error.classList.toggle('neutral', tone === 'neutral');
+    error.classList.toggle('success', tone === 'success');
     error.hidden = false;
   }
 
@@ -91,7 +96,17 @@ export function mountFloatingAsk(opts: {
   function clearFailure(): void {
     error.textContent = '';
     error.classList.remove('neutral');
+    error.classList.remove('success');
     error.hidden = true;
+  }
+
+  function eventBelongsToFloatingTurn(runId: string): boolean {
+    return ask === 'tasked' && (receiptRunId === null || receiptRunId === runId);
+  }
+
+  function rememberFloatingRunId(runId: string): void {
+    if (receiptRunId === null) receiptRunId = runId;
+    if (acceptedRunId === null) acceptedRunId = runId;
   }
 
   function render(): void {
@@ -107,6 +122,8 @@ export function mountFloatingAsk(opts: {
         clearFailure();
         stopRequested = false;
         acceptedRunId = null;
+        receiptRunId = null;
+        receiptCancelRequested = false;
         input.focus();
         input.select();
         break;
@@ -133,6 +150,7 @@ export function mountFloatingAsk(opts: {
         void companion.turnRun({ transcript: eff.text, sessionId }).then(({ runId }) => {
           if (activeTurnSerial !== turnToken || ask !== 'tasked') return;
           acceptedRunId = runId;
+          if (receiptRunId === null) receiptRunId = runId;
           if (stopRequested) void companion.cancelTask?.(runId);
         }).catch(() => {
           // turnRun returns {runId} even on a decide failure (it pushes run.failed + runEnd); a
@@ -143,6 +161,9 @@ export function mountFloatingAsk(opts: {
         break;
       }
       case 'showTasked':
+        receiptRunId = null;
+        receiptCancelRequested = false;
+        receiptState = initialTurnReceiptState();
         clearFailure();
         stopRequested = false;
         pill.textContent = `tasked: ${eff.text}`;
@@ -153,6 +174,8 @@ export function mountFloatingAsk(opts: {
         stopAvailable = false;
         stopRequested = false;
         acceptedRunId = null;
+        receiptRunId = null;
+        receiptCancelRequested = false;
         activeTurnSerial = 0;
         break;
       case 'armStop':
@@ -217,6 +240,9 @@ export function mountFloatingAsk(opts: {
       if (eff.type === 'setThinkingPose') {
         driver.setState('thinking');
       } else if (eff.type === 'showTasked') {
+        receiptRunId = null;
+        receiptCancelRequested = false;
+        receiptState = initialTurnReceiptState();
         clearFailure();
         stopRequested = false;
         acceptedRunId = null;
@@ -227,6 +253,8 @@ export function mountFloatingAsk(opts: {
         stopAvailable = false;
         stopRequested = false;
         acceptedRunId = null;
+        receiptRunId = null;
+        receiptCancelRequested = false;
         activeTurnSerial = 0;
       } else if (eff.type === 'armStop') {
         stopAvailable = true;
@@ -253,6 +281,7 @@ export function mountFloatingAsk(opts: {
   stop.addEventListener('click', () => {
     if (!stopAvailable) return;
     stopRequested = true;
+    receiptCancelRequested = true;
     render();
     const runId = run.runId ?? acceptedRunId ?? undefined;
     if (opts.smokeLifecycle) smokeCancelRequests.push(runId);
@@ -263,6 +292,9 @@ export function mountFloatingAsk(opts: {
   const companion = getCompanion();
   const unsubs: Array<() => void> = [];
   const handleActionEvent = (e: ActionEvent): void => {
+    if (!eventBelongsToFloatingTurn(e.runId)) return;
+    rememberFloatingRunId(e.runId);
+    receiptState = reduceTurnReceipt(receiptState, e);
     run = reduceRun(run, e); // run.started -> running+armed+runId; completed/failed -> disarm
     if (e.kind === 'run.started') {
       acceptedRunId = e.runId;
@@ -285,13 +317,22 @@ export function mountFloatingAsk(opts: {
       render(); // reflect a disarm (completed/failed) without touching the Ask state
     }
   };
-  const handleRunEnd = (): void => {
+  const handleRunEnd = (p?: { runId: string }): void => {
+    if (ask !== 'tasked') return;
+    const runId = p?.runId ?? receiptRunId ?? acceptedRunId ?? run.runId ?? null;
+    if (receiptRunId !== null && runId !== receiptRunId) return;
+    if (receiptRunId === null) receiptRunId = runId;
+    const receipt = receiptForTurnEnd(receiptState, receiptCancelRequested);
     run = INITIAL_RUN_LIFECYCLE;
     stopAvailable = false;
     stopRequested = false;
     acceptedRunId = null;
+    receiptRunId = null;
+    receiptCancelRequested = false;
     activeTurnSerial = 0;
     dispatch({ type: 'runEnded' });
+    showNotice(receipt.text, receipt.tone);
+    receiptState = initialTurnReceiptState();
   };
   if (companion?.onActionEvent) {
     unsubs.push(companion.onActionEvent(handleActionEvent));
@@ -308,7 +349,7 @@ export function mountFloatingAsk(opts: {
     smokeWindow().__roroFloatingAskSmoke = {
       startTask: applySmokeTask,
       action: handleActionEvent,
-      runEnd: handleRunEnd,
+      runEnd: (runId?: string) => handleRunEnd(runId ? { runId } : undefined),
       state: () => ({
         ask,
         run,
