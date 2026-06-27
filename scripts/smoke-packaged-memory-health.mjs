@@ -131,7 +131,7 @@ async function startFakeOllama() {
   };
 }
 
-function smokeEnv({ home, port, ollamaUrl }) {
+function smokeEnv({ home, port, ollamaUrl, floating = false }) {
   const env = {
     ...process.env,
     HOME: home,
@@ -144,16 +144,20 @@ function smokeEnv({ home, port, ollamaUrl }) {
   delete env.COMPANION_WORKDIR;
   delete env.RORO_ALLOW_CWD;
   delete env.RORO_DB_DIR;
+  delete env.COMPANION_DB_DIR;
   delete env.DOTENV_CONFIG_PATH;
+  delete env.RORO_FLOATING_WINDOW;
+  delete env.COMPANION_FLOATING_WINDOW;
+  if (floating) env.RORO_FLOATING_WINDOW = '1';
   const stripped = stripV0DeferredEnv(env);
   stripped.RORO_MEMORY_HEALTH_SMOKE_FAIL = 'keychain';
   return stripped;
 }
 
-function launchApp({ home, cwd, userDataDir, port, ollamaUrl }) {
+function launchApp({ home, cwd, userDataDir, port, ollamaUrl, floating = false }) {
   const child = spawn(APP_BIN, [`--user-data-dir=${userDataDir}`], {
     cwd,
-    env: smokeEnv({ home, port, ollamaUrl }),
+    env: smokeEnv({ home, port, ollamaUrl, floating }),
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
   });
@@ -174,6 +178,11 @@ function launchApp({ home, cwd, userDataDir, port, ollamaUrl }) {
   collect(child.stdout);
   collect(child.stderr);
   return run;
+}
+
+function rectsOverlap(a, b) {
+  if (!a || !b) return false;
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
 async function waitForChildExit(child, timeoutMs) {
@@ -294,10 +303,11 @@ async function waitFor(cdp, expression, timeoutMs, label) {
   throw new Error(`${label} timed out; last=${JSON.stringify(last)}`);
 }
 
-async function inspectPackagedApp({ home, cwd, userDataDir, ollamaUrl }) {
+async function inspectPackagedApp({ home, cwd, userDataDir, ollamaUrl, floating = false, exerciseTurn = true }) {
   const port = await freePort();
-  console.log(`[smoke] launching packaged app (HOME=${home}, userData=${userDataDir}, RORO_DEBUG_PORT=${port})...`);
-  const run = launchApp({ home, cwd, userDataDir, port, ollamaUrl });
+  const mode = floating ? 'floating' : 'full';
+  console.log(`[smoke] launching packaged app (${mode}, HOME=${home}, userData=${userDataDir}, RORO_DEBUG_PORT=${port})...`);
+  const run = launchApp({ home, cwd, userDataDir, port, ollamaUrl, floating });
   let cdp;
   try {
     const target = await waitForRendererTarget(port, run.child);
@@ -315,16 +325,84 @@ async function inspectPackagedApp({ home, cwd, userDataDir, ollamaUrl }) {
     );
 
     const banner = await evaluate(cdp, `(() => {
-      const el = document.querySelector('#memory-health-banner');
-      const style = el ? getComputedStyle(el) : null;
-      const rect = el ? el.getBoundingClientRect() : null;
-      return {
-        exists: !!el,
-        hidden: el?.hidden ?? null,
-        visible: !!el && !el.hidden && style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0,
-        text: el?.textContent ?? '',
+      const rectFor = (el) => {
+        if (!el) return null;
+        const rect = el.getBoundingClientRect();
+        return {
+          top: rect.top,
+          left: rect.left,
+          right: rect.right,
+          bottom: rect.bottom,
+          width: rect.width,
+          height: rect.height,
+        };
       };
+      const selectorFor = (el) => {
+        if (!el) return null;
+        const target = el.closest?.('#ask-pill,#ask-input,#floating-ask,#live2d-canvas,#memory-health-details,#memory-health-dismiss,#memory-health-banner,#app');
+        return target?.id ? '#' + target.id : el.tagName?.toLowerCase?.() ?? null;
+      };
+      const center = (rect) => rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+      const hitAt = (x, y) => selectorFor(document.elementFromPoint(x, y));
+      const snapshot = () => {
+        const el = document.querySelector('#memory-health-banner');
+        const ask = document.querySelector('#floating-ask');
+        const details = document.querySelector('#memory-health-details');
+        const dismiss = document.querySelector('#memory-health-dismiss');
+        const style = el ? getComputedStyle(el) : null;
+        const askStyle = ask ? getComputedStyle(ask) : null;
+        const detailsStyle = details ? getComputedStyle(details) : null;
+        const rect = rectFor(el);
+        const askRect = rectFor(ask);
+        const detailsRect = rectFor(details);
+        const dismissRect = rectFor(dismiss);
+        const askCenter = center(askRect);
+        const detailsCenter = center(detailsRect);
+        const dismissCenter = center(dismissRect);
+        return {
+          exists: !!el,
+          hidden: el?.hidden ?? null,
+          visible: !!el && !el.hidden && style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0,
+          text: el?.textContent ?? '',
+          rect,
+          viewport: { width: innerWidth, height: innerHeight },
+          bodyFloating: document.body.classList.contains('floating-window'),
+          askExists: !!ask,
+          askVisible: !!ask && askStyle.display !== 'none' && askStyle.visibility !== 'hidden' && askRect.width > 0 && askRect.height > 0,
+          askRect,
+          detailsVisible: !!details && detailsStyle.display !== 'none' && detailsStyle.visibility !== 'hidden' && detailsRect.width > 0 && detailsRect.height > 0,
+          askHit: askCenter ? hitAt(askCenter.x, askCenter.y) : null,
+          detailsHit: detailsCenter ? hitAt(detailsCenter.x, detailsCenter.y) : null,
+          dismissHit: dismissCenter ? hitAt(dismissCenter.x, dismissCenter.y) : null,
+          bannerBackgroundHit: rect ? hitAt(rect.left + 4, rect.top + rect.height / 2) : null,
+          catBodyHit: hitAt(innerWidth / 2, innerHeight * 0.38),
+          catMiddleHit: hitAt(innerWidth / 2, innerHeight * 0.5),
+        };
+      };
+      const before = snapshot();
+      let askAfterClick = null;
+      let detailsAfterClick = null;
+      if (before.bodyFloating) {
+        const askCenter = center(before.askRect);
+        const askHit = askCenter ? document.elementFromPoint(askCenter.x, askCenter.y) : null;
+        askHit?.click?.();
+        const input = document.querySelector('#ask-input');
+        const inputStyle = input ? getComputedStyle(input) : null;
+        askAfterClick = {
+          hitBefore: selectorFor(askHit),
+          askClass: document.querySelector('#floating-ask')?.className ?? '',
+          inputVisible: !!input && inputStyle.display !== 'none' && inputStyle.visibility !== 'hidden',
+          activeElement: document.activeElement?.id ?? '',
+        };
+        if (before.detailsVisible) {
+          document.querySelector('#memory-health-details')?.click();
+          detailsAfterClick = snapshot();
+        }
+      }
+      return { ...before, askAfterClick, detailsAfterClick };
     })()`);
+
+    if (!exerciseTurn) return { health, banner, panel: null, turn: null, logs: run.logs };
 
     const panel = await evaluate(cdp, `new Promise((resolve) => {
       const toggle = document.querySelector('#memory-toggle');
@@ -386,16 +464,26 @@ const root = await mkdtemp(join(tmpdir(), 'roro-packaged-memory-health-'));
 const home = join(root, 'home');
 const cwd = join(root, 'cwd');
 const userDataDir = join(root, 'userData');
+const floatingUserDataDir = join(root, 'floatingUserData');
 let fakeOllama;
 
 try {
   await mkdir(home, { recursive: true });
   await mkdir(cwd, { recursive: true });
   await mkdir(userDataDir, { recursive: true });
+  await mkdir(floatingUserDataDir, { recursive: true });
   fakeOllama = await startFakeOllama();
   console.log(`[smoke] fake Ollama listening at ${fakeOllama.url}`);
 
   const result = await inspectPackagedApp({ home, cwd, userDataDir, ollamaUrl: fakeOllama.url });
+  const floating = await inspectPackagedApp({
+    home,
+    cwd,
+    userDataDir: floatingUserDataDir,
+    ollamaUrl: fakeOllama.url,
+    floating: true,
+    exerciseTurn: false,
+  });
 
   console.log('[smoke] asserting degraded packaged memory health...');
   check('memory health is degraded', result.health?.state === 'degraded', JSON.stringify(result.health));
@@ -413,6 +501,26 @@ try {
   check('answer turn completed', result.turn.ok === true && result.turn.ends.length > 0, JSON.stringify(result.turn));
   check('answer turn emitted narration', result.turn.events.some((event) => event?.kind === 'message' && /still answer/i.test(event.text)), JSON.stringify(result.turn.events));
   check('answer turn produced no run.failed event', !result.turn.events.some((event) => event?.kind === 'run.failed'), JSON.stringify(result.turn.events));
+  check('floating memory health launch uses floating window mode', floating.banner.bodyFloating === true, JSON.stringify(floating.banner));
+  check('floating memory health banner is visible', floating.banner.visible === true, JSON.stringify(floating.banner));
+  check('floating Ask remains visible', floating.banner.askVisible === true, JSON.stringify(floating.banner));
+  check('floating memory health banner stays in the top chip strip', floating.banner.rect?.bottom <= 48, JSON.stringify(floating.banner));
+  check('floating memory health banner stays inside the window', floating.banner.rect?.top >= 0 &&
+    floating.banner.rect?.left >= 0 &&
+    floating.banner.rect?.right <= floating.banner.viewport?.width &&
+    floating.banner.rect?.bottom <= floating.banner.viewport?.height, JSON.stringify(floating.banner));
+  check('floating memory health banner does not overlap Ask', !rectsOverlap(floating.banner.rect, floating.banner.askRect), JSON.stringify(floating.banner));
+  check('floating memory health banner leaves a large gap above Ask', floating.banner.askRect?.top - floating.banner.rect?.bottom >= 48, JSON.stringify(floating.banner));
+  check('floating banner background does not intercept canvas hits', floating.banner.bannerBackgroundHit === '#live2d-canvas', JSON.stringify(floating.banner));
+  check('floating cat body remains canvas-hit', floating.banner.catBodyHit === '#live2d-canvas', JSON.stringify(floating.banner));
+  check('floating cat middle remains canvas-hit', floating.banner.catMiddleHit === '#live2d-canvas', JSON.stringify(floating.banner));
+  check('floating memory details button is hidden to avoid clipped detail copy', floating.banner.detailsVisible === false && floating.banner.detailsHit !== '#memory-health-details', JSON.stringify(floating.banner));
+  check('floating memory dismiss button remains hit-testable', floating.banner.dismissHit === '#memory-health-dismiss', JSON.stringify(floating.banner));
+  check('floating Ask center hits the Ask pill', floating.banner.askHit === '#ask-pill', JSON.stringify(floating.banner));
+  check('floating Ask expands when clicked by hit target', floating.banner.askAfterClick?.hitBefore === '#ask-pill' &&
+    floating.banner.askAfterClick?.askClass.includes('expanded') &&
+    floating.banner.askAfterClick?.inputVisible === true &&
+    floating.banner.askAfterClick?.activeElement === 'ask-input', JSON.stringify(floating.banner));
 } catch (err) {
   console.error(`[smoke] harness error: ${err.message}`);
   failures.push(`harness: ${err.message}`);
