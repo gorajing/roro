@@ -152,7 +152,7 @@ What *is* uniformly good is that each subsystem's **decision logic** is extracte
 **HIGH**
 - **`connect-src 'self' https: wss:`** is wide open (`index.html:6`) — a compromised renderer can read owner-scoped memory via `window.memory.recall` and exfiltrate anywhere. Tighten to the specific origins.
 - **The destructive classifier is defense-in-depth, not a sandbox.** It inspects the *task prompt string*, never the agent's argv, so paraphrase/obfuscation evades it (`find -delete`, `git push --delete`, `shred`, fork-bombs are not in `PATTERNS`), and the agent can emit `rm -rf` mid-run fully unguarded — the gate guards *intent*, not *execution*.
-- **The watchdog leaks the executor slot by design.** A stuck/orphaned child holds the single-executor slot forever (`releaseSlot` runs only when the stream truly ends; `orchestrator.ts:308-327`) — no recovery short of quit. Add an operator-visible force-release.
+- **Post-Stop slot recovery still needs an operator surface.** The watchdog now ends the UI without freeing the executor slot, and the adapters escalate ignored aborts to `SIGKILL`; the slot frees only when the executor stream truly ends. If a platform child still wedges the stream, recovery is still quit-and-relaunch. Add an operator-visible force-release/diagnostic.
 - **~~Two parallel, divergent voice stacks.~~ RESOLVED (2026-06-24).** The legacy `wireEvents` turn-manager was deleted with the Vapi path; `voiceTurnRouter` (`isRunActive` + barge-in queue) is now the single turn-manager for the on-device voice path. *(Original finding: the single-executor/barge-in law was implemented twice and differently, and `wireEvents` released `turnInFlight` on any `onRunEnd` rather than a run-id-matched one.)*
 
 **MED — silent-correctness cliffs**
