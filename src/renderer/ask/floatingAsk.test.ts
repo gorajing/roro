@@ -11,7 +11,7 @@ function setCompanion(stub: unknown): void {
 function setup(over: {
   getWorkdirConfig?: ReturnType<typeof vi.fn>;
   chooseWorkdir?: ReturnType<typeof vi.fn>;
-  canStartTurn?: ReturnType<typeof vi.fn>;
+  canStartTurn?: ReturnType<typeof vi.fn<(onStatus?: (text: string) => void) => boolean>>;
   smokeLifecycle?: boolean;
 } = {}) {
   document.body.innerHTML = '<div id="app"></div>';
@@ -355,6 +355,37 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.form.classList.contains('expanded')).toBe(true);
     expect(h.input.value).toBe('do it');
     expect(h.stop.classList.contains('armed')).toBe(false);
+  });
+
+  it('shows readiness copy and dispatches the preserved draft after readiness recovers', async () => {
+    h.unmount();
+    const getWorkdirConfig = vi.fn(async () => ({ workdir: '/chosen/repo', source: 'config' as const }));
+    const canStartTurn = vi.fn((onStatus?: (text: string) => void) => {
+      onStatus?.('Roro is still checking the local brain. Try again in a moment.');
+      return false;
+    });
+    h = setup({ getWorkdirConfig, canStartTurn });
+
+    h.pill.click();
+    h.driver.setState.mockClear();
+    h.input.value = 'do it';
+    submit(h.form);
+    await flush();
+
+    expect(h.turnRun).not.toHaveBeenCalled();
+    expect(h.driver.setState).not.toHaveBeenCalled();
+    expect(h.form.classList.contains('expanded')).toBe(true);
+    expect(h.input.value).toBe('do it');
+    expect(h.error.hidden).toBe(false);
+    expect(h.error.textContent).toContain('still checking the local brain');
+    expect(h.error.classList.contains('neutral')).toBe(true);
+
+    canStartTurn.mockImplementation(() => true);
+    submit(h.form);
+    await flush();
+
+    expect(h.turnRun).toHaveBeenCalledWith({ transcript: 'do it', sessionId: 'sess' });
+    expect(h.form.classList.contains('tasked')).toBe(true);
   });
 
   it('exposes a gated smoke harness that drives the same lifecycle handlers', () => {

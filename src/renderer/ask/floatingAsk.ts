@@ -38,7 +38,7 @@ function smokeWindow(): { __roroFloatingAskSmoke?: FloatingAskSmokeHook } {
 export function mountFloatingAsk(opts: {
   driver: CharacterDriver;
   sessionId: string;
-  canStartTurn?: () => boolean;
+  canStartTurn?: (onStatus?: (text: string) => void) => boolean;
   smokeLifecycle?: boolean;
 }): () => void {
   const { driver, sessionId } = opts;
@@ -223,7 +223,7 @@ export function mountFloatingAsk(opts: {
         if (!ready) return;
       }
 
-      if (opts.canStartTurn?.() === false) return;
+      if (opts.canStartTurn?.((message) => showNotice(message, 'neutral')) === false) return;
 
       if (ask !== 'expanded' || input.value.trim() !== text) return;
       dispatch({ type: 'submit', text });

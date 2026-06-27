@@ -52,7 +52,13 @@ async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
     const brain = await loadBrain();
     const result = await brain.preflight();
     console.log(`[main] brain preflight OK — ${brain.describeBrain()}; models:`, result.required);
-    setBootstrapStatus({ ready: true, needsOllamaInstall: false, missing: [], essentialBytes: 0 });
+    const status: BootstrapStatusMsg = { ready: true, needsOllamaInstall: false, missing: [], essentialBytes: 0 };
+    setBootstrapStatus(status);
+    const send = (): void => {
+      sendToWindow(win, CH.bootstrapStatus, status);
+    };
+    if (!win.isDestroyed() && !win.webContents.isDestroyed() && win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
+    else send();
   } catch (err) {
     const baseMessage = `Local brain unavailable: ${(err as Error).message}`;
     console.error(`[main] brain preflight FAILED — ${baseMessage}`);
