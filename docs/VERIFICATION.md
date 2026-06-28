@@ -286,13 +286,14 @@ checks that the host is macOS, `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` a
 hardened-runtime entitlements file exists.
 
 The strict command intentionally fails on machines where the Apple env vars are not set. Neither mode prints the
-password, authenticates against Apple's notary service, produces a signed artifact, staples a ticket, or validates
-Gatekeeper on a clean Mac. Those remain the `npm run make` + clean-second-Mac gates.
+password, produces a signed artifact, staples a ticket, or validates Gatekeeper on a clean Mac. Use
+`npm run verify:signing-auth` when Apple env vars are present to authenticate against Apple's notary service without
+uploading an artifact. The signed artifact and clean-Mac checks remain the `npm run make` + clean-second-Mac gates.
 
 Before a Developer-ID `npm run make`, export the Apple variables in the current shell and run the strict doctor:
 
 ```sh
-export APPLE_TEAM_ID=GNG2M47BD7
+export APPLE_TEAM_ID=<Apple Developer Team ID>
 export APPLE_ID=<paid Apple ID>
 export APPLE_PASSWORD=<app-specific password>
 npm run verify:signing-readiness
@@ -309,7 +310,8 @@ npm run verify:release-artifact:signed
 `out/make`, verifies it with `hdiutil`, mounts it read-only, and confirms the mounted image contains a structurally
 complete `Roro.app`. The default release-artifact checks intentionally fail if deferred-feature or debug-bridge flags
 (`LIVE2D_MODEL_URL`, `RORO_FAKE_VOICE`, `RORO_*_VOICE`, `RORO_VOICE_PACK`, `RORO_WS5_STORE`,
-`RORO_DEBUG_BRIDGE`) are set in the release shell.
+`RORO_DEBUG_BRIDGE`, `RORO_FLOATING_SMOKE`, `RORO_MEMORY_PANEL_SMOKE`, `RORO_DISABLE_MEMORY_WARMUP`, and
+`RORO_MEMORY_HEALTH_SMOKE_FAIL`) are set in the release shell.
 
 When Developer-ID signing is enabled, Forge notarizes/staples the `.app` during package and the `postMake` hook
 notarizes/staples the DMG container after it is created.

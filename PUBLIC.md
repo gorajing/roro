@@ -218,7 +218,7 @@ v0 is **one thing done well: the remembering coding companion.** Deliberately cu
 
 | Decision | Recommendation |
 |---|---|
-| **Apple Developer Program + Developer ID cert** | ✅ **Done locally** (`Developer ID Application: Jin Young Choi (GNG2M47BD7)`). Next: export `APPLE_TEAM_ID=GNG2M47BD7`, `APPLE_ID`, and an app-specific `APPLE_PASSWORD`, run `npm run verify:signing-readiness && npm run verify:signing-auth && npm run make && npm run verify:release-artifact:dmg && npm run verify:release-artifact:signed`, then validate the notarized build on a clean Mac. |
+| **Apple Developer Program + Developer ID cert** | ✅ **Done locally** for the maintainer. Next: export `APPLE_TEAM_ID=<Apple Developer Team ID>`, `APPLE_ID`, and an app-specific `APPLE_PASSWORD`, run `npm run verify:signing-readiness && npm run verify:signing-auth && npm run make && npm run verify:release-artifact:dmg && npm run verify:release-artifact:signed`, then validate the notarized build on a clean Mac. |
 | **Bundle ID + icon** | ✅ Done: bundle ID is `com.jinchoi.roro`; Dock/Launchpad icon is the black pixel cat at `assets/roro-icon.icns`, generated from the 1024px source PNG. Keep this identity; don't design a new brand. |
 | **`RORO_WORKDIR` setup UX** | A mandatory first-launch native folder-picker (the gate between "launched" and "can code") + a Project control to change the saved repo later. |
 | **Debut channel** | A small trusted cohort first — measure attachment (does the moment land, do they reopen), not vanity downloads. Broaden only after it lands for strangers. |
@@ -240,7 +240,7 @@ then preflight signing (`npm run verify:signing-readiness` + `npm run verify:sig
 Developer-ID signed + notarized build** to test on a clean second Mac:
 
 ```sh
-export APPLE_TEAM_ID=GNG2M47BD7
+export APPLE_TEAM_ID=<Apple Developer Team ID>
 export APPLE_ID=<paid Apple ID>
 export APPLE_PASSWORD=<app-specific password>
 npm run verify:signing-readiness

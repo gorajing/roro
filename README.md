@@ -1,6 +1,6 @@
 # Roro
 
-**A private desktop coding companion that works in your repo and remembers how you work.**
+**A local-first desktop coding companion that works in your repo and remembers how you work.**
 
 Roro turns a typed task into a real coding-agent run against the project you
 choose: it recalls your local preferences, asks a local Ollama brain to plan the
@@ -137,8 +137,9 @@ with a compact Ask pill for tasks and setup banners only when action is needed.
 **Tap or hold the cat to pet it; drag to move it.** When an explicit voice dev
 flag is enabled, right-click/M mute is available for the mic path. The cat's body
 carries only affection + move — talk and tasking live off the body (see the
-interaction design spec at
-[`docs/superpowers/specs/2026-06-20-nero-interaction-design.md`](docs/superpowers/specs/2026-06-20-nero-interaction-design.md)).
+current interaction contract at [`docs/INTERACTION.md`](docs/INTERACTION.md).
+The older exploratory design notes remain under `docs/superpowers/` as archive
+material.
 The floating window stays above normal windows and across macOS Spaces,
 including full-screen apps. The floating Ask pill is the compact task surface;
 the normal app window keeps the full prompt, controls, captions, memory panel,
@@ -191,6 +192,7 @@ npm run verify:packaged-natural-memory-turn # packaged natural-language teach ->
 npm run verify:packaged-onboarding
 npm run verify:packaged-model-setup # packaged Ollama-down/Recheck -> one-click local model pull
 npm run verify:packaged-first-task # packaged persisted project -> first typed coding task writes a file
+npm run verify:packaged-real-codex # opt-in: same packaged path with your real Codex CLI
 
 # Developer-ID release path, after exporting APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID:
 npm run verify:signing-readiness # strict Developer-ID env/cert/tool doctor before npm run make
@@ -213,6 +215,7 @@ What is working:
 - packaged natural-memory turn smoke: with local Ollama ready, a real packaged turn learns a stated preference, relaunches, and uses it
 - packaged model-setup smoke: a real packaged app guides Ollama-down Recheck into missing local models, then through the public Download button and flips ready
 - packaged first-task smoke: a real packaged app with persisted project config verifies the public executor-readiness bridge, then runs a typed coding task through public `turnRun` and Codex event handling
+- packaged real-Codex smoke: the packaged first-task path can discover and run the user's authenticated Codex CLI without the fake executor override
 - release/signing doctor: CI checks the unsigned path, and a strict local doctor fails loud before Developer-ID `make`
 - signing auth doctor: with Apple env set, verifies `notarytool` credentials before uploading a build
 - DMG release artifact: macOS CI builds a versioned `.dmg` and verifies it mounts with `Roro.app`

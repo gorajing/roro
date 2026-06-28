@@ -2,7 +2,7 @@
   "name": "roro",
   "productName": "Roro",
   "version": "1.0.0",
-  "description": "A private local coding companion that remembers how you work.",
+  "description": "A local-first desktop coding companion that remembers how you work.",
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
@@ -40,10 +40,7 @@
     "premake": "node scripts/stage-voice-assets.mjs"
   },
   "keywords": [],
-  "author": {
-    "name": "Jin Choi",
-    "email": "jinchoi@u.northwestern.edu"
-  },
+  "author": "Jin Choi",
   "license": "MIT",
   "devDependencies": {
     "@electron-forge/cli": "^7.11.2",
