@@ -14,6 +14,7 @@ import type { ActivityCue } from './types';
 import { Gaze } from './gaze';
 import { Activity, type Energy } from './activity';
 import { framePolicy } from './framePolicy';
+import { placeholderHeadOriginForAction, type PlaceholderCatAction } from './placeholderGeometry';
 
 const MUTED_MIC_BADGE_URL = 'assets/muted-mic-32-2color.png';
 const FLOATING_FIT = {
@@ -68,6 +69,8 @@ export interface Placeholder {
   setBusy(busy: boolean): void;
   /** A live voice call is active (keeps the cat awake, blocks sleep). */
   setInCall(active: boolean): void;
+  /** Debug bridge only: force an energy state for manual visual checks. */
+  debugSetEnergy(energy: Energy | null): void;
 }
 
 async function modelExists(url: string): Promise<boolean> {
@@ -136,6 +139,7 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
   let busy = false;
   let inCall = false;
   let energy: Energy = 'awake';
+  let debugEnergyOverride: Energy | null = null;
   let docVisible = typeof document === 'undefined' ? true : document.visibilityState !== 'hidden';
   let prevEnergy: Energy = 'awake';
   let stretchUntil = 0;
@@ -196,6 +200,13 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
     g.endFill();
   };
 
+  const miniPx = (g: PIXI.Graphics, x: number, y: number, w: number, h: number, color: number, alpha = 1) => {
+    const unit = PIXEL / 2;
+    g.beginFill(color, alpha);
+    g.drawRect((x - GRID_W) * unit, (y - GRID_H) * unit, w * unit, h * unit);
+    g.endFill();
+  };
+
   const activityColor = (cue: ActivityCue | null): number => {
     switch (cue?.kind) {
       case 'thinking':
@@ -223,10 +234,10 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
   const trimActivityText = (text: string): string =>
     text.length > 28 ? `${text.slice(0, 25)}...` : text;
 
-  type CatAction = 'standing' | 'sitting' | 'walking';
+  type CatAction = PlaceholderCatAction;
 
   const actionForTick = (tick = 0): CatAction => {
-    if (energy === 'asleep' && !busy && !inCall) return 'sitting'; // curled; see drawCat
+    if (energy === 'asleep' && !busy && !inCall) return 'sleeping';
     if (state === 'working') return 'walking';
     if (state === 'thinking') return 'sitting';
     if (state === 'idle' && isFloatingWindow()) {
@@ -244,14 +255,10 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
 
   const walkDirection = (tick = 0) => (Math.cos(tick / 34) >= 0 ? 1 : -1);
 
-  const headOriginForAction = (action: CatAction) => {
-    if (action === 'walking') return { x: 8, y: 4 };
-    if (action === 'sitting') return { x: 7, y: 4 };
-    return { x: 8, y: 4 };
-  };
+  const energyForNow = (nowMs: number): Energy => debugEnergyOverride ?? presence.energy(nowMs);
 
   const faceForAction = (action: CatAction) => {
-    const head = headOriginForAction(action);
+    const head = placeholderHeadOriginForAction(action);
     return {
       eyeLeft: head.x + 3,
       eyeRight: head.x + 6,
@@ -271,7 +278,7 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
       return;
     }
 
-    if (action === 'sitting') {
+    if (action === 'sitting' || action === 'sleeping') {
       px(tail, 5, 9, 1, 5, CAT.black);
       px(tail, 5, 12, 2, 1, CAT.black);
       px(tail, 4, 14, 3, 1, CAT.black);
@@ -291,13 +298,14 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
 
     const earsFlat = state === 'error';
     const earsPerked = state === 'listening' || talking;
-    const earTop = earsPerked ? 2 : 3;
     const earTwitch = state === 'idle' && Math.floor(tick / 70) % 6 === 1;
-    const leftEarTop = earTop - (earTwitch ? 1 : 0);
-    const rightEarTop = earTop - (!earTwitch && state === 'idle' && Math.floor(tick / 90) % 7 === 2 ? 1 : 0);
+    const rightEarTwitch = !earTwitch && state === 'idle' && Math.floor(tick / 90) % 7 === 2;
 
     const drawHead = (action: CatAction) => {
-      const { x, y } = headOriginForAction(action);
+      const { x, y } = placeholderHeadOriginForAction(action);
+      const earTop = y + (earsPerked ? -2 : -1);
+      const leftEarTop = earTop - (earTwitch ? 1 : 0);
+      const rightEarTop = earTop - (rightEarTwitch ? 1 : 0);
       px(cat, x + 1, y + 1, 7, 1, CAT.black);
       px(cat, x + 1, y + 2, 7, 4, CAT.black);
       px(cat, x, y + 3, 1, 2, CAT.black);
@@ -319,11 +327,18 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
     };
 
     if (energy === 'asleep' && !busy && !inCall) {
-      // tight curl: low body, tail wrapped, no legs
-      px(cat, 5, 13, 9, 2, CAT.black);
-      px(cat, 6, 12, 7, 1, CAT.black);
-      px(cat, 11, 13, 2, 2, CAT.white);
-      drawHead('sitting');
+      // Same Roro silhouette as sitting, just dozing: connected head, eyes closed.
+      px(cat, 7, 9, 5, 6, CAT.black);
+      px(cat, 6, 11, 7, 4, CAT.black);
+      px(cat, 8, 8, 4, 1, CAT.black);
+      px(cat, 10, 10, 2, 5, CAT.white);
+      px(cat, 8, 14, 1, 2, CAT.black);
+      px(cat, 11, 14, 1, 2, CAT.black);
+      drawToe(8, 15);
+      drawToe(11, 15);
+      drawHead(action);
+      miniPx(cat, 20, 15, 2, 1, CAT.eye);
+      miniPx(cat, 26, 15, 2, 1, CAT.eye);
       return;
     }
 
@@ -449,11 +464,16 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
   const drawPetBurst = (tick = 0) => {
     foreground.clear();
     if (performance.now() >= petUntil) return;
-    // little hearts/sparkles above the head while the reaction lasts
+    // Pixel heart plus a small sparkle above the head while the reaction lasts.
     const blink = Math.floor(tick / 8) % 2;
-    px(foreground, 8, 0, 1, 1, EFFECT.petHeart);
-    if (blink) px(foreground, 11, 1, 1, 1, EFFECT.successGold);
-    px(foreground, 12, -1, 1, 1, EFFECT.petHeart);
+    const lift = blink ? -1 : 0;
+    const x = 17;
+    const y = -3 + lift * 2;
+    miniPx(foreground, x, y, 1, 1, EFFECT.petHeart);
+    miniPx(foreground, x + 2, y, 1, 1, EFFECT.petHeart);
+    miniPx(foreground, x, y + 1, 3, 1, EFFECT.petHeart);
+    miniPx(foreground, x + 1, y + 2, 1, 1, EFFECT.petHeart);
+    if (blink) miniPx(foreground, 26, 0, 1, 1, EFFECT.successGold);
   };
 
   const activeActivity = (alpha: number): ActivityCue | null => {
@@ -645,7 +665,7 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
 
   app.ticker.add(() => {
     const nowMs = performance.now();
-    energy = presence.energy(nowMs);
+    energy = energyForNow(nowMs);
     if (prevEnergy === 'asleep' && energy !== 'asleep') stretchUntil = nowMs + 700;
     prevEnergy = energy;
     const plan = framePolicy(docVisible, energy, busy, inCall);
@@ -667,7 +687,11 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
     const tick = app.ticker.lastTime / 16.67;
     const action = actionForTick(tick);
     positionContainer();
-    const breathe = action === 'walking' ? Math.round(Math.abs(Math.sin(tick / 12)) * -2) * 2 : Math.round(Math.sin(tick / 34) * 2) * 2;
+    const breathe = action === 'walking'
+      ? Math.round(Math.abs(Math.sin(tick / 12)) * -2) * 2
+      : action === 'sleeping'
+        ? Math.round(Math.sin(tick / 80))
+        : Math.round(Math.sin(tick / 34) * 2) * 2;
     const focusLift = state === 'working' ? -6 : state === 'thinking' ? -4 : state === 'error' ? 4 : 0;
     body.scale.x = action === 'walking' ? walkDirection(tick) : 1;
     body.position.x = action === 'walking' ? walkOffset(tick) : 0;
@@ -772,6 +796,15 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
     },
     setInCall: (active: boolean) => {
       inCall = active;
+    },
+    debugSetEnergy: (nextEnergy: Energy | null) => {
+      debugEnergyOverride = nextEnergy;
+      energy = energyForNow(performance.now());
+      const action = actionForTick();
+      drawTail(0, action);
+      drawCat(0, action);
+      redrawFace(0, action);
+      redrawAura(0);
     },
   };
 }

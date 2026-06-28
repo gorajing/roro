@@ -89,7 +89,7 @@ export async function bootstrap(): Promise<void> {
   }
 
   // 1 + 2: character (resolves even with no model — placeholder path).
-  const { driver, hasModel } = await createCharacter(canvas, config.modelUrl);
+  const { driver, avatar, hasModel } = await createCharacter(canvas, config.modelUrl);
   setStatus(hasModel ? 'Character model loaded.' : 'Roro is ready.');
 
   // 3: captions + timeline + executor/brain subscriptions.
@@ -397,6 +397,10 @@ export async function bootstrap(): Promise<void> {
       setActivity: (cue: Parameters<typeof driver.setActivity>[0]) => driver.setActivity(cue),
       setMouthOpen: (v: number) => driver.setMouthOpen(v),
       setMuted: (v: boolean) => setMicMuted(v),
+      pet: () => driver.pet?.(),
+      setEnergy: (energy: Parameters<NonNullable<typeof avatar.placeholder>['debugSetEnergy']>[0]) => {
+        avatar.placeholder?.debugSetEnergy(energy);
+      },
     };
   }
 }
