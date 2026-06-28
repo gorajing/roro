@@ -177,20 +177,20 @@ describe('assertSigningIdentity (clear preflight instead of a cryptic codesign d
   it('parses Developer ID Application identities and ignores Apple Development certs', () => {
     const output = [
       '  1) 606CE674AA7844DBD1F4FBB2590A839F59E0E66B "Apple Development: dev@example.com (9D9FQ9D5DT)"',
-      '  2) CE6115912D370A57FC444999123F8FF2BDB25F0F "Developer ID Application: Jin Young Choi (GNG2M47BD7)"',
+      '  2) CE6115912D370A57FC444999123F8FF2BDB25F0F "Developer ID Application: Dev Name (ABCDE12345)"',
       '     2 valid identities found',
     ].join('\n');
 
     expect(developerIdApplicationIdentities(output)).toEqual([
       {
         hash: 'CE6115912D370A57FC444999123F8FF2BDB25F0F',
-        name: 'Jin Young Choi',
-        teamId: 'GNG2M47BD7',
-        raw: '  2) CE6115912D370A57FC444999123F8FF2BDB25F0F "Developer ID Application: Jin Young Choi (GNG2M47BD7)"',
+        name: 'Dev Name',
+        teamId: 'ABCDE12345',
+        raw: '  2) CE6115912D370A57FC444999123F8FF2BDB25F0F "Developer ID Application: Dev Name (ABCDE12345)"',
       },
     ]);
     expect(hasDeveloperIdApplicationIdentity(output)).toBe(true);
-    expect(hasDeveloperIdApplicationIdentity(output, 'GNG2M47BD7')).toBe(true);
+    expect(hasDeveloperIdApplicationIdentity(output, 'ABCDE12345')).toBe(true);
     expect(hasDeveloperIdApplicationIdentity(output, 'ZZZZZ99999')).toBe(false);
   });
 

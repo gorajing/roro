@@ -1,22 +1,25 @@
 # AGENTS.md
 
-<!-- INSFORGE:START -->
-## InsForge backend
+## Current Project Shape
 
-This project uses [InsForge](https://insforge.dev): an all-in-one, open-source Postgres-based backend (BaaS) that gives this app a database, authentication, file storage, edge functions, realtime, an AI model gateway, and payments through one platform.
+Roro is a local-first Electron desktop app. The default brain is local Ollama,
+memory is encrypted local files-as-truth with a derived PGlite index, and coding
+turns run through the user's own local Codex or Claude CLI.
 
-- **Project:** **My First Project** (API base `https://bhe3s3e9.us-east.insforge.app`)
-- **Skills:** these InsForge skills are installed for supported coding agents. Reach for them before implementing any InsForge feature instead of guessing the API:
-  - `insforge`: app code with the `@insforge/sdk` client (database CRUD, auth, storage, edge functions, realtime, AI, email, and Stripe payments).
-  - `insforge-cli`: backend and infrastructure via the `insforge` CLI (projects, SQL, migrations, RLS policies, storage buckets, functions, secrets, payment setup, schedules, deploys).
-  - `insforge-debug`: diagnosing failures (SDK/HTTP errors, RLS denials, auth and OAuth issues) and running security or performance audits.
-  - `insforge-integrations`: wiring external auth providers (Clerk, Auth0, WorkOS, Better Auth, etc.) for JWT-based RLS, or the OKX x402 payment facilitator.
-  - `find-skills`: discovering additional skills on demand.
-- **Credentials:** app code reads keys from `.env.local`; the CLI reads `.insforge/project.json`. Never hardcode or commit keys.
+Do not add a hosted backend, account system, telemetry, payments, or app-owned
+cloud model dependency unless the user explicitly asks for that product change.
+Historical InsForge/Nebius demo material is archived context only, not the
+current architecture.
 
-Key patterns:
+## Working Rules
 
-- Database inserts take an array: `insert([{ ... }])`.
-- Reference users with `auth.users(id)`; use `auth.uid()` in RLS policies.
-- For storage uploads, persist both the returned `url` and `key`.
-<!-- INSFORGE:END -->
+- Trust [`HANDOFF.md`](HANDOFF.md), [`PUBLIC.md`](PUBLIC.md), and
+  [`README.md`](README.md) over older docs when they conflict.
+- Keep the `turnRun` path as the single recall -> decide -> execute/narrate ->
+  remember chokepoint.
+- Keep memory fail-loud: never add a plaintext fallback if OS keychain storage
+  is unavailable.
+- Do not commit `.env`, `.env.local`, `.insforge/`, generated voice/model assets,
+  packaged output, or local userData.
+- For release work, distinguish the unsigned/ad-hoc verification path from the
+  human-owned Developer-ID notarized build gate.

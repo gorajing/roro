@@ -29,7 +29,9 @@ Roro is a three-tier Electron app with a **topologically enforced** boundary, no
 - **PRELOAD** (`src/preload.ts`) — a single sandboxed bridge. It may import only `electron` and pure `shared/*` modules — *nothing that pulls in a Node builtin* (`preload.ts:5-8`). This self-imposed rule is the keystone of the security model.
 - **RENDERER** (`src/renderer/**`) — sandboxed Chromium (`contextIsolation:true, sandbox:true, nodeIntegration:false`, `window.ts:47-53`). It draws the cat and wires UI, and can reach privileged capability *only* through five frozen namespaces exposed on `window` by the preload: `companion`, `brain`, `memory`, `vision`, `RORO_CFG`.
 
-A standalone sidecar, `src/proxy/index.ts`, runs outside the Electron graph entirely: an Express server bound to `127.0.0.1` that proxies Vapi→Nebius LLM traffic, injecting `NEBIUS_API_KEY` server-side so the key never reaches the renderer.
+Historical note: an older prototype used a standalone local proxy for cloud voice/LLM traffic. That sidecar is not part
+of the current local-first Roro architecture; reconcile anything below against `HANDOFF.md`, `PUBLIC.md`, and the latest
+code before treating it as current.
 
 ### Layer / dependency map
 
@@ -49,7 +51,7 @@ MAIN (trusted)        src/main/**  main → window mic ipc
                           └~~► loadBrain/Memory/Vision  (siblings.ts, RUNTIME dynamic import)
                           ▼            ▼          ▼          ▼
 PROVIDERS         executor/      brain/      memory/     vision/
-                  codex claude   +Nebius     +pglite     +sharp
+                  codex claude   +Ollama     +memory2    +sharp
 ```
 
 Two distinct downward arrows matter: `import` (compile-time, solid) and `~~>` (runtime-only dynamic `import()` or IPC). The orchestrator is the hub — it reaches all four providers, but imports concrete code from only one (executor); the other three arrive through runtime loaders (§5).
@@ -91,7 +93,9 @@ Everything downstream of the executor speaks one vocabulary: the **11-kind** dis
 
 **Memory spine** (`src/main/identity.ts`, `src/memory/**`, `src/main/memoryContext.ts`, `src/main/factStore.ts`, `src/shared/memory.ts`). The cross-session moat. A device-stable v4 UUID `owner_id` (`identity.ts`, minted atomically via tmp+rename, throwing `OwnerCorruptError` rather than silently re-minting) scopes a single-writer PGlite+pgvector store. The store persists episodes (`action`/`narration`/`observation`) and thin profile `fact` rows, recalls episodes by cosine similarity (`recall` filters `kind <> 'fact'`), and `memoryContext.ts` composes them into a labeled `KNOWN ABOUT THIS USER` / `RELATED PAST CONTEXT` string (facts-first so truncation drops episodes, never the durable segment). `factStore.ts` serializes fact writes through a global `writeChain` and does read→insert-new→supersede-old. `MemoryKind` is a frozen union; `assertRendererMemoryKind` blocks the renderer from forging `fact` rows.
 
-**Brain** (`src/brain/index.ts`, `src/shared/brain.ts`, `src/brain/extractFact.ts`). The LLM-facing layer over a single Nebius (OpenAI-compatible) client. `decide` is the core — it streams a validated `Decision`; `describeScreen` captions a base64 frame for the vision loop; `embed` produces the 1536-dim vectors memory depends on; `extractFact` (temp 0, off the critical path) yields at most one durable fact or null. `shared/brain.ts` is the pure contract (`Command`/`Decision`/`DecideInput`) shared across all four tiers. Narration discipline (<25 words, no code) and the run_agent-vs-capture_screen policy are *prompt-enforced only*.
+**Brain** (`src/brain/index.ts`, `src/shared/brain.ts`, `src/brain/extractFact.ts`). Historical text below predates the
+current default local Ollama path and 768-dim `nomic-embed-text` embeddings. Treat Nebius/1536-dim references as
+prototype-era notes unless verified against the current code.
 
 **Executor** (`src/executor/**`, `src/shared/events.ts`). Drives `codex` or `claude` as a subprocess and normalizes each agent's native JSONL into the one canonical `ActionEvent` union via pure mappers, so downstream consumes identical events regardless of backend. `getExecutor(kind)` is the only branch on `AgentKind`. Ingest is tolerant (skip non-`{`, try/catch parse, unknown kinds → null, never throw); both spawn with `stdin` ignored to avoid TTY hangs; abort yields a single `run.failed{aborted}`.
 
@@ -146,8 +150,10 @@ What *is* uniformly good is that each subsystem's **decision logic** is extracte
 ## 8. Risks, tech-debt, and deferred work (prioritized)
 
 **CRITICAL**
-- **No navigation / window-open hardening anywhere.** A repo-wide search for `will-navigate`/`setWindowOpenHandler`/`web-contents-created` returns nothing. The renderer runs with `'unsafe-eval'` and loads remote surfaces (`*.daily.co`). If any content triggers a navigation or `window.open`, an attacker origin inherits the full `window.companion/brain/memory/vision` bridge — including `companion.runTask`, which dispatches a `workspace-write` coding agent behind only the leaky classifier. ~10-line fix; the single highest-leverage item.
-- **Hardcoded developer home path** `CLAUDE_BIN = '/Users/jinchoi/.local/bin/claude'` (`claude.ts:26`) — breaks for every other user unless `RORO_CLAUDE_BIN` is set; `CODEX_BIN` is Homebrew-only. Resolve via `PATH` with env override, fail loud if unresolved.
+- **Resolved since this synthesis:** navigation/window-open hardening exists in `src/main/window.ts` via
+  `isSafeNavigation`, `will-navigate`, and `setWindowOpenHandler`. Re-audit this area from current code, not this
+  historical finding.
+- **Historical resolved issue:** a hardcoded developer home path for the Claude binary broke other users unless `RORO_CLAUDE_BIN` was set, while `CODEX_BIN` was Homebrew-only. The current executor path resolver uses `PATH` plus explicit env overrides and fails loud if unresolved.
 
 **HIGH**
 - **`connect-src 'self' https: wss:`** is wide open (`index.html:6`) — a compromised renderer can read owner-scoped memory via `window.memory.recall` and exfiltrate anywhere. Tighten to the specific origins.
