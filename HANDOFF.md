@@ -190,7 +190,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 ---
 
 ## 11. Design docs (`docs/`) — deep reasoning, PARTLY STALE
-`docs/` holds the original design history (the "v2 spine" UX proposal is still the canonical *interaction* model; `docs/MEMORY-ARCHITECTURE.md` / `MEMORY-RESEARCH.md` are the memory2 spec). **But several docs predate two pivots:** (1) the memory2 rebuild, and (2) this session's **job-first strategy reframe** (which downgrades the old "cosmetics monetization" headline). `MONETIZATION.md` (the rejected $25-sync model) is superseded. **Trust this file + `PUBLIC.md` + the latest commit over `docs/`.**
+`docs/` holds the original design history (the "v2 spine" UX proposal is still the canonical *interaction* model; `docs/MEMORY-ARCHITECTURE.md` / `MEMORY-RESEARCH.md` are the memory2 spec). **But several docs predate two pivots:** (1) the memory2 rebuild, and (2) this session's **job-first strategy reframe** (which downgrades the old "cosmetics monetization" headline). `MONETIZATION.md` (the rejected $25-sync model) is superseded. **Trust this file + `PUBLIC.md` + the latest commit over `docs/`.** **Exception — current, not history:** [`docs/ROADMAP.md`](./docs/ROADMAP.md) is the **live execution plan** (how Path-to-Public work is sequenced); it post-dates the pivots and defers to this file + `PUBLIC.md` for invariants and gates — treat it as **current**, not stale.
 
 ---
 
