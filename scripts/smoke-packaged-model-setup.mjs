@@ -132,7 +132,7 @@ function smokeEnv({ port, ollamaHost }) {
   delete env.RORO_DB_DIR;
   delete env.DOTENV_CONFIG_PATH;
   delete env.RORO_DEBUG_BRIDGE;
-  delete env.RORO_FLOATING_WINDOW;
+  env.RORO_FLOATING_WINDOW = '0'; // exercise the framed window (floating is the product default now)
   delete env.RORO_FLOATING_SMOKE;
   delete env.RORO_MEMORY_PANEL_SMOKE;
   delete env.OLLAMA_MODEL;

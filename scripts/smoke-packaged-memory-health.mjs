@@ -146,9 +146,9 @@ function smokeEnv({ home, port, ollamaUrl, floating = false }) {
   delete env.RORO_DB_DIR;
   delete env.COMPANION_DB_DIR;
   delete env.DOTENV_CONFIG_PATH;
-  delete env.RORO_FLOATING_WINDOW;
   delete env.COMPANION_FLOATING_WINDOW;
-  if (floating) env.RORO_FLOATING_WINDOW = '1';
+  // Floating is the product default; set the flag explicitly so this harness controls the window mode.
+  env.RORO_FLOATING_WINDOW = floating ? '1' : '0';
   const stripped = stripV0DeferredEnv(env);
   stripped.RORO_MEMORY_HEALTH_SMOKE_FAIL = 'keychain';
   return stripped;

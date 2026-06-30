@@ -79,7 +79,10 @@ function readBool(field: keyof RoroConfig, viteKey: string, fallback: boolean): 
 export function loadConfig(): RoroConfig {
   return {
     modelUrl: read('modelUrl', 'VITE_LIVE2D_MODEL_URL', ''),
-    floatingWindow: readBool('floatingWindow', 'VITE_RORO_FLOATING_WINDOW', false),
+    // Floating desktop-pet UI is the product default (MAIN sets window.RORO_CFG.floatingWindow from
+    // FLOATING_WINDOW_FLAG, which is on unless RORO_FLOATING_WINDOW=0). This fallback only applies when
+    // RORO_CFG is absent (bare-browser/Vite dev) — kept in sync with MAIN so both default to floating.
+    floatingWindow: readBool('floatingWindow', 'VITE_RORO_FLOATING_WINDOW', true),
     fakeVoice: readBool('fakeVoice', 'VITE_RORO_FAKE_VOICE', false),
     vadVoice: readBool('vadVoice', 'VITE_RORO_VAD_VOICE', false),
     sttVoice: readBool('sttVoice', 'VITE_RORO_STT_VOICE', false),
