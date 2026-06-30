@@ -7,9 +7,10 @@ forward across sessions.
 ## Current Surface
 
 - Text is the default input. Voice remains a hidden developer seam behind flags.
-- The full app window owns setup, prompt, captions, memory, and timeline.
-- The floating window is a compact task surface: cat, setup banners when needed,
-  and the Ask pill.
+- The floating window is the default product surface: cat, setup banners when
+  needed, and the Ask pill.
+- The legacy full dev window (`RORO_FLOATING_WINDOW=0`) keeps the larger prompt,
+  captions, memory panel, and action timeline visible for debugging.
 - The cat body handles presence and affection only: tap or hold to pet, drag to
   move. Tasking stays in the prompt/Ask surfaces.
 - The app must show actionable readiness states before work: local brain status,

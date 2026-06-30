@@ -115,28 +115,36 @@ your own CLI. Before expecting a coding turn to edit files, authenticate or conf
 Claude) outside Roro. If the CLI is in a nonstandard location, set `RORO_CODEX_BIN` or
 `RORO_CLAUDE_BIN` to the executable path.
 
-### Optional floating character window
+### Default floating character window
 
 ```
-RORO_FLOATING_WINDOW=1 npm start
+npm start
 ```
 
-Shrinks the window, removes the frame, makes the background transparent, hides the
-full console overlay, and keeps Roro above normal windows across macOS Spaces. The
-cat remains the center of the surface, with the compact Ask pill for tasks and
-first-run setup banners only when action is needed. **Tap or hold to pet, drag to
-move.** Right-click/M mute is available only in voice-dev launches, when the mic can
-actually be muted.
+Roro now launches as a transparent, frameless 190x200 desktop pet by default and
+keeps Roro above normal windows across macOS Spaces. The cat remains the center of
+the surface, with the compact Ask pill for tasks and first-run setup banners only
+when action is needed. **Tap or hold to pet, drag to move.** Right-click/M mute is
+available only in voice-dev launches, when the mic can actually be muted.
+
+For the legacy full dev window with the larger prompt/timeline surface:
+
+```
+RORO_FLOATING_WINDOW=0 npm start
+```
 
 ## Verify
 
 - `npx tsc --noEmit -p tsconfig.json` → 0 errors
 - `npx vitest run --no-file-parallelism` → full deterministic suite
 - `npm run verify:floating` → on-screen smoke for the floating Ask (needs a display)
+- `npm run verify:floating-geometry` → default transparent 190x200 bottom-left floating shell
 - `npm run verify:packaged-model-setup` → packaged Ollama-down/Recheck through one-click core model pull
 - `npm run verify:packaged-real-codex` → opt-in packaged first task using your real authenticated/configured Codex CLI
 - `npm run verify:typed-live-turn` → default typed prompt through public `turnRun`
 - `npm run verify:floating-live-turn` → floating Ask through public `turnRun`
+- `npm run verify:release-channel` → release-channel build refuses deferred-v0 flags
+- `npm run verify:memory-steered` → opt-in proof that recalled memory reaches DECIDE and `args.task`
 
 ## Known notes
 
@@ -145,5 +153,6 @@ actually be muted.
   `BRAIN_PROVIDER=nebius`, `reasoning_content` drives the same thinking pose with a non-leaking
   proof-of-life caption.
 - The Claude executor path is unit-checked; smoke-test once `ANTHROPIC_API_KEY` is set.
-- Binary path overrides: `RORO_CODEX_BIN`, `RORO_CLAUDE_BIN`. Debug CDP port:
-  `RORO_DEBUG_PORT`. (Legacy `COMPANION_*` names still work with a deprecation warning.)
+- Binary path overrides: `RORO_CODEX_BIN`, `RORO_CLAUDE_BIN`. Local smoke-only
+  CDP port: `RORO_DEBUG_PORT`; do not set it for cohort/release launches.
+  (Legacy `COMPANION_*` names still work with a deprecation warning.)

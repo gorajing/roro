@@ -1,5 +1,9 @@
 # Roro
 
+<p align="center">
+  <img src="assets/roro-github-preview.png" alt="Roro pixel cat preview: local-first coding companion" width="820">
+</p>
+
 **A local-first desktop coding companion that works in your repo and remembers how you work.**
 
 Roro turns a typed task into a real coding-agent run against the project you
@@ -126,13 +130,13 @@ missing, the window still opens and a clear diagnostic appears (it never silentl
 falls back to the cloud). See
 [`docs/WS1-OLLAMA-INTEGRATION-TEST.md`](docs/WS1-OLLAMA-INTEGRATION-TEST.md).
 
-For the floating desktop agent:
+Roro launches as the floating desktop agent by default:
 
 ```bash
-RORO_FLOATING_WINDOW=1 npm start
+npm start
 ```
 
-The floating mode opens a transparent, frameless 380x400 window around the cat,
+The floating mode opens a transparent, frameless 190x200 window around the cat,
 with a compact Ask pill for tasks and setup banners only when action is needed.
 **Tap or hold the cat to pet it; drag to move it.** When an explicit voice dev
 flag is enabled, right-click/M mute is available for the mic path. The cat's body
@@ -142,8 +146,8 @@ The older exploratory design notes remain under `docs/superpowers/` as archive
 material.
 The floating window stays above normal windows and across macOS Spaces,
 including full-screen apps. The floating Ask pill is the compact task surface;
-the normal app window keeps the full prompt, controls, captions, memory panel,
-and action timeline visible.
+set `RORO_FLOATING_WINDOW=0 npm start` for the legacy full dev window with the
+full prompt, controls, captions, memory panel, and action timeline visible.
 
 ## Configuration
 
@@ -182,9 +186,12 @@ dev flags, macOS permissions, and the full live-run checklist.
 npx tsc --noEmit -p tsconfig.json
 npx vitest run --no-file-parallelism
 npm run verify:floating          # on-screen smoke for the floating Ask (needs a display)
+npm run verify:floating-geometry # default transparent 190x200 bottom-left floating shell
 npm run release:doctor           # CI-safe release/signing doctor for the unsigned/ad-hoc path
 npm run package
 npm run verify:release-artifact  # after npm run package, verifies the packaged .app shape
+npm run package:release
+npm run verify:release-channel   # release-channel build refuses deferred-v0 flags
 npm run verify:packaged-memory   # packaged memory write -> quit -> relaunch -> recall smoke
 npm run verify:packaged-memory-health # packaged Keychain/memory-paused UX stays non-blocking
 npm run verify:packaged-live-memory-turn  # packaged relaunch -> live Ollama turn uses recalled memory
@@ -193,6 +200,7 @@ npm run verify:packaged-onboarding
 npm run verify:packaged-model-setup # packaged Ollama-down/Recheck -> one-click local model pull
 npm run verify:packaged-first-task # packaged persisted project -> first typed coding task writes a file
 npm run verify:packaged-real-codex # opt-in: same packaged path with your real Codex CLI
+npm run verify:memory-steered # opt-in proof that recalled memory reaches DECIDE and args.task
 
 # Developer-ID release path, after exporting APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID:
 npm run verify:signing-readiness # strict Developer-ID env/cert/tool doctor before npm run make

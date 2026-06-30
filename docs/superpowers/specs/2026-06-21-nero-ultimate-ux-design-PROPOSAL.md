@@ -1,4 +1,4 @@
-> ℹ️ **CANONICAL for the interaction model; voice + monetization sections SUPERSEDED (2026-06-21) — see [HANDOFF.md](../../../HANDOFF.md).** The interaction grammar (surfaces/states/five laws/magic moment) holds. Ignore the Vapi voice-substrate and sync monetization sections; HANDOFF.md sections 5 and 7 supersede them.
+> **HISTORICAL / PARTIALLY SUPERSEDED — see [HANDOFF.md](../../../HANDOFF.md), [PUBLIC.md](../../../PUBLIC.md), [docs/ROADMAP.md](../../ROADMAP.md), and [docs/INTERACTION.md](../../INTERACTION.md).** The interaction grammar is useful background, but this file is no longer governing execution truth. Ignore the Vapi voice-substrate, sync monetization, old build order, and any "do not build a memory panel yet" language; the current app is local-first, job-first, default-floating, and already has the memory trust loop.
 
 # Roro — Unified Design Spine (Final, Hardened)
 
@@ -8,9 +8,9 @@ Lead-architect synthesis of six pillar designs + the ground brief, hardened agai
 
 ---
 
-## Status — ADOPTED (founder review, 2026-06-21)
+## Status — Historical Design Spine (founder review, 2026-06-21)
 
-**This is the governing v2 spine.** Adopted by the founder on 2026-06-21; it **supersedes `docs/ARCHITECTURE.md`** for all near-term decisions. Build order is locked: **A.5 → B → C1 → C2 → D** (owner_id + migration + extractor → floating Ask/Stop + dispatch-return → status/preempt/confirm → `.roro/PROFILE.md` → voice). **Do not start with voice or MoodCore; do not build a memory panel yet.** (The filename keeps its `-PROPOSAL` suffix only to preserve existing links; the status is adopted.)
+This was adopted on 2026-06-21 as the v2 design spine, but later work superseded its execution order. Treat it as design history and interaction background only; current sequencing, gates, and shipped surface are governed by `HANDOFF.md`, `PUBLIC.md`, `docs/ROADMAP.md`, and `docs/INTERACTION.md`.
 
 ### Founder amendment — memory facts are durable product data (folds into Pillar IV / Phase A.5)
 

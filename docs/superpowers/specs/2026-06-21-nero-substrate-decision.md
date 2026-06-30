@@ -1,4 +1,4 @@
-> ⚠️ **MOSTLY HOLDS, ONE FLIP (2026-06-21) — see [HANDOFF.md](../../../HANDOFF.md).** Memory is now **local-first PGlite**, not keep-Insforge (a fresh repo has no corpus to migrate). The embedding-provenance-stamp and "embedding is the sticky choice" points still hold; the hosted-brain discussion is moot in the BYO/free model.
+> **HISTORICAL / PARTIALLY SUPERSEDED — see [HANDOFF.md](../../../HANDOFF.md), [PUBLIC.md](../../../PUBLIC.md), and [docs/ROADMAP.md](../../ROADMAP.md).** Memory is now local-first memory2/PGlite, not InsForge; the default brain/embeddings path is local Ollama. The embedding-provenance-stamp and "embedding is the sticky choice" points remain useful background, but the hosted-brain/vendor stack below is not current v0 execution truth.
 
 # Roro Substrate Decision — Lead Architect Final Recommendation (Hardened)
 
@@ -6,11 +6,11 @@
 
 ## 1. THE HEADLINE
 
-The governing v2 spine already rules the substrate stack — and it rules it **correctly**. This document's job is not to *decide*; it is to **confirm against the spec, correct stale facts, and add the one piece of hygiene the A.5 plan is missing.** The honest list of net-new actions is short.
+The old v2 spine ruled the substrate stack at the time. Read this as historical substrate reasoning, not as the current build order or provider decision.
 
 There is exactly **one un-retrofittable action**, and it is *not* a vendor swap. It is: **add `embed_model` + `embed_dim` columns to the A.5 `memory` table and stamp them on every write.** Not to enable one shared vector space across tiers (the design forbids that — *re-embed on tier change, never mix vector spaces*) — but to make the *re-embed-on-tier-change* the design mandates **safe and auditable**. Every row A.5 writes without that stamp is a row whose provenance you can never cheaply reconstruct. That is the whole urgency, and it is a couple of columns, not a thesis.
 
-Everything else — Haiku as the hosted brain, one server-hosted Vapi, no speech-to-speech, keep-Insforge-no-PGlite-in-M1 — is **already adopted in the governing spec.**
+Everything else — Haiku as the hosted brain, one server-hosted Vapi, no speech-to-speech, keep-Insforge-no-PGlite-in-M1 — belongs to the archived spec, not the current local-first v0 path.
 
 ## 2. PER-SUBSTRATE TABLE
 

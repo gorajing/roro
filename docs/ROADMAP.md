@@ -31,16 +31,12 @@
   the default avatar** (mood shifts tail cadence — `src/renderer/character/avatar.ts` /
   `src/renderer/character/petExpression.ts`; the resting *neutral* cat is visually unchanged, so it only
   differs once mood shifts), a read-only "being-known" line, the soul catalog (cat default; Miro=dog per
-  `src/renderer/character/souls.ts`, **superseding the legacy `src/shared/pets.ts` cat-cosmetic entry**; art
-  pending — *catalog-split rule (decisive):* `RORO_WS5_STORE=1` exposes a cosmetics fake-door rendering
-  `PET_VARIANTS` with Miro still a *cat* and **no code enforcement** (`cosmeticsStore.ts`, `window.ts`). So
-  **`RORO_WS5_STORE=1` is banned during Arc A / cohort runs** — `scripts/verify-release-artifact.mjs` fails on
-  enabled deferred-v0 flags, but that checks *verify-time* env while the runtime app (`src/main/window.ts`)
-  still mounts cosmetics if the flag is set **at launch**, so the **durable guard is an app-startup
-  cohort/release-mode check (lowest practical layer)** — and **filtering
-  Miro from the catalog (or converging `pets.ts`/`souls.ts`) is the pre-WS5 code task** that must land before
-  the store is ever enabled), and a **dormant, gated-off**
-  ambient track (belief-latch + eye + trigger). What stays **off by default is the ambient/proactive track**, not expression.
+  `src/renderer/character/souls.ts`, **superseding the legacy `src/shared/pets.ts` cat-cosmetic entry**; dog
+  art pending), the cosmetics fake-door now listing only souls with a real renderer (`cosmeticsStore.ts`, so
+  Miro is not sold as a cat recolor), the release/cohort channel guard that strips deferred-v0 flags at app
+  startup (`releaseChannel.ts` / `window.ts`), opt-in DECIDE/`args.task` trace capture for memory-steered proof,
+  and a **dormant, gated-off** ambient track (belief-latch + eye + trigger). What stays **off by default is
+  the ambient/proactive track**, not expression.
 - **The truth underneath:** **not one non-founder has used roro.** The core thesis ("being known"
   drives retention) is **unvalidated**, and by our own bar — joy/delight, the blend of function +
   cuteness + entertainment — **we are not there yet.**
@@ -157,27 +153,19 @@ first-turn/memory validation** — otherwise it is deferred (§7 rule 4); C is s
   quit/relaunch on that build (`../PUBLIC.md` / `../HANDOFF.md` — "public-ready when **all** of these are
   observed"). Same-build validation + cohort vibes is **not** done while the install gate is open.
 - **Prerequisites (two kinds — *blocking semantics differ; classify by consequence, not position*):**
-  - **(P1) Evidence-capture instrumentation — *non-blocking for shipping*** (gates **only** the rigorous
-    memory-steered *proof* milestone; the minimal preflight, recall, install gate, and cohort all proceed
-    without it) — the criterion-(b) packet needs the **DECIDE input + generated
-    `decision.args.task`**, but production `turnRun` exposes only events/runEnd (`src/preload.ts`),
-    `buildDecisionPrompt` is private (`src/brain/index.ts`), and the debug `brain.decide` bridge bypasses
-    recall (`src/main/ipc.ts`). Build the capture first (e.g. an **Ollama logging proxy** + an `args.task`
-    debug log). **It blocks *only* the criterion-(b) memory-steered evidence packet** — recall (criterion a),
-    the install gate, and signed-build recall survival **proceed without it** (per `../HANDOFF.md` /
-    `../PUBLIC.md`'s packaged-smoke + signing path). Until it exists, the memory-steered gate is **not auditable**.
-  - **(P2) Cohort/release-mode startup guard — a *hard blocker before cohort* (cohort cleanliness + safety)** —
-    the app honours launch-env flags (`src/main/window.ts`) regardless of the verifier. The right axis is
-    **channel, not flag category:** a **release/cohort-channel build rejects *every* deferred-v0 flag** — not
-    just user-facing features (`RORO_WS5_STORE` cosmetics, voice, Live2D) but also the **runtime-*dangerous*
-    debug bridge** (`RORO_DEBUG_BRIDGE` exposes direct `runTask` / `brain.decide` / memory / vision paths —
-    `src/preload.ts`, `src/main/ipc.ts`) and the `RORO_*_SMOKE` harness flags. The smokes that legitimately
-    need harness flags run on a **separate smoke/debug channel**, *not* the release channel — so there is no
-    in-build exception to leak. Mechanism: a **baked release-channel constant** (compile-time, *not*
-    `app.isPackaged` alone — the smokes are packaged too — and *not* a runtime env a real launch could flip)
-    that `src/main/window.ts` consults *before* honouring any deferred flag, **plus an acceptance smoke
-    proving no deferred-v0 flag takes effect in a release-channel build**. (Lowest practical layer — the ban
-    *enforced*, not advisory.)
+  - **(P1) Evidence-capture instrumentation — *landed, non-blocking for shipping*** (gates **only** the
+    rigorous memory-steered *proof* milestone; the minimal preflight, recall, install gate, and cohort all
+    proceed without it). `RORO_TRACE=1` plus opt-in `RORO_TRACE_DECIDE=plaintext` can capture the DECIDE
+    prompt and generated `decision.args.task`; `npm run verify:memory-steered` proves the synthetic marker
+    reaches both DECIDE and `args.task` in the deterministic proof path. This does **not** change the release
+    bar: the signed-build human observation is still the gate, and the mechanized counterfactual packet is
+    hardening/post-v0 proof work.
+  - **(P2) Cohort/release-mode startup guard — *landed, keep green before cohort*** (cohort cleanliness +
+    safety). A baked release-channel constant strips every deferred-v0 flag at app startup — cosmetics, voice,
+    Live2D, the privileged `RORO_DEBUG_BRIDGE`, smoke harnesses, and memory-health smoke failure — and
+    `npm run verify:release-channel` proves launch-time env cannot re-enable them on a release build.
+    Separate note: `RORO_DEBUG_PORT` is a local CDP smoke hook, not a deferred-v0 product feature; keep it
+    unset for cohort/release launches until it is made smoke-channel-only in code.
 - **Steps — a checklist (satisfying one item is *not* satisfying the next; "done" requires all):**
   1. **Preflight rehearsal** — *same-build, no certificate; de-risks cheaply but does **not** pass Arc A.*
      On a **clean profile**, a non-founder states a preference in **natural language**, then across a full
@@ -223,11 +211,12 @@ first-turn/memory validation** — otherwise it is deferred (§7 rule 4); C is s
        prompt** (`buildDecisionPrompt`, `brain/index.ts`) **→ the generated `decision.args.task` → the
        executor** (`orchestrator.ts`); the executor never sees memory verbatim. So capture **(1) the recalled
        preference in the DECIDE input** *and* **(2) the preference reflected in the generated `args.task`** —
-       *not* "the executor's prompt" (that tests the wrong hop). (**Capture path — *not* exposed today, so a
-       precondition:** production `turnRun` surfaces only events/runEnd (`src/preload.ts`), `buildDecisionPrompt`
-       is private (`src/brain/index.ts`), and the debug `brain.decide` bridge **bypasses** orchestrator recall
-       (`src/main/ipc.ts`). Add instrumentation first — e.g. an **Ollama logging proxy** capturing the DECIDE
-       prompt + a debug log of `decision.args.task` — named as a precondition before this gate is auditable.)
+       *not* "the executor's prompt" (that tests the wrong hop). (**Capture path — opt-in/local only:** product
+       `turnRun` still exposes only events/runEnd (`src/preload.ts`), `buildDecisionPrompt` remains private
+       (`src/brain/index.ts`), and the debug `brain.decide` bridge **bypasses** orchestrator recall
+       (`src/main/ipc.ts`). Use the landed trace capture (`RORO_TRACE=1` +
+       `RORO_TRACE_DECIDE=plaintext`) for local proof packets; raw prompt/task traces stay local and are
+       redacted before any committed artifact.)
        Even then, prompt-capture is **necessary, not
        sufficient** — it proves memory *shaped the task*, not that the executor *honored* it; so keep the
        **diff-reflects-preference output check** as the real-honoring proof (judged across runs, given

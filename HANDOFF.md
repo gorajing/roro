@@ -66,7 +66,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ---
 
-## 3. What's been done (the work log — PRs #38–#69, all TDD'd + reviewed + CI-green)
+## 3. What's been done (the work log — historical spine + current release track)
 - **Voice (#38–#41):** on-device TTS (Kokoro) + lip-sync, barge-in, voice packs — license-clean. **(Off by default + CUT from v0.)**
 - **M1 eval (#42):** the brain eval harness + `baseline.json`.
 - **M2 / M2.5 (#43, #44):** fail-loud guardrails + the deterministic admission gate (`isPlausiblePreference`).
@@ -108,6 +108,16 @@ Every turn flows through **one** path in `orchestrator.ts`:
   versioned DMG, verifies it with `hdiutil`, mounts it read-only, and confirms it contains a structurally complete
   `Roro.app`. In Developer-ID builds, `postMake` notarizes/staples the DMG container too. This closes the
   packaging-format gap, not the signed/notarized clean-Mac gate.
+- **Release/cohort guard (#128):** release-channel builds strip every deferred-v0 flag, including cosmetics, voice,
+  Live2D, smoke harnesses, memory-health smoke failure, and the privileged debug bridge; `npm run verify:release-channel`
+  proves launch-time env cannot re-enable them on a release build.
+- **Showable cosmetics cleanup (#129):** the fake-door store lists only souls with an actual renderer, so Miro the dog
+  is no longer presented as a cat recolor before dog art exists.
+- **Memory-steered proof capture (#130):** `RORO_TRACE=1` can capture DECIDE prompt/task evidence, and
+  `npm run verify:memory-steered` proves recalled memory reaches both DECIDE and `args.task` under the synthetic-marker
+  proof path.
+- **Floating default (#131):** Roro ships as the transparent 190x200 desktop pet by default; set
+  `RORO_FLOATING_WINDOW=0` only for the legacy full dev window.
 
 ---
 
@@ -184,7 +194,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - **Commit / PR attribution:** follow the active tool's requested attribution only when the user or workflow asks for it; do not paste stale tool-specific footers into public PRs.
 - **Don't commit `.env`** (gitignored). Historical predecessor/demo checkouts are archived context only and must not be edited as part of Roro work.
 - **Verify before claiming done** — "the types check" is not done; "I observed it working" is.
-- **Key commands:** `npm test`, `npm run lint`, `npx tsc --noEmit -p tsconfig.json`, `npm run release:doctor` (CI-safe release/signing doctor), `npm run package` (.app), `npm run verify:packaged-memory` (packaged write/relaunch/recall), `npm run verify:packaged-live-memory-turn` (packaged relaunch + live Ollama turn uses recalled memory), `npm run verify:packaged-natural-memory-turn` (packaged natural-language teach/relaunch/recall), `npm run verify:packaged-real-codex` (opt-in packaged first task with the user's real authenticated/configured Codex CLI), `npm run verify:memory-panel-rendered` (opt-in local GUI smoke for rendered Memory panel keyboard/focus behavior), `npm run verify:signing-readiness` (strict Developer-ID env/cert/tool doctor), `npm run verify:signing-auth` (notarytool Apple credential auth check), `npm run make` (+ distributables + signing), `npm run verify:release-artifact:dmg` (post-make DMG verifier), `npm run verify:release-artifact:signed` (post-make signed/notarized artifact verifier), `npm start` (dev — memory works here), `OLLAMA_AVAILABLE=1 npx vitest run crosslaunch.live` (live magic-moment smoke), `npm run eval:brain` (scorecard), `EVAL_SET=behavioral npm run eval:brain`.
+- **Key commands:** `npm test`, `npm run lint`, `npx tsc --noEmit -p tsconfig.json`, `npm run release:doctor` (CI-safe release/signing doctor), `npm run package` (.app), `npm run verify:floating-geometry` (default 190x200 transparent pet shell), `npm run package:release` + `npm run verify:release-channel` (release-channel deferred-flag refusal), `npm run verify:packaged-memory` (packaged write/relaunch/recall), `npm run verify:packaged-live-memory-turn` (packaged relaunch + live Ollama turn uses recalled memory), `npm run verify:packaged-natural-memory-turn` (packaged natural-language teach/relaunch/recall), `npm run verify:packaged-real-codex` (opt-in packaged first task with the user's real authenticated/configured Codex CLI), `npm run verify:memory-steered` (synthetic-marker DECIDE/args.task proof), `npm run verify:memory-panel-rendered` (opt-in local GUI smoke for rendered Memory panel keyboard/focus behavior), `npm run verify:signing-readiness` (strict Developer-ID env/cert/tool doctor), `npm run verify:signing-auth` (notarytool Apple credential auth check), `npm run make` (+ distributables + signing), `npm run verify:release-artifact:dmg` (post-make DMG verifier), `npm run verify:release-artifact:signed` (post-make signed/notarized artifact verifier), `npm start` (dev — memory works here), `OLLAMA_AVAILABLE=1 npx vitest run crosslaunch.live` (live magic-moment smoke), `npm run eval:brain` (scorecard), `EVAL_SET=behavioral npm run eval:brain`.
 - **State lives in:** memory + owner.json + packaged config → `app.getPath('userData')` (override `RORO_DB_DIR`). The agent's working repo resolves from explicit `RORO_WORKDIR`, then persisted `userData/config.json`, then the explicit `RORO_ALLOW_CWD=1` dev fallback.
 
 ---
@@ -194,4 +204,4 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ---
 
-*Reflects the repo after the Phase-2 trust slices plus packaged memory/live-turn smokes, DMG release artifact, and the Developer-ID signing-readiness/signed-artifact gates. The one thing to internalize: the engine works, the packaged workdir onboarding spine is real, packaged memory now has automated write/relaunch/recall and live-brain recall-use regressions, remembered facts are user-correctable, and referent-less requests now ask before acting; the work ahead is making it **reachable and trustworthy for a stranger** — and validating, cheaply and early, every assumption the plan rests on.*
+*Reflects the repo after the Phase-2 trust slices plus packaged memory/live-turn smokes, release-channel guard, memory-steered proof capture, floating-pet default, DMG release artifact, and the Developer-ID signing-readiness/signed-artifact gates. The one thing to internalize: the engine works, the packaged workdir onboarding spine is real, packaged memory now has automated write/relaunch/recall and live-brain recall-use regressions, remembered facts are user-correctable, and referent-less requests now ask before acting; the work ahead is making it **reachable and trustworthy for a stranger** — and validating, cheaply and early, every assumption the plan rests on.*

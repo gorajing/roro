@@ -91,7 +91,7 @@ Roro is public-ready when **all** of these are observed (not code-read):
 - [ ] **A non-founder** observes the magic moment: types a task, Roro recalls a prior fact and **uses it to shape the
       actual work** — the coding turn it runs (or its output) reflects the remembered preference, **not merely echoed in
       narration** — and the recall is **correct** (not `- true` garbage).
-- [ ] Branded bundle ID (not `com.github.Electron`) + a real app icon (the pixel cat) in Dock/Launchpad.
+- [x] Branded bundle ID (not `com.github.Electron`) + a real app icon (the pixel cat) in Dock/Launchpad.
 - [ ] Brain-not-ready and executor-can't-run failures are **loud + actionable in-UI** — never a silent empty window or a
       mid-task surprise or a raw env-var error string.
 - [x] README leads with the **job + a 3-sentence privacy promise** (local brain/memory, encrypted-by-default, no
