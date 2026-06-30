@@ -30,6 +30,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { OpenDialogOptions } from 'electron';
 import { CH } from '../shared/ipc';
 import type { MicStatus, TurnInput, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg, BootstrapStatusMsg } from '../shared/ipc';
+import { guardDeferredEnv } from '../shared/releaseChannel';
 import { pullModel } from '../brain/ollama';
 import { DEFAULT_MODEL_SPECS } from './bootstrapPlan';
 import { isAllowedExternalUrl } from './openExternalGuard';
@@ -57,7 +58,10 @@ function finitePixelDelta(v: unknown): number {
 }
 
 function debugBridgeEnabled(): boolean {
-  return process.env.RORO_DEBUG_BRIDGE === '1';
+  // Guarded: on a release/cohort build the deferred-v0 debug bridge is refused, so the privileged
+  // runTask/brain.decide/memory/vision IPC handlers are never registered — even if the launch env sets
+  // the flag. This is the REAL privilege boundary (preload only exposes wrappers over these handlers).
+  return guardDeferredEnv(process.env).RORO_DEBUG_BRIDGE === '1';
 }
 
 export function registerIpcHandlers(): void {

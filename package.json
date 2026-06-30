@@ -8,7 +8,8 @@
   "scripts": {
     "start": "electron-forge start",
     "package": "electron-forge package",
-    "make": "electron-forge make",
+    "make": "node scripts/build-release.mjs make",
+    "package:release": "node scripts/build-release.mjs package",
     "publish": "electron-forge publish",
     "release:doctor": "tsx scripts/verify-signing-readiness.ts --allow-unsigned",
     "lint": "eslint --ext .ts,.tsx .",
@@ -36,8 +37,7 @@
     "verify:signing-auth": "tsx scripts/verify-signing-readiness.ts --check-notary-auth",
     "stage:voice-assets": "node scripts/stage-voice-assets.mjs",
     "prestart": "node scripts/stage-voice-assets.mjs",
-    "prepackage": "node scripts/stage-voice-assets.mjs",
-    "premake": "node scripts/stage-voice-assets.mjs"
+    "prepackage": "node scripts/stage-voice-assets.mjs"
   },
   "keywords": [],
   "author": "Jin Choi",
