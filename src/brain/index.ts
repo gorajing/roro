@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import { buildFactPrompt, parseFactResponse, isPlausiblePreference, FACT_SYSTEM_PROMPT, type FactExtractInput, type FactCandidate } from './extractFact';
 import { clarifyForReferentlessRequest } from './clarifyGate';
+import { buildDecisionPrompt } from './decisionPrompt';
 import { ollamaChat, ollamaEmbed, ollamaTags, hasModel, resolveOllamaEmbedDim, assertEmbedDimMatch } from './ollama';
 
 declare const process: { env: Record<string, string | undefined> };
@@ -370,16 +371,6 @@ function getNebiusClient(): OpenAI {
   }
 
   return cachedClient;
-}
-
-function buildDecisionPrompt(input: DecideInput): string {
-  return [
-    input.memory ? `RELEVANT MEMORY:\n${input.memory}` : '',
-    input.screen ? `CURRENT SCREEN:\n${input.screen}` : '',
-    `USER SAID: ${JSON.stringify(input.transcript)}`,
-  ]
-    .filter((section) => section.length > 0)
-    .join('\n\n');
 }
 
 function parseDecision(raw: string): Decision {

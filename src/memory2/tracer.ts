@@ -45,6 +45,18 @@ export type TraceEvent =
       stage: 'gated' | 'noop' | 'stored' | 'reinforced' | 'failed';
       factKey?: string;
       reason?: string;
+    }
+  // The DECIDE input → output for a coding turn — the manual "memory steered the work" proof: a recalled
+  // fact present in the DECIDE prompt and reflected in the generated task. `prompt` embeds recalled MEMORY
+  // text, so the writer STRIPS `prompt` + `task` unless the explicit plaintext opt-in is set
+  // (RORO_TRACE_DECIDE=plaintext) — local-only, never committed, forbidden for cohort runs.
+  | {
+      kind: 'decide';
+      ownerId: string;
+      sessionId: string;
+      command: string;
+      prompt?: string;
+      task?: string;
     };
 
 export interface Tracer {
@@ -62,7 +74,7 @@ function queryFingerprint(query: string): string {
 /** Append-only JSONL tracer; stamps each event with a ts. By default the recall QUERY is hashed (it's
  *  often the user transcript — privacy), so an opt-in trace file can't leak it; pass hashQuery=false to
  *  log it plaintext. Swallows all I/O errors (one-way). */
-export function createJsonlTracer(path: string, hashQuery = true): Tracer {
+export function createJsonlTracer(path: string, hashQuery = true, decidePlaintext = false): Tracer {
   let dirReady = false;
   return {
     emit(event: TraceEvent): void {
@@ -71,7 +83,15 @@ export function createJsonlTracer(path: string, hashQuery = true): Tracer {
           mkdirSync(dirname(path), { recursive: true });
           dirReady = true;
         }
-        const out = hashQuery && event.kind === 'recall' ? { ...event, query: queryFingerprint(event.query) } : event;
+        let out: Record<string, unknown> = event;
+        if (hashQuery && event.kind === 'recall') {
+          out = { ...event, query: queryFingerprint(event.query) };
+        } else if (event.kind === 'decide' && !decidePlaintext) {
+          // The DECIDE prompt embeds recalled memory text — never write it (or the generated task) unless
+          // the plaintext opt-in is set. Default: keep only command + ids (a "a coding turn was decided" map).
+          const { prompt: _prompt, task: _task, ...rest } = event;
+          out = rest;
+        }
         appendFileSync(path, JSON.stringify({ ts: new Date().toISOString(), ...out }) + '\n');
       } catch {
         /* tracing is diagnostic — a failed write must never disturb the memory operation */
@@ -85,5 +105,8 @@ export function createJsonlTracer(path: string, hashQuery = true): Tracer {
 export function resolveTracer(dir: string): Tracer {
   if (process.env.RORO_TRACE !== '1') return NOOP_TRACER;
   const hashQuery = process.env.RORO_TRACE_QUERY !== 'plaintext';
-  return createJsonlTracer(process.env.RORO_TRACE_FILE || join(dir, 'trace.jsonl'), hashQuery);
+  // The DECIDE prompt (recalled memory + transcript) is written ONLY under this explicit opt-in — more
+  // sensitive than a recall query, so it has its own flag, not RORO_TRACE_QUERY. Forbidden for cohort runs.
+  const decidePlaintext = process.env.RORO_TRACE_DECIDE === 'plaintext';
+  return createJsonlTracer(process.env.RORO_TRACE_FILE || join(dir, 'trace.jsonl'), hashQuery, decidePlaintext);
 }

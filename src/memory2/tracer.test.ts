@@ -17,6 +17,7 @@ describe('tracer — one-way observation tap (RORO_TRACE eval substrate)', () =>
     delete process.env.RORO_TRACE;
     delete process.env.RORO_TRACE_FILE;
     delete process.env.RORO_TRACE_QUERY;
+    delete process.env.RORO_TRACE_DECIDE;
   });
 
   it('appends one JSON line per event, each stamped with a ts', () => {
@@ -92,5 +93,45 @@ describe('tracer — one-way observation tap (RORO_TRACE eval substrate)', () =>
     process.env.RORO_TRACE_FILE = custom;
     resolveTracer(dir).emit(recall);
     expect(existsSync(custom)).toBe(true);
+  });
+
+  const decide: TraceEvent = {
+    kind: 'decide', ownerId: 'o1', sessionId: 's1', command: 'run_agent',
+    prompt: 'RELEVANT MEMORY:\n- prefers tabs SECRET\n\nUSER SAID: "fix the parser"',
+    task: 'fix the parser SECRET',
+  };
+
+  it('STRIPS the memory-laden DECIDE prompt + task by default — only command + ids are written', () => {
+    const path = join(dir, 'decide.jsonl');
+    createJsonlTracer(path).emit(decide); // default: no plaintext opt-in
+    const raw = readFileSync(path, 'utf8');
+    expect(raw).not.toContain('SECRET'); // neither the recalled memory nor the task value leaks
+    const ev = JSON.parse(raw.trim());
+    expect(ev.kind).toBe('decide');
+    expect(ev.command).toBe('run_agent'); // the map of "a coding turn was decided" survives
+    expect(ev.prompt).toBeUndefined();
+    expect(ev.task).toBeUndefined();
+  });
+
+  it('writes the full DECIDE prompt + task ONLY under the plaintext opt-in (3rd arg)', () => {
+    const path = join(dir, 'decide-plain.jsonl');
+    createJsonlTracer(path, true, true).emit(decide); // hashQuery=true, decidePlaintext=true
+    const ev = JSON.parse(readFileSync(path, 'utf8').trim());
+    expect(ev.prompt).toContain('RELEVANT MEMORY:');
+    expect(ev.task).toBe('fix the parser SECRET');
+  });
+
+  it('resolveTracer gates the DECIDE prompt behind RORO_TRACE_DECIDE=plaintext (default strips it)', () => {
+    process.env.RORO_TRACE = '1';
+    const stripped = join(dir, 'd-stripped.jsonl');
+    process.env.RORO_TRACE_FILE = stripped;
+    resolveTracer(dir).emit(decide); // RORO_TRACE_DECIDE unset → stripped
+    expect(readFileSync(stripped, 'utf8')).not.toContain('SECRET');
+
+    process.env.RORO_TRACE_DECIDE = 'plaintext';
+    const plain = join(dir, 'd-plain.jsonl');
+    process.env.RORO_TRACE_FILE = plain;
+    resolveTracer(dir).emit(decide); // opted in → full prompt + task
+    expect(JSON.parse(readFileSync(plain, 'utf8').trim()).task).toBe('fix the parser SECRET');
   });
 });
