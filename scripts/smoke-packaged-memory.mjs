@@ -1028,8 +1028,8 @@ try {
     check('natural-language recall turn completed with runEnd', natural?.ok === true && Boolean(natural.runEnd), natural?.message);
     check('natural-language recall runEnd matches turnRun result', natural?.runEnd?.runId === natural?.turnResult?.runId);
     check(
-      'natural-language floating Ask receipt state reports memory used',
-      natural?.receiptText === 'Done. Memory used.',
+      'natural-language floating Ask shows NO success banner after recall (memory use proven by the status beat below)',
+      natural?.receiptText === '',
       natural?.receiptText || JSON.stringify(natural?.floatingState ?? {}),
     );
     check('natural-language recall emitted a memory status beat', Boolean(memoryStatus), JSON.stringify(naturalEvents));

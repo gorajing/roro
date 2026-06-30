@@ -179,7 +179,7 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.stop.classList.contains('armed')).toBe(false);
   });
 
-  it('shows a compact success receipt after an answer turn', async () => {
+  it('shows NO receipt after a successful answer turn (the cat conveys "done", not a banner)', async () => {
     h.pill.click();
     h.input.value = 'what did we decide?';
     submit(h.form);
@@ -187,12 +187,13 @@ describe('floatingAsk shell (jsdom)', () => {
     h.fireAction(memoryUsed);
     h.fireRunEnd();
     expect(h.form.classList.contains('collapsed')).toBe(true);
-    expect(h.error.hidden).toBe(false);
-    expect(h.error.classList.contains('success')).toBe(true);
-    expect(h.error.textContent).toBe('Done. Memory used.');
+    // Success leaves the surface clean — no lingering "Done." banner over the user's screen.
+    expect(h.error.hidden).toBe(true);
+    expect(h.error.classList.contains('success')).toBe(false);
+    expect(h.error.textContent).toBe('');
   });
 
-  it('shows changed files and memory in the success receipt after an executor turn', async () => {
+  it('shows NO receipt after a successful executor turn (even with changed files + memory)', async () => {
     h.pill.click();
     h.input.value = 'edit it';
     submit(h.form);
@@ -209,12 +210,12 @@ describe('floatingAsk shell (jsdom)', () => {
     });
     h.fireAction({ kind: 'run.completed', runId: 'r1', ok: true, finalText: 'done', ts: 3 });
     h.fireRunEnd();
-    expect(h.error.hidden).toBe(false);
-    expect(h.error.classList.contains('success')).toBe(true);
-    expect(h.error.textContent).toBe('Done. Changed 1 file. Memory used.');
+    expect(h.error.hidden).toBe(true);
+    expect(h.error.classList.contains('success')).toBe(false);
+    expect(h.error.textContent).toBe('');
   });
 
-  it('does not leak receipt context into the next floating turn', async () => {
+  it('leaves no lingering receipt across two consecutive successful turns', async () => {
     h.pill.click();
     h.input.value = 'edit it';
     submit(h.form);
@@ -231,7 +232,7 @@ describe('floatingAsk shell (jsdom)', () => {
     });
     h.fireAction({ kind: 'run.completed', runId: 'r1', ok: true, finalText: 'done', ts: 3 });
     h.fireRunEnd('r1');
-    expect(h.error.textContent).toBe('Done. Changed 1 file. Memory used.');
+    expect(h.error.hidden).toBe(true); // first success: clean surface
 
     h.pill.click();
     h.input.value = 'what now?';
@@ -240,9 +241,10 @@ describe('floatingAsk shell (jsdom)', () => {
     await flush();
     h.fireRunEnd('r2');
 
-    expect(h.error.hidden).toBe(false);
-    expect(h.error.classList.contains('success')).toBe(true);
-    expect(h.error.textContent).toBe('Done.');
+    // Second success also leaves nothing — no banner from either turn lingers over the screen.
+    expect(h.error.hidden).toBe(true);
+    expect(h.error.classList.contains('success')).toBe(false);
+    expect(h.error.textContent).toBe('');
   });
 
   it('ignores unrelated floating events and runEnd signals once the accepted run id is known', async () => {
@@ -260,7 +262,7 @@ describe('floatingAsk shell (jsdom)', () => {
     h.fireRunEnd('r1');
 
     expect(h.form.classList.contains('collapsed')).toBe(true);
-    expect(h.error.textContent).toBe('Done.');
+    expect(h.error.hidden).toBe(true); // success → no banner; the unrelated 'other-run' status never surfaced
   });
 
   it('keeps actionable failure copy visible after runEnd collapses the Ask', async () => {

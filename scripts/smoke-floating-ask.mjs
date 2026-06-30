@@ -212,7 +212,7 @@ try {
   await sleep(100);
   check('#floating-ask collapses on successful runEnd without run.started', await evalJs(`document.getElementById('floating-ask').classList.contains('collapsed')`));
   check('#floating-stop hides after successful runEnd without run.started', !(await isVisible('#floating-stop')));
-  check('#floating-error shows success receipt after successful runEnd', await evalJs(`document.getElementById('floating-error').textContent === 'Done.' && document.getElementById('floating-error').classList.contains('success') && !document.getElementById('floating-error').hidden`));
+  check('#floating-error stays HIDDEN after successful runEnd (success shows no banner)', await evalJs(`document.getElementById('floating-error').hidden === true && !document.getElementById('floating-error').classList.contains('success')`));
 
   console.log('[smoke] asserting executor Stop targets run id after run.started…');
   await evalJs(`document.getElementById('ask-pill').click()`);
