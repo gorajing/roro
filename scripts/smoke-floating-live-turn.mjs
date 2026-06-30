@@ -1007,9 +1007,9 @@ try {
     const el = document.getElementById('floating-error');
     return { hidden: el?.hidden, text: el?.textContent ?? '', success: el?.classList.contains('success') ?? false };
   })()`, {}, 'answer receipt check');
-  check('floating receipt is visible for successful answer turn', answerReceipt.hidden === false, JSON.stringify(answerReceipt));
-  check('floating receipt has success tone for answer turn', answerReceipt.success === true, JSON.stringify(answerReceipt));
-  check('floating receipt reports memory result for answer turn', /^Done\. Memory (used|checked)\.$/.test(answerReceipt.text), JSON.stringify(answerReceipt));
+  check('floating receipt stays HIDDEN for successful answer turn (no success banner)', answerReceipt.hidden === true, JSON.stringify(answerReceipt));
+  check('floating receipt has no success tone for answer turn', answerReceipt.success === false, JSON.stringify(answerReceipt));
+  check('floating receipt shows no text for successful answer turn', answerReceipt.text === '', JSON.stringify(answerReceipt));
 
   if (!USE_REAL_OLLAMA) {
     const stoppedTranscript = `${STOP_TRANSCRIPT}. Start a coding task that should be stopped before the executor starts.`;
@@ -1310,9 +1310,9 @@ try {
     const el = document.getElementById('floating-error');
     return { hidden: el?.hidden, text: el?.textContent ?? '', success: el?.classList.contains('success') ?? false };
   })()`, {}, 'executor receipt check');
-  check('floating receipt is visible for successful executor turn', executorReceipt.hidden === false, JSON.stringify(executorReceipt));
-  check('floating receipt has success tone for executor turn', executorReceipt.success === true, JSON.stringify(executorReceipt));
-  check('floating receipt reports changed files for executor turn', /^Done\. Changed 1 file\.( Memory (used|checked)\.)?$/.test(executorReceipt.text), JSON.stringify(executorReceipt));
+  check('floating receipt stays HIDDEN for successful executor turn (no success banner)', executorReceipt.hidden === true, JSON.stringify(executorReceipt));
+  check('floating receipt has no success tone for executor turn', executorReceipt.success === false, JSON.stringify(executorReceipt));
+  check('floating receipt shows no text for successful executor turn', executorReceipt.text === '', JSON.stringify(executorReceipt));
   const codexInvocations = await readFile(fakeCodexArgsFile, 'utf8')
     .then((text) => JSON.parse(text))
     .catch(() => []);

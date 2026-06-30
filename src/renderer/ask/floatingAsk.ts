@@ -332,7 +332,11 @@ export function mountFloatingAsk(opts: {
     receiptCancelRequested = false;
     activeTurnSerial = 0;
     dispatch({ type: 'runEnded' });
-    showNotice(receipt.text, receipt.tone);
+    // A completed turn is conveyed by the cat's own animation — roro does NOT leave a lingering "Done."
+    // banner over the user's screen (restraint / never-needy). Only failures (sticky, fail-loud) and a
+    // 'Stopped' acknowledgement (neutral) warrant a receipt; on success we clear the surface instead.
+    if (receipt.tone === 'success') clearFailure();
+    else showNotice(receipt.text, receipt.tone);
     receiptState = initialTurnReceiptState();
   };
   if (companion?.onActionEvent) {
