@@ -76,6 +76,29 @@ describe('mountForgetPanel — memory trust loop', () => {
       .toEqual(['prefers vim', 'uses tabs']);
   });
 
+  it('shows a being-known summary and keeps it in sync as memories are forgotten', async () => {
+    setup([fact('a', 'prefers vim'), fact('b', 'uses tabs')]);
+    mountForgetPanel();
+    click(q('#memory-toggle'));
+    await flush();
+    expect(q('.memory-summary')?.textContent).toBe('Roro remembers 2 things about you.');
+
+    // Forget one (2-step: arm, then confirm) — the count must drop, not stay stale.
+    const forget = q('.memory-row .memory-forget');
+    click(forget); // arms
+    click(forget); // confirms
+    await flush();
+    expect(q('.memory-summary')?.textContent).toBe('Roro remembers 1 thing about you.');
+
+    // Forget the last — the summary clears instead of stranding "1 thing" over the empty state.
+    const last = q('.memory-row .memory-forget');
+    click(last);
+    click(last);
+    await flush();
+    expect(q('.memory-summary')?.textContent).toBe('');
+    expect(q('.memory-empty')).not.toBeNull();
+  });
+
   it('can render against injected smoke deps without the preload memory bridge', async () => {
     document.body.innerHTML = '<div id="app"></div>';
     delete (window as unknown as { memory?: Stub }).memory;
