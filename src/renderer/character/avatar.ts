@@ -15,6 +15,8 @@ import { Gaze } from './gaze';
 import { Activity, type Energy } from './activity';
 import { framePolicy } from './framePolicy';
 import { placeholderHeadOriginForAction, type PlaceholderCatAction } from './placeholderGeometry';
+import { derivePetState } from './petState';
+import { petExpression } from './petExpression';
 
 const MUTED_MIC_BADGE_URL = 'assets/muted-mic-32-2color.png';
 const FLOATING_FIT = {
@@ -135,6 +137,8 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
   let gazeLookX = 0;
   let gazeLookY = 0;
   let petUntil = 0;
+  let gazeActive = false; // the eyes are currently tracking a cursor target (PetState.cursorTracked)
+  let tailWagPeriod = 24; // mood-modulated tail-wag period (24 = neutral); set each tick from PetState
   const presence = new Activity(performance.now());
   let busy = false;
   let inCall = false;
@@ -270,7 +274,7 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
 
   const drawTail = (tick = 0, action = actionForTick(tick)) => {
     tail.clear();
-    const wag = Math.floor(tick / 24) % 2;
+    const wag = Math.floor(tick / tailWagPeriod) % 2;
 
     if (state === 'error') {
       px(tail, 4, 8, 1, 5, CAT.black);
@@ -713,6 +717,17 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
       gazeLookX = g.lookX;
       gazeLookY = g.lookY;
     }
+    // Inner life: project the orthogonal PetState from the locals we already track, and let mood
+    // modulate cheap expression channels (tail-wag cadence for now). curious → neutral, so the
+    // resting cat is unchanged; it only differs once the mood shifts.
+    const petState = derivePetState({
+      avatarState: state,
+      energy,
+      cursorTracked: gazeActive,
+      listening: state === 'listening',
+      recentlyPetted: nowMs < petUntil,
+    });
+    tailWagPeriod = petExpression(petState).tailWagPeriod;
     drawTail(tick, action);
     drawCat(tick, action);
     redrawFace(tick, action);
@@ -783,6 +798,7 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
       refreshActivityText();
     },
     setGaze: (target: GazeTarget | null) => {
+      gazeActive = target !== null;
       gaze.setTarget(target);
     },
     pet: () => {
