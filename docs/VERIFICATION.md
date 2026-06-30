@@ -248,7 +248,7 @@ proves recall degrades to recency when embeddings are unavailable. `npm run veri
 narration containing that value.
 `npm run verify:packaged-natural-memory-turn` also keeps live Ollama enabled, teaches a stated preference through
 packaged `turnRun`, waits for the extracted profile fact, relaunches, asks about it through a later turn, and asserts
-the floating Ask shows NO success banner after recall (the receipt state is empty) while a memory-status beat proves the
+the floating Ask shows a brief `done` nod after recall (the receipt state reads `done`) while a memory-status beat proves the
 recall used memory. The natural-language packaged smoke uses the floating Ask smoke hook to inspect receipt state, but it
 does not launch the packaged app in floating-window mode or prove the failure receipt is visibly rendered; use
 `npm run verify:floating-live-turn` for the visible floating Ask path.
@@ -408,8 +408,9 @@ It is opt-in (needs a display + a vite build) and not in CI. Checks: `#floating-
 `collapsed`; pill reads "Ask Roro…"; `#floating-stop` exists and is not `armed`; clicking the pill →
 `expanded` with the input actually visible; the memory profile bridge responds before teardown; Escape
 → `collapsed`; smoke submit → `tasked` with trimmed pill copy and visible Stop before `run.started`;
-pre-run Stop calls the no-id cancel path and shows neutral `Stopped.` copy; universal `runEnd`
-collapses answer/clarify turns with no `run.started` and leaves NO receipt on success (the surface stays clean); `run.started` keeps Stop visibly armed and
+pre-run Stop calls the no-id cancel path and shows neutral `Stopped.` copy; a tasked turn shows a live
+`thinking…` progress line; universal `runEnd` collapses answer/clarify turns with no `run.started` and shows a
+brief `done` nod that fades; `run.started` keeps Stop visibly armed and
 targets the captured run id; real `run.failed` disarms Stop, shows actionable error copy, hides raw
 spawn text, and the error remains visible after `runEnd` collapse until the next summon clears it.
 
@@ -417,7 +418,7 @@ spawn text, and the error remains visible after `runEnd` collapse until the next
 floating mode, leaves `RORO_FLOATING_SMOKE` and `RORO_DEBUG_BRIDGE` off, drives the visible Ask form,
 and verifies real `window.companion.turnRun` answer and executor turns over the public push stream.
 The answer turn must emit `ActionEvent`s, reach `runEnd`, avoid the coding executor, and collapse the
-floating Ask with NO success receipt (a completed turn shows no banner; memory use is proven by the status beat, not a receipt). In the
+floating Ask with a brief `done` nod (an answer turn changes no files; memory use is proven by the status beat). In the
 deterministic fake-Ollama path, the answer narration must include the requested phrase exactly enough
 to prove the public event stream carried the model answer. In the optional real-Ollama path, the
 narration check accepts a substantive non-placeholder answer because that mode validates the local
@@ -429,8 +430,8 @@ never complete/write the aborted file, collapse from `runEnd`, and show neutral 
 following executor success turn must launch Codex with the expected
 `exec --json --skip-git-repo-check -s workspace-write -C <project>` shape, keep Stop armed for the
 accepted/running turn, emit a completed `file_change` and `run.completed`, write inside the selected
-test project (disposable by default), disarm Stop, collapse from `runEnd`, and show NO success receipt
-(the surface stays clean on success). By default it uses tiny
+test project (disposable by default), disarm Stop, collapse from `runEnd`, and show a brief `done · N files`
+nod that fades. By default it uses tiny
 local fake Ollama and Codex servers/binaries so the product-loop proof is deterministic; set
 `RORO_FLOATING_LIVE_USE_REAL_OLLAMA=1` when you specifically want to validate the local model path.
 Ignored-`SIGTERM` slot retention remains covered by the unit gate above, not this live smoke. Keep it out
@@ -446,10 +447,10 @@ Start the app (`ollama serve` first if you want a real turn): `npm start`.
 | 2 | Click the pill (or ⌘⇧Space) | Input expands and is focused; pill chrome hidden |
 | 3 | Press Enter on an **empty** input | Nothing happens — no thinking flash, stays expanded |
 | 4 | Type "add a logout route" + Enter | After readiness accepts the turn, the cat snaps to *thinking*, the pill shows `tasked: add a logout route`, and Stop appears before any executor event |
-| 5 | While a `run_agent` turn runs | `#floating-stop` remains visible with the `armed` class |
+| 5 | While a `run_agent` turn runs | `#floating-stop` stays visible with the `armed` class; the status line reads a calm `working…` the whole time (never blank) |
 | 6 | Click Stop | Run cancels; Stop shows `Stopping...`, then disarms/hides; Ask collapses and shows neutral `Stopped.` copy |
-| 7 | An answer/clarify turn (no executor run) | Ask still collapses when the turn ends (universal `runEnd`); no success banner is shown (the cat's animation conveys "done") |
-| 8 | A successful executor turn completes | Ask collapses and Stop disarms; no success banner is shown. Only a failure (sticky red) or a Stop (neutral `Stopped.`) leaves a receipt |
+| 7 | An answer/clarify turn (no executor run) | Ask collapses when the turn ends (universal `runEnd`) and shows a brief `done` nod that fades after a few seconds |
+| 8 | A successful executor turn completes | Ask collapses and Stop disarms; a brief `done · N files` nod appears, then fades. Only a failure (sticky red) lingers |
 | 9 | Press Esc while expanded | Collapses back to the "Ask Roro…" pill |
 
 A CSS regression shows up as: a state that doesn't visually change (e.g. input stays hidden when

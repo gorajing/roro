@@ -393,6 +393,13 @@ body.floating-window #floating-error.success {
   background: rgba(18, 78, 48, 0.9);
   border-color: rgba(126, 230, 164, 0.5);
 }
+/* Live "roro is working" status — calm slate, clearly neither success (green) nor failure (red). */
+body.floating-window #floating-error.progress {
+  color: #eef2fb;
+  background: rgba(28, 36, 56, 0.86);
+  border-color: rgba(150, 175, 230, 0.4);
+  opacity: 0.92;
+}
 body.floating-window #floating-stop.armed + #floating-error:not([hidden]) {
   bottom: 88px;
 }

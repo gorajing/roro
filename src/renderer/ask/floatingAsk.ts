@@ -82,10 +82,23 @@ export function mountFloatingAsk(opts: {
   let receiptState: TurnReceiptState = initialTurnReceiptState();
   const smokeCancelRequests: Array<string | undefined> = [];
 
+  // The single floating status line (#floating-error) reflects roro's CURRENT status — quiet by default:
+  //   working -> a calm 'thinking…' / 'working…' line shown the WHOLE time a task runs (floating mode hides
+  //              every other chrome, so without this a 30–90s task looks frozen — "nothing is happening")
+  //   success -> a brief 'done · N files' nod that auto-fades (a nod, never a lingering banner — restraint)
+  //   stopped -> neutral 'Stopped.'   |   failure -> sticky red until the next summon (fail-loud)
+  const DONE_NOD_MS = 3200; // how long the 'done' nod lingers before it fades
+  let fadeTimer: ReturnType<typeof setTimeout> | null = null;
+  function clearFadeTimer(): void {
+    if (fadeTimer !== null) { clearTimeout(fadeTimer); fadeTimer = null; }
+  }
+
   function showNotice(message: string, tone: ReceiptTone): void {
+    clearFadeTimer();
     error.textContent = message;
     error.classList.toggle('neutral', tone === 'neutral');
     error.classList.toggle('success', tone === 'success');
+    error.classList.remove('progress');
     error.hidden = false;
   }
 
@@ -93,10 +106,29 @@ export function mountFloatingAsk(opts: {
     showNotice(message, 'error');
   }
 
+  // Live "roro is working" status while a task runs. Persistent (no fade) until the next beat / done / failure.
+  function showProgress(label: string): void {
+    clearFadeTimer();
+    error.textContent = label;
+    error.classList.remove('neutral', 'success');
+    error.classList.add('progress');
+    error.hidden = false;
+  }
+
+  // A completed turn gets a brief nod (the cat's animation does the rest), then it fades — not a banner.
+  function showDoneNod(label: string): void {
+    clearFadeTimer();
+    error.textContent = label;
+    error.classList.remove('neutral', 'progress');
+    error.classList.add('success');
+    error.hidden = false;
+    fadeTimer = setTimeout(clearFailure, DONE_NOD_MS);
+  }
+
   function clearFailure(): void {
+    clearFadeTimer();
     error.textContent = '';
-    error.classList.remove('neutral');
-    error.classList.remove('success');
+    error.classList.remove('neutral', 'success', 'progress');
     error.hidden = true;
   }
 
@@ -164,7 +196,7 @@ export function mountFloatingAsk(opts: {
         receiptRunId = null;
         receiptCancelRequested = false;
         receiptState = initialTurnReceiptState();
-        clearFailure();
+        showProgress('thinking…'); // roro accepted the task and is planning — keep the user informed
         stopRequested = false;
         pill.textContent = `tasked: ${eff.text}`;
         break;
@@ -244,7 +276,7 @@ export function mountFloatingAsk(opts: {
         receiptRunId = null;
         receiptCancelRequested = false;
         receiptState = initialTurnReceiptState();
-        clearFailure();
+        showProgress('thinking…');
         stopRequested = false;
         acceptedRunId = null;
         pill.textContent = `tasked: ${eff.text}`;
@@ -299,7 +331,7 @@ export function mountFloatingAsk(opts: {
     run = reduceRun(run, e); // run.started -> running+armed+runId; completed/failed -> disarm
     if (e.kind === 'run.started') {
       acceptedRunId = e.runId;
-      clearFailure();
+      showProgress('working…'); // the coding agent is running — sustained "I'm on it" while it works
       dispatch({ type: 'runStarted' });
     } else {
       if (e.kind === 'run.completed') {
@@ -332,11 +364,14 @@ export function mountFloatingAsk(opts: {
     receiptCancelRequested = false;
     activeTurnSerial = 0;
     dispatch({ type: 'runEnded' });
-    // A completed turn is conveyed by the cat's own animation — roro does NOT leave a lingering "Done."
-    // banner over the user's screen (restraint / never-needy). Only failures (sticky, fail-loud) and a
-    // 'Stopped' acknowledgement (neutral) warrant a receipt; on success we clear the surface instead.
-    if (receipt.tone === 'success') clearFailure();
-    else showNotice(receipt.text, receipt.tone);
+    // Success → a brief 'done · N files' nod that fades (a nod, not a lingering banner). Stopped → neutral.
+    // Failure → sticky (fail-loud). The during-task 'working…' line already told the user roro was busy.
+    if (receipt.tone === 'success') {
+      const n = receiptState.changedFiles.size;
+      showDoneNod(n > 0 ? `done · ${n} file${n === 1 ? '' : 's'}` : 'done');
+    } else {
+      showNotice(receipt.text, receipt.tone);
+    }
     receiptState = initialTurnReceiptState();
   };
   if (companion?.onActionEvent) {

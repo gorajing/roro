@@ -179,21 +179,40 @@ describe('floatingAsk shell (jsdom)', () => {
     expect(h.stop.classList.contains('armed')).toBe(false);
   });
 
-  it('shows NO receipt after a successful answer turn (the cat conveys "done", not a banner)', async () => {
+  it('shows "thinking…" while planning, then a brief "done" nod after a successful answer turn', async () => {
     h.pill.click();
     h.input.value = 'what did we decide?';
     submit(h.form);
     await flush();
+    expect(h.error.classList.contains('progress')).toBe(true); // live "I'm on it" while it works
+    expect(h.error.textContent).toBe('thinking…');
     h.fireAction(memoryUsed);
     h.fireRunEnd();
     expect(h.form.classList.contains('collapsed')).toBe(true);
-    // Success leaves the surface clean — no lingering "Done." banner over the user's screen.
-    expect(h.error.hidden).toBe(true);
-    expect(h.error.classList.contains('success')).toBe(false);
-    expect(h.error.textContent).toBe('');
+    // A nod (not a lingering banner) — an answer turn changes no files.
+    expect(h.error.hidden).toBe(false);
+    expect(h.error.classList.contains('success')).toBe(true);
+    expect(h.error.classList.contains('progress')).toBe(false);
+    expect(h.error.textContent).toBe('done');
   });
 
-  it('shows NO receipt after a successful executor turn (even with changed files + memory)', async () => {
+  it('shows a persistent "working…" line through a multi-event task (never a frozen gap)', async () => {
+    h.pill.click();
+    h.input.value = 'build it';
+    submit(h.form);
+    await flush();
+    expect(h.error.textContent).toBe('thinking…');
+    h.fireAction(started);
+    expect(h.error.textContent).toBe('working…'); // run.started → sustained "working" feedback
+    // mid-task events keep the working line visible — the bug was it going blank for 30–90s.
+    h.fireAction({ kind: 'file_change', runId: 'r1', itemId: 'f1', status: 'completed', files: [{ path: 'a.ts', op: 'update' }], ts: 2 });
+    h.fireAction(memoryUsed);
+    expect(h.error.hidden).toBe(false);
+    expect(h.error.classList.contains('progress')).toBe(true);
+    expect(h.error.textContent).toBe('working…');
+  });
+
+  it('shows "done · 1 file" after a successful executor turn', async () => {
     h.pill.click();
     h.input.value = 'edit it';
     submit(h.form);
@@ -210,41 +229,30 @@ describe('floatingAsk shell (jsdom)', () => {
     });
     h.fireAction({ kind: 'run.completed', runId: 'r1', ok: true, finalText: 'done', ts: 3 });
     h.fireRunEnd();
-    expect(h.error.hidden).toBe(true);
-    expect(h.error.classList.contains('success')).toBe(false);
-    expect(h.error.textContent).toBe('');
+    expect(h.error.hidden).toBe(false);
+    expect(h.error.classList.contains('success')).toBe(true);
+    expect(h.error.textContent).toBe('done · 1 file');
   });
 
-  it('leaves no lingering receipt across two consecutive successful turns', async () => {
-    h.pill.click();
-    h.input.value = 'edit it';
-    submit(h.form);
-    await flush();
-    h.fireAction(started);
-    h.fireAction(memoryUsed);
-    h.fireAction({
-      kind: 'file_change',
-      runId: 'r1',
-      itemId: 'file-1',
-      status: 'completed',
-      files: [{ path: 'src/app.ts', op: 'update' }],
-      ts: 2,
-    });
-    h.fireAction({ kind: 'run.completed', runId: 'r1', ok: true, finalText: 'done', ts: 3 });
-    h.fireRunEnd('r1');
-    expect(h.error.hidden).toBe(true); // first success: clean surface
-
-    h.pill.click();
-    h.input.value = 'what now?';
-    h.turnRun.mockResolvedValueOnce({ runId: 'r2' });
-    submit(h.form);
-    await flush();
-    h.fireRunEnd('r2');
-
-    // Second success also leaves nothing — no banner from either turn lingers over the screen.
-    expect(h.error.hidden).toBe(true);
-    expect(h.error.classList.contains('success')).toBe(false);
-    expect(h.error.textContent).toBe('');
+  it('fades the "done" nod after a few seconds (a nod, not a lingering banner)', async () => {
+    vi.useFakeTimers();
+    try {
+      h.pill.click();
+      h.input.value = 'edit it';
+      submit(h.form);
+      await vi.advanceTimersByTimeAsync(5); // resolve the async submit (turnRun mock + flush)
+      h.fireAction(started);
+      h.fireAction({ kind: 'file_change', runId: 'r1', itemId: 'file-1', status: 'completed', files: [{ path: 'src/app.ts', op: 'update' }], ts: 2 });
+      h.fireAction({ kind: 'run.completed', runId: 'r1', ok: true, finalText: 'done', ts: 3 });
+      h.fireRunEnd('r1');
+      expect(h.error.textContent).toBe('done · 1 file'); // nod shown…
+      expect(h.error.hidden).toBe(false);
+      await vi.advanceTimersByTimeAsync(3500); // past DONE_NOD_MS
+      expect(h.error.hidden).toBe(true); // …then it fades on its own
+      expect(h.error.textContent).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('ignores unrelated floating events and runEnd signals once the accepted run id is known', async () => {
@@ -262,7 +270,9 @@ describe('floatingAsk shell (jsdom)', () => {
     h.fireRunEnd('r1');
 
     expect(h.form.classList.contains('collapsed')).toBe(true);
-    expect(h.error.hidden).toBe(true); // success → no banner; the unrelated 'other-run' status never surfaced
+    // Success nod for the real run; the unrelated 'other-run' run never drove the surface.
+    expect(h.error.classList.contains('success')).toBe(true);
+    expect(h.error.textContent).toBe('done'); // no file_change for r1 → plain 'done'
   });
 
   it('keeps actionable failure copy visible after runEnd collapses the Ask', async () => {
