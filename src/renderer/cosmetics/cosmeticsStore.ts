@@ -8,6 +8,7 @@
 // default in bootstrap). Catalog data is rendered with textContent only (never innerHTML).
 
 import { PET_VARIANTS } from '../../shared/pets';
+import { resolveSoul } from '../character/souls';
 import { VOICE_PACKS } from '../voice/voicePacks';
 
 export interface CosmeticIntent {
@@ -27,11 +28,17 @@ interface CatalogItem {
   intent: CosmeticIntent;
 }
 
-/** The PAID cosmetics: the alternate pets (roro is the free flagship) + the paid voice packs. */
+/** The PAID cosmetics: the alternate pets (roro is the free flagship) + the paid voice packs.
+ *  Only souls that can actually be SHOWN are listed: `souls.ts` reframes Miro as a dog whose distinct
+ *  renderer is pending art (`hasRenderer === false`), so selling it as a cat recolor would be a mislabel.
+ *  It re-appears here automatically once its renderer lands. */
 function paidCosmetics(): CatalogItem[] {
-  const pets = PET_VARIANTS.filter((p) => !p.isDefault).map((p) => ({
-    domId: `pet:${p.id}`, name: p.name, intent: { kind: 'pet' as const, id: p.id },
-  }));
+  const pets = PET_VARIANTS
+    .filter((p) => !p.isDefault)
+    .filter((p) => resolveSoul(p.id).hasRenderer)
+    .map((p) => ({
+      domId: `pet:${p.id}`, name: p.name, intent: { kind: 'pet' as const, id: p.id },
+    }));
   const voices = VOICE_PACKS.filter((v) => v.tier === 'paid').map((v) => ({
     domId: `voice:${v.id}`, name: `${v.name} voice`, intent: { kind: 'voice' as const, id: v.id },
   }));

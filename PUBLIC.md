@@ -88,8 +88,9 @@ Roro is public-ready when **all** of these are observed (not code-read):
       "Roro has no working repo set" for a user who completed onboarding. `RORO_WORKDIR` remains an explicit env override.
 - [ ] **The heart:** on the signed build, a fact stored in session 1 is recalled in session 2 after a **full quit +
       relaunch** — `safeStorage.isEncryptionAvailable()` is true, the AES-256-GCM envelope round-trips.
-- [ ] **A non-founder** observes the magic moment: types a task, Roro recalls a prior fact and uses it, and the recall
-      is **correct** (not `- true` garbage).
+- [ ] **A non-founder** observes the magic moment: types a task, Roro recalls a prior fact and **uses it to shape the
+      actual work** — the coding turn it runs (or its output) reflects the remembered preference, **not merely echoed in
+      narration** — and the recall is **correct** (not `- true` garbage).
 - [ ] Branded bundle ID (not `com.github.Electron`) + a real app icon (the pixel cat) in Dock/Launchpad.
 - [ ] Brain-not-ready and executor-can't-run failures are **loud + actionable in-UI** — never a silent empty window or a
       mid-task surprise or a raw env-var error string.
@@ -129,8 +130,9 @@ VALID + `safeStorage.isEncryptionAvailable()=true` + creates its keychain item �
   env vars present, `npm run make` signs/notarizes the app and notarizes/staples the DMG container. After `npm run make`, run
   `npm run verify:release-artifact:dmg` and `npm run verify:release-artifact:signed` before the clean-Mac install.
 
-**Exit:** a non-founder observes a fact recalled across a full quit/relaunch of a packaged build (proves the moment works
-outside `npm start`); and the Developer-ID notarized build installs Gatekeeper-clean on a clean Mac.
+**Exit:** a non-founder observes a recalled fact **shape the actual coding work** (not merely echoed in narration — the
+sharpened magic-moment gate above) across a full quit/relaunch of a packaged build (proves the moment works outside
+`npm start`); and the Developer-ID notarized build installs Gatekeeper-clean on a clean Mac.
 
 ### Phase 1 — Make the packaged app runnable without a terminal (the onboarding spine)
 **Status: LANDED.** The packaged app now has a persisted workdir spine:
@@ -185,8 +187,9 @@ guess); a wrong fact is fixable in-UI in one action; the README describes the jo
 **Goal:** learn the only thing that matters — does the moment land for people who aren't you, and do they come back?
 - **Channel (founder decision):** a small trusted cohort (friends + one AI/dev community) over a broad post — narrow
   enough to watch every first-run.
-- Ask each tester three things: (1) did the magic moment land? (2) onboarding/`RORO_WORKDIR` friction? (3) will you reopen
-  it next week?
+- Ask each tester three things: (1) did the magic moment land? (2) onboarding/`RORO_WORKDIR` friction? (3) — *as a soft
+  self-report only* — would you want to reopen it? The retention signal is the **observed** second-day reopen in **Exit**,
+  never this answer; do not let stated intent substitute for behavior.
 - Capture `RORO_TRACE` from real first turns to seed the eval with real ambiguous requests (today's fixtures are synthetic).
 - Triage: any first-run blocker is a same-day fix; cosmetic/feature requests go to the post-public backlog.
 

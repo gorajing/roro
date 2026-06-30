@@ -8,6 +8,7 @@
 // key obfuscated-but-recoverable), so we reject it — encrypt-by-default must not lean on a fake vault.
 
 import type { KeyWrapper } from './keyManager';
+import { guardDeferredEnv } from '../shared/releaseChannel';
 
 export interface SafeStorageLike {
   isEncryptionAvailable?(): boolean;
@@ -25,7 +26,9 @@ declare const process: { env: Record<string, string | undefined> };
 export function buildSafeStorageWrapper(ss: SafeStorageLike, platform: string): KeyWrapper {
   const backend = (): string =>
     platform === 'linux' && ss.getSelectedStorageBackend ? ss.getSelectedStorageBackend() : 'os-keychain';
-  const forcedKeychainFailure = (): boolean => process.env.RORO_MEMORY_HEALTH_SMOKE_FAIL === 'keychain';
+  // Guarded: the keychain-failure smoke flag is a deferred-v0 harness — a release/cohort build refuses it.
+  const forcedKeychainFailure = (): boolean =>
+    guardDeferredEnv(process.env).RORO_MEMORY_HEALTH_SMOKE_FAIL === 'keychain';
   return {
     async available(): Promise<boolean> {
       if (forcedKeychainFailure()) return false;
