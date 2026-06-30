@@ -26,7 +26,7 @@ const appEnv = {
   RORO_WORKDIR: process.cwd(),
 };
 delete appEnv.RORO_DEBUG_BRIDGE;
-delete appEnv.RORO_FLOATING_WINDOW;
+appEnv.RORO_FLOATING_WINDOW = '0'; // exercise the framed window (floating is the product default now)
 delete appEnv.RORO_FLOATING_SMOKE;
 
 let nextId = 1;

@@ -18,6 +18,7 @@
     "eval:brain": "tsx src/brain/eval/runEval.ts",
     "eval:trace-review": "tsx src/brain/eval/cohortTraceReviewCli.ts",
     "verify:floating": "node scripts/smoke-floating-ask.mjs",
+    "verify:floating-geometry": "node scripts/smoke-floating-window-geometry.mjs",
     "verify:floating-live-turn": "node scripts/smoke-floating-live-turn.mjs",
     "verify:typed-live-turn": "node scripts/smoke-typed-live-turn.mjs",
     "verify:memory-panel-rendered": "node scripts/smoke-memory-panel-rendered.mjs",

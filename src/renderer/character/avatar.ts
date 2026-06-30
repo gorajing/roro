@@ -636,11 +636,14 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
     const { width, height } = renderSize();
     const floating = isFloatingWindow();
     const baseScale = Math.min(1.35, Math.max(0.72, Math.min(width / 380, height / 390)));
+    // roro's small floating window is the default now, so the cat tracks window size LINEARLY: halving the
+    // window halves the cat (same fraction of the window filled). The old sqrt super-shrink was tuned for a
+    // large default window with small windows as the exception — inverting that here would overshoot (a
+    // half-size window would render the cat at ~36% instead of the intended 50%).
     const rawFloatingScale = Math.min(width / FLOATING_FIT.width, height / FLOATING_FIT.height);
-    const smallWindowShrink = rawFloatingScale < 1 ? Math.sqrt(rawFloatingScale) : 1;
     const floatingScale = Math.min(
       FLOATING_FIT.maxScale,
-      Math.max(FLOATING_FIT.minScale, rawFloatingScale * smallWindowShrink),
+      Math.max(FLOATING_FIT.minScale, rawFloatingScale),
     );
     currentFloatingScale = floatingScale;
     const scale = floating ? floatingScale : baseScale;

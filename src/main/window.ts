@@ -18,13 +18,20 @@ import { guardDeferredEnv } from '../shared/releaseChannel';
 
 const SUMMON_ACCELERATOR = 'CommandOrControl+Shift+Space';
 const MUTE_ACCELERATOR = 'CommandOrControl+Shift+M';
-const FLOATING_WINDOW_FLAG = process.env.RORO_FLOATING_WINDOW === '1';
+// roro is a floating desktop pet by DEFAULT: a transparent, frameless, always-on-top window you can
+// drag anywhere on screen (see the BrowserWindow options below + the renderer drag gesture). Setting
+// RORO_FLOATING_WINDOW=0 opts back into the legacy opaque 1024x768 framed dev window, which the typed-prompt
+// path and the packaged smokes rely on. Any value other than '0' (incl. unset) keeps the floating pet.
+// Window mode is NOT a deferred-v0 flag, so it is read straight from process.env (not guardDeferredEnv).
+const FLOATING_WINDOW_FLAG = process.env.RORO_FLOATING_WINDOW !== '0';
 const VOICE_RUNTIME_ENABLED = voiceRuntimeEnabled(guardDeferredEnv(process.env));
 const FLOATING_WINDOW_SIZE = {
-  width: 380,
-  height: 400,
+  width: 190,
+  height: 200,
 } as const;
 const FLOATING_WINDOW_ASPECT_RATIO = FLOATING_WINDOW_SIZE.width / FLOATING_WINDOW_SIZE.height;
+// Inset (px) from the work-area edges when roro spawns in the bottom-left corner.
+const SPAWN_MARGIN_PX = 16;
 
 export function createWindow(): BrowserWindow {
   // Renderer-safe runtime config, sourced from MAIN's process.env (populated by dotenv in src/main.ts).
@@ -55,10 +62,23 @@ export function createWindow(): BrowserWindow {
     memoryPanelSmoke: env.RORO_MEMORY_PANEL_SMOKE === '1',
   };
 
+  // roro spawns in the bottom-left corner of the primary display's WORK AREA — which excludes the macOS
+  // menu bar + Dock, so the window rests just above the Dock rather than clipped behind it. Computed here
+  // inside createWindow (not at module scope): screen.* is only valid after app 'ready', and createWindow
+  // runs inside app.whenReady (src/main.ts). The clamp keeps the top edge on-screen on short displays.
+  const winW = FLOATING_WINDOW_FLAG ? FLOATING_WINDOW_SIZE.width : 1024;
+  const winH = FLOATING_WINDOW_FLAG ? FLOATING_WINDOW_SIZE.height : 768;
+  let spawn: { x: number; y: number } | undefined;
+  if (FLOATING_WINDOW_FLAG) {
+    const { x: waX, y: waY, height: waH } = screen.getPrimaryDisplay().workArea;
+    spawn = { x: waX + SPAWN_MARGIN_PX, y: Math.max(waY, waY + waH - winH - SPAWN_MARGIN_PX) };
+  }
+
   const mainWindow = new BrowserWindow({
     title: 'Roro',
-    width: FLOATING_WINDOW_FLAG ? FLOATING_WINDOW_SIZE.width : 1024,
-    height: FLOATING_WINDOW_FLAG ? FLOATING_WINDOW_SIZE.height : 768,
+    width: winW,
+    height: winH,
+    ...(spawn ?? {}),
     frame: !FLOATING_WINDOW_FLAG,
     transparent: FLOATING_WINDOW_FLAG,
     backgroundColor: FLOATING_WINDOW_FLAG ? '#00000000' : '#0e1018',
