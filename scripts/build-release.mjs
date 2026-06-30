@@ -13,13 +13,13 @@
 // the asset-staging step explicitly first, with the stripped env, so it stages nothing. (The npm `premake`
 // hook is intentionally removed for the same reason: it would stage with the UN-stripped env before us.)
 //
-// Usage: node scripts/build-release.mjs <package|make>
+// Usage: node scripts/build-release.mjs <package|make|publish>
 import { spawnSync } from 'node:child_process';
 import { stripV0DeferredEnv } from './v0-deferred-env.mjs';
 
 const sub = process.argv[2];
-if (sub !== 'package' && sub !== 'make') {
-  console.error('usage: node scripts/build-release.mjs <package|make>');
+if (sub !== 'package' && sub !== 'make' && sub !== 'publish') {
+  console.error('usage: node scripts/build-release.mjs <package|make|publish>');
   process.exit(2);
 }
 
