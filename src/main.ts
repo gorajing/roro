@@ -12,6 +12,7 @@ import started from 'electron-squirrel-startup';
 
 import { ensureMicAccess, installPermissionHandlers } from './main/mic';
 import { voiceMicNeeded } from './main/voiceFlags';
+import { guardDeferredEnv } from './shared/releaseChannel';
 import { registerIpcHandlers } from './main/ipc';
 import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorTracking } from './main/window';
 import { cancelAllRuns } from './main/orchestrator';
@@ -82,7 +83,7 @@ app.whenReady().then(async () => {
 
   // 2. macOS TCC mic consent up-front — ONLY when an on-device voice flag that opens the mic is set.
   //    The default typed-only launch never touches the mic, so it must never surface the system prompt.
-  if (voiceMicNeeded(process.env)) {
+  if (voiceMicNeeded(guardDeferredEnv(process.env))) {
     const micStatus = await ensureMicAccess();
     if (micStatus !== 'granted') {
       console.warn(
@@ -100,7 +101,7 @@ app.whenReady().then(async () => {
   // 4. Memory warmup: initialize keychain/PGlite shortly after first paint, off the first-turn path.
   //    Non-blocking — a very fast first turn still degrades independently if memory is unavailable, while
   //    the common path gets a warmed store without delaying the packaged renderer target.
-  if (memoryWarmupDisabled(process.env)) {
+  if (memoryWarmupDisabled(guardDeferredEnv(process.env))) {
     console.log('[main] memory warmup skipped by RORO_DISABLE_MEMORY_WARMUP');
   } else {
     const warmMemory = (): void => {

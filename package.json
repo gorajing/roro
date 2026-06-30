@@ -8,8 +8,9 @@
   "scripts": {
     "start": "electron-forge start",
     "package": "electron-forge package",
-    "make": "electron-forge make",
-    "publish": "electron-forge publish",
+    "make": "node scripts/build-release.mjs make",
+    "package:release": "node scripts/build-release.mjs package",
+    "publish": "node scripts/build-release.mjs publish",
     "release:doctor": "tsx scripts/verify-signing-readiness.ts --allow-unsigned",
     "lint": "eslint --ext .ts,.tsx .",
     "test": "vitest run",
@@ -32,12 +33,12 @@
     "verify:release-artifact": "node scripts/verify-release-artifact.mjs --mode default",
     "verify:release-artifact:dmg": "node scripts/verify-release-artifact.mjs --mode default --require-dmg",
     "verify:release-artifact:signed": "node scripts/verify-release-artifact.mjs --mode signed",
+    "verify:release-channel": "node scripts/smoke-release-channel.mjs",
     "verify:signing-readiness": "tsx scripts/verify-signing-readiness.ts",
     "verify:signing-auth": "tsx scripts/verify-signing-readiness.ts --check-notary-auth",
     "stage:voice-assets": "node scripts/stage-voice-assets.mjs",
     "prestart": "node scripts/stage-voice-assets.mjs",
-    "prepackage": "node scripts/stage-voice-assets.mjs",
-    "premake": "node scripts/stage-voice-assets.mjs"
+    "prepackage": "node scripts/stage-voice-assets.mjs"
   },
   "keywords": [],
   "author": "Jin Choi",

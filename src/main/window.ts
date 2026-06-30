@@ -14,11 +14,12 @@ import { withCrossOriginIsolation } from './crossOriginIsolation';
 import { isSafeNavigation } from './navigation';
 import { sendToWindow } from './safeSend';
 import { voiceRuntimeEnabled } from './voiceFlags';
+import { guardDeferredEnv } from '../shared/releaseChannel';
 
 const SUMMON_ACCELERATOR = 'CommandOrControl+Shift+Space';
 const MUTE_ACCELERATOR = 'CommandOrControl+Shift+M';
 const FLOATING_WINDOW_FLAG = process.env.RORO_FLOATING_WINDOW === '1';
-const VOICE_RUNTIME_ENABLED = voiceRuntimeEnabled(process.env);
+const VOICE_RUNTIME_ENABLED = voiceRuntimeEnabled(guardDeferredEnv(process.env));
 const FLOATING_WINDOW_SIZE = {
   width: 380,
   height: 400,
@@ -29,25 +30,29 @@ export function createWindow(): BrowserWindow {
   // Renderer-safe runtime config, sourced from MAIN's process.env (populated by dotenv in src/main.ts).
   // Only non-secret values cross into the renderer; private keys stay in MAIN. Passed via additionalArguments
   // (a single argv element — these values contain no spaces).
+  // Every deferred-v0 flag below is read through guardDeferredEnv: on a release/cohort build it is
+  // refused (the env key is stripped), so a cohort tester can never reach the cosmetics fake-door, the
+  // voice stack, or the debug bridge — regardless of launch env. On dev/smoke builds it passes through.
+  const env = guardDeferredEnv(process.env);
   const roroCfg = {
-    modelUrl: process.env.LIVE2D_MODEL_URL ?? '',
-    floatingWindow: FLOATING_WINDOW_FLAG,
+    modelUrl: env.LIVE2D_MODEL_URL ?? '',
+    floatingWindow: FLOATING_WINDOW_FLAG, // not deferred-v0 (window mode); read straight from process.env
     // On-device voice dev flags — the renderer's only activation path (config.ts reads window.RORO_CFG, and
     // its viteEnv() is a deliberate no-op). RORO_STT_VOICE=1 npm start → real VAD + whisper STT; RORO_VAD_VOICE
     // → VAD ear-perk only; RORO_FAKE_VOICE → scripted engine (no mic/models). All default off.
-    fakeVoice: process.env.RORO_FAKE_VOICE === '1',
-    vadVoice: process.env.RORO_VAD_VOICE === '1',
-    sttVoice: process.env.RORO_STT_VOICE === '1',
-    ttsVoice: process.env.RORO_TTS_VOICE === '1',
-    voicePack: process.env.RORO_VOICE_PACK ?? '',
+    fakeVoice: env.RORO_FAKE_VOICE === '1',
+    vadVoice: env.RORO_VAD_VOICE === '1',
+    sttVoice: env.RORO_STT_VOICE === '1',
+    ttsVoice: env.RORO_TTS_VOICE === '1',
+    voicePack: env.RORO_VOICE_PACK ?? '',
     // WS5 validation (M9): the cosmetics fake-door, OFF by default — RORO_WS5_STORE=1 to run the experiment.
-    cosmeticsStore: process.env.RORO_WS5_STORE === '1',
+    cosmeticsStore: env.RORO_WS5_STORE === '1',
     // Dev/security escape hatch: exposes direct brain/vision/debug handles only when deliberately enabled.
-    debugBridge: process.env.RORO_DEBUG_BRIDGE === '1',
+    debugBridge: env.RORO_DEBUG_BRIDGE === '1',
     // Test-only renderer lifecycle harness used by npm run verify:floating; never enabled for default launches.
-    floatingSmoke: process.env.RORO_FLOATING_SMOKE === '1',
+    floatingSmoke: env.RORO_FLOATING_SMOKE === '1',
     // Test-only Memory panel keyboard/a11y harness. Renderer-only; default launches use the real preload bridge.
-    memoryPanelSmoke: process.env.RORO_MEMORY_PANEL_SMOKE === '1',
+    memoryPanelSmoke: env.RORO_MEMORY_PANEL_SMOKE === '1',
   };
 
   const mainWindow = new BrowserWindow({
