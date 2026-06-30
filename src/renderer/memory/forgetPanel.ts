@@ -5,6 +5,7 @@
 // owner/key from the active profile. Fact and source text use textContent ONLY because they are user-authored.
 
 import type { ProfileFactSourceView, ProfileFactView } from '../../shared/memory';
+import { formatRelationshipCount } from './relationshipSummary';
 import type { MemoryHealthStatusMsg } from '../../shared/ipc';
 
 export interface MemoryBridge {
@@ -99,10 +100,19 @@ export function mountForgetPanel(
   intro.className = 'memory-intro';
   intro.textContent = 'Local to this Mac. Check what is right, fix what is wrong, or forget it.';
 
+  // Read-only "being-known" line, populated from the facts the panel already loads (no new state).
+  const summary = document.createElement('p');
+  summary.className = 'memory-summary';
+
   const list = document.createElement('ul');
   list.id = 'memory-list';
-  panel.append(heading, intro, list);
+  panel.append(heading, intro, summary, list);
   host.append(toggle, panel);
+
+  // Keep the "being-known" line in sync with the rows currently shown (refresh + after Forget removes one).
+  function syncSummary(): void {
+    summary.textContent = formatRelationshipCount(list.querySelectorAll('.memory-row').length);
+  }
 
   function singleState(className: string, message: string): void {
     list.replaceChildren();
@@ -288,6 +298,7 @@ export function mountForgetPanel(
             const previousRow = row.previousElementSibling;
             row.remove();
             if (!list.querySelector('.memory-row')) emptyState();
+            syncSummary();
             focusAfterRowRemoval(nextRow, previousRow);
           } catch (e) {
             forget.disabled = false;
@@ -373,10 +384,12 @@ export function mountForgetPanel(
 
   async function refresh(): Promise<void> {
     loadingState();
+    summary.textContent = '';
     try {
       const facts = await bridge().profile();
       if (facts.length === 0) { emptyState(); return; }
       list.replaceChildren(...facts.map(renderRow));
+      syncSummary();
     } catch (e) {
       // Fail loud (console) but surface a friendly, recoverable state, never a silent blank panel.
       let health: MemoryHealthStatusMsg | null = null;
