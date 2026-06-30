@@ -1,7 +1,7 @@
 # Roro
 
 <p align="center">
-  <img src="assets/roro-github-preview.png" alt="Roro pixel cat preview: local-first coding companion" width="820">
+  <img src="assets/roro-github-preview.gif" alt="Animated Roro pixel cat preview: local-first coding companion" width="820">
 </p>
 
 **A local-first desktop coding companion that works in your repo and remembers how you work.**
