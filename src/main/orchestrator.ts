@@ -31,6 +31,7 @@ import { isCleanTree } from './gitTree';
 import { resolveWorkdir, tryResolveWorkdir } from './workdir';
 import { repoId as deriveRepoId } from '../memory2/repoId';
 import { isPlausiblePreference, type FactExtractInput } from '../brain/extractFact';
+import { buildDecisionPrompt } from '../brain/decisionPrompt';
 import { sendToFirstWindow } from './safeSend';
 import { getExecutorReadiness } from './executorReadiness';
 
@@ -591,6 +592,18 @@ async function actOnDecision(
         typeof decision.args.task === 'string'
           ? decision.args.task
           : transcript;
+      // Opt-in proof capture (NOOP unless RORO_TRACE=1). Only the PRIMARY (non-screen) decision is captured,
+      // so the reconstructed prompt from {transcript, recalledMemory} is byte-exact; the vision re-decide
+      // path is skipped (its prompt also carried the screen, which isn't reconstructed here).
+      if (!screenAlreadyCaptured) {
+        captureDecide(
+          sessionId,
+          command,
+          transcript,
+          recalledMemory,
+          typeof decision.args.task === 'string' ? decision.args.task : undefined,
+        );
+      }
       const agent: AgentKind =
         decision.args.agent === 'claude' ? 'claude' : DEFAULT_AGENT;
 
@@ -672,6 +685,39 @@ async function rememberUserSaid(sessionId: string, transcript: string, repoPath?
   } catch (err) {
     console.error('[orchestrator] remember user transcript failed:', (err as Error).message);
   }
+}
+
+/**
+ * OPT-IN, fire-and-forget capture of the DECIDE prompt + the generated task for a coding turn — the manual
+ * "memory steered the work" proof (a recalled fact present in the prompt and reflected in the task). NOOP
+ * unless RORO_TRACE=1, so it costs nothing on a normal run; the memory-laden prompt is written ONLY under
+ * RORO_TRACE_DECIDE=plaintext (the tracer redacts it otherwise — see tracer.ts). Hung off the turn, never on
+ * the latency path, and caught so it can never throw into the chokepoint.
+ */
+function captureDecide(
+  sessionId: string,
+  command: Command,
+  transcript: string,
+  memory: string | undefined,
+  task: string | undefined,
+): void {
+  if (process.env.RORO_TRACE !== '1') return; // zero overhead when tracing is off — no loadMemory, no work
+  void (async () => {
+    try {
+      const ownerId = getOwnerId();
+      const memModule = await loadMemory();
+      memModule.traceExtraction({
+        kind: 'decide',
+        ownerId,
+        sessionId,
+        command,
+        prompt: buildDecisionPrompt({ transcript, memory }),
+        task,
+      });
+    } catch (err) {
+      console.error('[orchestrator] decide capture failed:', (err as Error).message);
+    }
+  })();
 }
 
 /**

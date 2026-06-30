@@ -18,6 +18,16 @@ npm start
 Default trace mode hashes recall queries. Do not use `RORO_TRACE_QUERY=plaintext` for cohort runs unless the tester
 explicitly opts in and the file stays local. Never commit raw trace files or raw observer notes.
 
+### `RORO_TRACE_DECIDE=plaintext` — the memory-steered-coding proof capture (founder-only)
+
+With `RORO_TRACE=1`, this opt-in adds a `kind: 'decide'` event for each coding turn carrying the **full DECIDE
+prompt** (which embeds recalled memory text) **and the generated `args.task`** — the mechanical "memory steered the
+work" proof (a recalled fact present in the prompt, reflected in the task). Because the prompt contains memory text,
+it is the **most sensitive** trace field: it has its own flag (not `RORO_TRACE_QUERY`), defaults **off** (the writer
+strips `prompt`/`task`, keeping only `command` + ids), and is **strictly founder-local — forbidden for cohort runs**.
+Use it only for your own rigorous proof on a disposable repo; the file stays local and is never committed (it matches
+the gitignored `*.roro-trace.jsonl`).
+
 ## Review Packet
 
 Generate a privacy-preserving review packet:
