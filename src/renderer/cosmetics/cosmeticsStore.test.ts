@@ -20,14 +20,15 @@ describe('mountCosmeticsStore — the WS5 willingness-to-pay fake-door', () => {
     expect((q('#cosmetics-panel') as HTMLElement).hidden).toBe(true);
   });
 
-  it('lists every PAID cosmetic — the alternate pets + the paid voice packs (never the free defaults)', () => {
+  it('lists only SHOWABLE paid pets (a renderer exists) + paid voice packs — never the free defaults or unrenderable souls', () => {
     mountCosmeticsStore({ onIntent: vi.fn() });
     click(q('#cosmetics-toggle'));
     const items = [...document.querySelectorAll<HTMLElement>('.cosmetic-item')].map((r) => r.dataset.id);
-    // alternate pets (miro/sero/taro — roro is the free flagship) + the 4 paid voice packs
-    expect(items).toContain('pet:miro');
+    // renderable cat recolors (sero/taro — roro is the free flagship) + the 4 paid voice packs
     expect(items).toContain('pet:sero');
+    expect(items).toContain('pet:taro');
     expect(items).toContain('voice:bm_george');
+    expect(items).not.toContain('pet:miro'); // Miro is a dog with no renderer yet — not a sellable cat recolor (souls.ts)
     expect(items).not.toContain('pet:roro'); // the free default is not a paid cosmetic
     expect(items).not.toContain('voice:af_heart'); // the free default voice
   });
@@ -36,10 +37,10 @@ describe('mountCosmeticsStore — the WS5 willingness-to-pay fake-door', () => {
     const onIntent = vi.fn();
     mountCosmeticsStore({ onIntent });
     click(q('#cosmetics-toggle'));
-    const row = q('.cosmetic-item[data-id="pet:miro"]');
+    const row = q('.cosmetic-item[data-id="pet:sero"]');
     click(row?.querySelector('.cosmetic-unlock') ?? null);
     await flush();
-    expect(onIntent).toHaveBeenCalledWith({ kind: 'pet', id: 'miro' });
+    expect(onIntent).toHaveBeenCalledWith({ kind: 'pet', id: 'sero' });
     // the fake-door stops at intent: the CTA acknowledges + disables, it never reports a purchase
     expect(row?.querySelector('.cosmetic-unlock')?.textContent).toMatch(/coming soon|on the list/i);
     expect((row?.querySelector('.cosmetic-unlock') as HTMLButtonElement).disabled).toBe(true);
@@ -60,7 +61,7 @@ describe('mountCosmeticsStore — the WS5 willingness-to-pay fake-door', () => {
     const onIntent = vi.fn().mockImplementationOnce(() => { throw new Error('aggregation down'); });
     mountCosmeticsStore({ onIntent });
     click(q('#cosmetics-toggle'));
-    const btn = q('.cosmetic-item[data-id="pet:miro"] .cosmetic-unlock') as HTMLButtonElement;
+    const btn = q('.cosmetic-item[data-id="pet:sero"] .cosmetic-unlock') as HTMLButtonElement;
     click(btn); // onIntent throws
     await flush();
     expect(btn.disabled).toBe(false); // still clickable
