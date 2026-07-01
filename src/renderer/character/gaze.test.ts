@@ -6,6 +6,12 @@ describe('Gaze', () => {
     expect(new Gaze().step()).toEqual({ lookX: 0, lookY: 0 });
   });
 
+  it('keeps default extreme gaze to a half-pixel so side-facing eyes stay tucked in', () => {
+    const g = new Gaze(1);
+    g.setTarget({ x: 1, y: -1 });
+    expect(g.step()).toEqual({ lookX: 0.5, lookY: -0.5 });
+  });
+
   it('eases toward a target and converges to the max offset', () => {
     const g = new Gaze(0.5, 1);
     g.setTarget({ x: 1, y: -1 });
