@@ -345,15 +345,14 @@ export async function describeScreen(input: ScreenInput): Promise<string> {
   return content.trim();
 }
 
-// Ground a natural-language phrase to a box on the screenshot (the paw-on-the-pixel wedge). Uses
-// qwen2.5-VL's NATIVE grounding format (bbox_2d) — the model grounds far better when asked the way it was
-// trained than with a bespoke schema. Coordinates are requested normalized to 0-1000 so no image-dimension
-// threading is needed; parseGroundResponse handles that scale and fails safe on anything malformed.
+// Ground a natural-language phrase to a box on the screenshot (the paw-on-the-pixel wedge). Uses qwen2.5-VL's
+// NATIVE grounding format (bbox_2d in the image's own PIXEL coordinates) — the model grounds far better asked
+// the way it was trained than with a bespoke schema/scale. parseGroundResponse normalizes those pixels to
+// [0,1] using the JPEG dimensions threaded from captureScreen, and fails safe on anything malformed.
 const GROUND_PROMPT = (phrase: string): string =>
   `Locate "${phrase}" in this screenshot. Output ONLY a JSON object and nothing else: ` +
-  `{"bbox_2d": [x1, y1, x2, y2]} — the tight bounding box of that element, coordinates normalized to a ` +
-  `0-1000 scale where 0 is the left/top edge and 1000 is the right/bottom edge (x1,y1 = top-left corner, ` +
-  `x2,y2 = bottom-right). If that element is not visible on the screen, output {"bbox_2d": null}.`;
+  `{"bbox_2d": [x1, y1, x2, y2]} — the tight bounding box of that element in PIXEL coordinates of this image ` +
+  `(x1,y1 = top-left corner, x2,y2 = bottom-right). If that element is not visible, output {"bbox_2d": null}.`;
 
 /** Ground `phrase` to a normalized box on the screenshot, or null when the model can't find it. Fail-loud
  *  by design: a null (no box) makes roro show no paw / say "I can't find that" rather than point wrongly. */

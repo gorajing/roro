@@ -7,11 +7,13 @@ import type { Decision, DecideInput } from '../shared/brain';
 // clarifyGate forces clarify for referent-less requests. Once the screen HAS been captured (input.screen
 // set), the gate stands down so the second decide() produces the real answer (no infinite capture loop).
 
+// Require an EXPLICIT pointing/locating intent. A bare "on my screen" mention is NOT enough — that also
+// covers "what's this error on my screen" / "look at my screen and tell me what's wrong", which must get the
+// full screen-reading answer (caption → re-decide), not a paw + "There it is".
 const LOCATE_PATTERNS: RegExp[] = [
   /\bpoint (at|to)\b/,
   /\bshow me where\b/,
-  /\b(at|on|in) (the|my) (screen|display)\b/, // "look at my screen", "on the screen"
-  /\bwhere (is|are|s) .+\b(button|icon|menu|tab|field|link|option|setting|toggle|control|logo|bar|panel)\b/,
+  /\bwhere (is|are|s) .+\b(button|icon|menu|tab|field|link|toggle|checkbox|dropdown|logo|thumbnail)s?\b/,
 ];
 
 function normalize(transcript: string): string {

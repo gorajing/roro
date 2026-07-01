@@ -18,7 +18,8 @@ describe('parseGroundResponse — phrase→box grounding parser', () => {
     expect(parseGroundResponse('{"found": false}')).toBeNull();
   });
 
-  it('parses qwen2.5-VL native bbox_2d in 0-1000 scale', () => {
+  it('falls back to a 0-1000 scale for bbox_2d when no image dimensions are given', () => {
+    // Production always passes dims (pixel path); this is the safety fallback when they are absent.
     const r = parseGroundResponse('{"bbox_2d": [200, 100, 600, 400]}');
     expect(r).not.toBeNull();
     expect(r!.box.x).toBeCloseTo(0.2);

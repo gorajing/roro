@@ -11,12 +11,24 @@ describe('captureForLocateRequest — deterministic capture_screen routing for p
       'show me where the settings menu is',
       'look at my screen and point at the apple menu logo in the top-left',
       'where is the merge button',
-      'where are the tabs on the screen',
-      'on my screen, which icon opens settings',
+      'where are the tabs on the screen', // plural UI noun
+      'where is the settings icon',
     ]) {
       const d = at(q);
       expect(d, q).not.toBeNull();
       expect(d!.command, q).toBe('capture_screen');
+    }
+  });
+
+  it('does NOT route screen-READING questions to the locate path (they need the full answer)', () => {
+    // These mention the screen but ask roro to read/explain it — the fast locate path would wrongly answer
+    // "There it is" instead of describing the screen. They must fall through to the caption → re-decide flow.
+    for (const q of [
+      "what's this error on my screen",
+      'look at my screen and tell me what is wrong',
+      'read the text on my screen',
+    ]) {
+      expect(at(q), q).toBeNull();
     }
   });
 
