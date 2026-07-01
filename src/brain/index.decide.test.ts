@@ -40,6 +40,18 @@ describe('decide — one-shot JSON repair (local 3B robustness)', () => {
     expect(chat).toHaveBeenCalledTimes(1);
   });
 
+  it('routes a clear on-screen pointing request to capture_screen before asking the model', async () => {
+    // Wiring regression: locateGate is unit-tested in isolation and the orchestrator mocks decide(),
+    // so WITHOUT this test the single line connecting the gate to decide() can be deleted with the
+    // whole suite staying green (verified by mutation) — silently degrading every "point at X" turn
+    // to the 3B's routing, which is live-observed broken for pointing intents.
+    const d = await decide({ transcript: 'point at the save button on my screen' });
+
+    expect(d.command).toBe('capture_screen');
+    expect(d.args).toEqual({ locate: true });
+    expect(chat).not.toHaveBeenCalled();
+  });
+
   it('clarifies a referent-less request before asking the model', async () => {
     const d = await decide({ transcript: 'fix it' });
 

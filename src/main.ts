@@ -17,6 +17,7 @@ import { registerIpcHandlers } from './main/ipc';
 import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorTracking } from './main/window';
 import { cancelAllRuns } from './main/orchestrator';
 import { destroyPointerOverlay } from './main/pointerOverlay';
+import { getPetWindow } from './main/windowRegistry';
 import { initOwnerId } from './main/identity';
 import { hydrateWorkdirConfig } from './main/configStore';
 import { loadMemory } from './main/siblings';
@@ -127,8 +128,10 @@ app.whenReady().then(async () => {
   void verifyBrainAtStartup(win);
 
   app.on('activate', () => {
-    // macOS: re-create a window when the dock icon is clicked and none are open.
-    if (BrowserWindow.getAllWindows().length === 0) {
+    // macOS: re-create the pet when the dock icon is clicked and no PET window exists.
+    // Checked via the registry, not getAllWindows().length — a lingering overlay must never
+    // suppress dock re-creation.
+    if (!getPetWindow()) {
       withOverlayCleanup(createWindow());
     }
   });

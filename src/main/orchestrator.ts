@@ -32,7 +32,7 @@ import { resolveWorkdir, tryResolveWorkdir } from './workdir';
 import { repoId as deriveRepoId } from '../memory2/repoId';
 import { isPlausiblePreference, type FactExtractInput } from '../brain/extractFact';
 import { buildDecisionPrompt } from '../brain/decisionPrompt';
-import { sendToFirstWindow } from './safeSend';
+import { sendToPetWindow } from './safeSend';
 import { getExecutorReadiness } from './executorReadiness';
 
 const RECALL_K = 5;
@@ -64,18 +64,18 @@ let dispatchLock = false;
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 function pushEvent(e: ActionEvent): void {
-  sendToFirstWindow(CH.actionEvent, e);
+  sendToPetWindow(CH.actionEvent, e);
 }
 
 function pushRunEnd(runId: string): void {
   preemptedTurns.delete(runId);
   inFlightTurns.delete(runId);
-  sendToFirstWindow(CH.runEnd, { runId });
+  sendToPetWindow(CH.runEnd, { runId });
 }
 
 /** Push the destructive-confirm request to the renderer (it shows a confirm chip). */
 function pushConfirmRequest(req: { runId: string; summary: string }): void {
-  sendToFirstWindow(CH.confirmRequest, req);
+  sendToPetWindow(CH.confirmRequest, req);
 }
 
 /** Emit a synthetic terminal failure (preempt / stop) + runEnd for a turn. */
@@ -132,11 +132,11 @@ async function guardedDispatch(runId: string, destructive: boolean, repo: string
 }
 
 function pushReasoning(delta: string): void {
-  sendToFirstWindow(CH.brainReasoning, delta);
+  sendToPetWindow(CH.brainReasoning, delta);
 }
 
 function pushContent(delta: string): void {
-  sendToFirstWindow(CH.brainContent, delta);
+  sendToPetWindow(CH.brainContent, delta);
 }
 
 /**

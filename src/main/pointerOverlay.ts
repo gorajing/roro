@@ -12,6 +12,7 @@
 
 import { BrowserWindow, screen } from 'electron';
 import { groundBoxToDesktopPoint, type DesktopPoint, type NormalizedBox } from '../shared/pointing';
+import { getPetWindow } from './windowRegistry';
 
 let overlay: BrowserWindow | null = null;
 let loaded = false;
@@ -62,8 +63,16 @@ const OVERLAY_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
   window.roroClearPoint = function(){ document.getElementById('layer').replaceChildren(); window.__roroLastPoint=null; };
 </script></body></html>`;
 
-/** Lazily create the click-through overlay covering the primary display. Reused across points. */
-export function ensurePointerOverlay(): BrowserWindow {
+/** Lazily create the click-through overlay covering the primary display. Reused across points.
+ *  Returns null when no live pet window exists: a locate turn can outlive the pet window (grounding
+ *  takes 40-150s), and re-creating the overlay after the pet's `closed` cleanup already ran would
+ *  orphan an invisible always-on-top window that blocks `window-all-closed` quit (non-macOS),
+ *  suppresses dock re-activation, and swallows the summon shortcut. No pet -> no paw. */
+export function ensurePointerOverlay(): BrowserWindow | null {
+  if (!getPetWindow()) {
+    console.warn('[paw] no live pet window — not creating the pointer overlay');
+    return null;
+  }
   const b = screen.getPrimaryDisplay().bounds; // DIP
   if (overlay && !overlay.isDestroyed()) {
     // Re-sync to the CURRENT primary display: bounds can change (monitor plugged in, resolution change),
@@ -109,9 +118,11 @@ export function ensurePointerOverlay(): BrowserWindow {
   return overlay;
 }
 
-/** Draw roro's ring + paw at a global DIP desktop point (confidence sizes the halo). Fades on its own. */
+/** Draw roro's ring + paw at a global DIP desktop point (confidence sizes the halo). Fades on its own.
+ *  A no-op when the pet window is gone (see ensurePointerOverlay). */
 export async function showPointAt(point: DesktopPoint, confidence: number): Promise<void> {
   const win = ensurePointerOverlay();
+  if (!win) return;
   const b = win.getBounds();
   const lx = point.x - b.x; // overlay-local coords
   const ly = point.y - b.y;
