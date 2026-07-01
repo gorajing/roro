@@ -158,7 +158,7 @@ store the chosen working repo in `userData/config.json`. A local `.env` (see
 optional cloud/executor paths:
 
 ```bash
-# Brain provider: 'ollama' is the default local path.
+# Brain provider: 'ollama' is the only supported value (local-first; anything else fails loud).
 BRAIN_PROVIDER=ollama
 OLLAMA_HOST=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen2.5:3b

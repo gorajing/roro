@@ -59,11 +59,11 @@ export type OllamaProbe =
 
 /**
  * Choose the renderer caption after a brain-preflight FAILURE. Only a local-Ollama unreachable/missing-model
- * failure earns bootstrap guidance; a nebius failure (cloud key) or a DEGRADED/timeout (the daemon is up, just
- * wedged — "install Ollama" would be wrong) keeps the accurate preflight `baseMessage`. Pure + testable.
+ * failure earns bootstrap guidance; a DEGRADED/timeout (the daemon is up, just wedged — "install Ollama"
+ * would be wrong) keeps the accurate preflight `baseMessage`. Pure + testable.
  */
-export function bootstrapFailureMessage(baseMessage: string, provider: string, probe: OllamaProbe): string {
-  if (provider === 'nebius' || probe.kind === 'degraded') return baseMessage;
+export function bootstrapFailureMessage(baseMessage: string, probe: OllamaProbe): string {
+  if (probe.kind === 'degraded') return baseMessage;
   const plan = bootstrapPlan(
     probe.kind === 'reachable'
       ? { ollamaReachable: true, installedModels: probe.models }

@@ -146,8 +146,9 @@ export function subscribeActionEvents(opts: SubscribeOptions): () => void {
   if (brain?.onReasoning) {
     unsubs.push(
       brain.onReasoning(() => {
-        // reasoning_content streams during decide() (Nebius path only) -> 'thinking' pose and a
-        // proof-of-life caption. Do not echo raw reasoning text into the product UI.
+        // A dedicated reasoning channel during decide() -> 'thinking' pose and a proof-of-life
+        // caption. CURRENTLY UNFIRED (the local Ollama brain streams content only) — retained as
+        // the future BrainProvider seam. Do not echo raw reasoning text into the product UI.
         character.setState('thinking');
         character.setActivity({ kind: 'thinking', text: 'thinking' });
         if (captions) {

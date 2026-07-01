@@ -186,4 +186,3 @@ if (debugBridge) {
   contextBridge.exposeInMainWorld('vision', vision);
 }
 contextBridge.exposeInMainWorld('RORO_CFG', roroCfg);
-contextBridge.exposeInMainWorld('COMPANION_CFG', roroCfg); // deprecated alias — back-compat

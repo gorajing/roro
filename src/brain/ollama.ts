@@ -1,9 +1,9 @@
 // src/brain/ollama.ts — the LOCAL Ollama provider (chat + embeddings + vision) for the brain.
 //
-// Replaces the Nebius cloud calls with the local Ollama daemon (default http://127.0.0.1:11434).
+// Talks to the local Ollama daemon (default http://127.0.0.1:11434).
 // The PURE request-builders + NDJSON stream accumulation are split out so they unit-test without a
 // daemon; the thin fetch callers fail LOUD with a actionable message when the daemon is unreachable
-// (we are local-first by default — a silent cloud fallback would mask "ollama serve isn't running").
+// (we are local-first — a silent fallback would mask "ollama serve isn't running").
 
 declare const process: { env: Record<string, string | undefined> };
 

@@ -60,17 +60,26 @@ describe('decide — one-shot JSON repair (local 3B robustness)', () => {
     expect(chat).not.toHaveBeenCalled();
   });
 
-  it('clarifies before provider setup, even when Nebius has no API key', async () => {
-    const savedApiKey = process.env.NEBIUS_API_KEY;
-    process.env.BRAIN_PROVIDER = 'nebius';
-    delete process.env.NEBIUS_API_KEY;
+  it('clarifies before provider validation — the gate answers even under a broken BRAIN_PROVIDER', async () => {
+    process.env.BRAIN_PROVIDER = 'nebius'; // the removed provider — decide would fail loud past the gate
     try {
       const d = await decide({ transcript: 'fix it' });
       expect(d.command).toBe('clarify');
       expect(chat).not.toHaveBeenCalled();
     } finally {
-      if (savedApiKey === undefined) delete process.env.NEBIUS_API_KEY;
-      else process.env.NEBIUS_API_KEY = savedApiKey;
+      delete process.env.BRAIN_PROVIDER;
+    }
+  });
+
+  it('fails loud on a removed/unsupported BRAIN_PROVIDER for a concrete task (no silent local fallback)', async () => {
+    process.env.BRAIN_PROVIDER = 'nebius';
+    try {
+      await expect(decide({ transcript: 'fix the failing test in calc.py' })).rejects.toThrow(
+        /BRAIN_PROVIDER='nebius' is not supported/,
+      );
+      expect(chat).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.BRAIN_PROVIDER;
     }
   });
 

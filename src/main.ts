@@ -8,7 +8,6 @@ import './shared/env-migrate'; // back-compat: COMPANION_* -> RORO_* BEFORE any 
 // BEFORE the window is created, so the renderer's getUserMedia is never raced/denied.
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
-import started from 'electron-squirrel-startup';
 
 import { ensureMicAccess, installPermissionHandlers } from './main/mic';
 import { voiceMicNeeded } from './main/voiceFlags';
@@ -53,11 +52,6 @@ async function verifyBrainAtStartup(win: BrowserWindow): Promise<void> {
   };
   if (!win.isDestroyed() && !win.webContents.isDestroyed() && win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
   else send();
-}
-
-// Handle creating/removing shortcuts on Windows when installing/uninstalling.
-if (started) {
-  app.quit();
 }
 
 // Optional Chromium remote-debugging port for end-to-end UI testing. Gated behind

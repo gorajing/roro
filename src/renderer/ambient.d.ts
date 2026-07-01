@@ -4,8 +4,8 @@
 // another agent's src/types/companion.d.ts (which declares window.companion /
 // window.brain / window.memory / window.vision) is present yet.
 //
-// We declare ONLY window.RORO_CFG (+ the deprecated COMPANION_CFG alias) here. companion.d.ts does
-// NOT declare them, so there is no merge conflict. We deliberately DO NOT (re)declare
+// We declare ONLY window.RORO_CFG here. companion.d.ts does
+// NOT declare it, so there is no merge conflict. We deliberately DO NOT (re)declare
 // window.companion / window.brain in this file: declaring the same Window
 // property twice across merged `interface Window` blocks with structurally
 // different types is a TypeScript error ("Subsequent property declarations must
@@ -19,8 +19,6 @@ declare global {
   interface Window {
     /** Renderer-safe runtime config (non-secret feature flags + window mode). */
     RORO_CFG?: Partial<RoroConfig>;
-    /** @deprecated legacy alias of RORO_CFG — still read for back-compat. */
-    COMPANION_CFG?: Partial<RoroConfig>;
   }
 }
 

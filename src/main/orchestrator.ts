@@ -453,8 +453,8 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
   // stated while working in this project is recalled preferentially here.
   await rememberUserSaid(sessionId, transcript, repoPath);
 
-  // Visible (and truthful) brain beat: name the model doing the planning. Provider-aware so the
-  // local Ollama default is labelled honestly (this used to hardcode "DeepSeek (Nebius)").
+  // Visible (and truthful) brain beat: name the model doing the planning, via describeBrain(),
+  // so the label always reflects the actual configured local model.
   pushEvent({
     kind: 'message',
     runId,

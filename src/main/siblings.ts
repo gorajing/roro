@@ -1,163 +1,57 @@
-// src/main/siblings.ts — lazy, build-safe access to the sibling MAIN-process modules
-// (brain / memory / vision) that are authored by OTHER agents and may not exist on disk yet.
+// src/main/siblings.ts — lazy, typed access to the sibling MAIN-process modules
+// (brain / memory / vision).
 //
 // WHY THIS SHAPE:
-//   - Each sibling is imported via a LAZY dynamic import wrapped in try/catch, so a missing
-//     module degrades gracefully AT RUNTIME (a clear thrown error when the feature is used)
-//     instead of breaking `tsc` / the bundle for the whole MAIN process.
-//   - We type each sibling against a THIN LOCAL interface (below) — NOT against the real
-//     module's types — so this file compiles even when src/brain, src/memory, src/vision
-//     are absent. The dynamic import specifiers are kept as runtime strings the bundler
-//     resolves lazily.
-//
-// Documented sibling contracts (from the BUILD_GUIDE), which these interfaces mirror:
-//   brain:  decide(DecideInput) -> Decision
-//           describeScreen({b64,mime}) -> string
-//           embed(string|string[]) -> number[]|number[][]
-//   memory: remember(RememberInput) -> MemoryRow
-//           recall({query,k?,sessionId?}) -> MemoryMatch[]
-//   vision: captureScreen() -> {b64,mime}
-//           askScreen(prompt, describe) -> string
-//             (`describe` is a CALLBACK ({b64,mime}) => Promise<string> — the brain's
-//              describeScreen injected as a dependency, NOT a boolean flag)
-//
-// The brain additionally streams reasoning_content / content deltas. Because its exact
-// streaming API is owned by the other agent, we accept OPTIONAL callback overloads on
-// decide() (onReasoning / onContent) and fall back to a non-streaming decide() if the
-// sibling doesn't accept them. The orchestrator wires those callbacks to webContents.send.
+//   - Each sibling is imported via a LAZY dynamic import so its heavy dependencies (PGlite,
+//     sharp, model clients) load on FIRST USE, not at app startup.
+//   - Types are DERIVED from the real modules (`typeof import(...)`), so any drift between what
+//     main calls and what a sibling actually exports is a COMPILE error, not a runtime surprise.
+//     (These used to be hand-rolled structural mirrors from the multi-agent build era, when the
+//     sibling modules might not exist on disk yet. They all exist in-repo now.)
 
-import type { Decision, DecideInput } from '../shared/brain';
-import type { FactExtractInput, FactCandidate } from '../brain/extractFact';
-import type {
-  RememberInput,
-  ReplaceFactInput,
-  MemoryRow,
-  MemoryMatch,
-  RecallInput,
-  ProfileFactSourceView,
-  ProfileFactView,
-} from '../shared/memory';
-import type { TraceEvent } from '../memory2/tracer';
+type BrainExports = typeof import('../brain/index');
+type MemoryExports = typeof import('../memory2/index');
+type VisionExports = typeof import('../vision/index');
 
-// ---- Thin local interfaces (structural; the real modules satisfy a superset) ----
+// The subset of each sibling's export surface that MAIN consumes. Pick<> pins these names to the
+// real module (a rename/removal there fails the build here) while keeping test fakes small.
+export type BrainModule = Pick<
+  BrainExports,
+  'decide' | 'describeScreen' | 'groundTarget' | 'embed' | 'extractFact' | 'preflight' | 'describeBrain'
+>;
 
-export interface BrainStreamHooks {
-  onReasoning?: (delta: string) => void;
-  onContent?: (delta: string) => void;
+/** Result of the brain's startup self-check (the real brain.PreflightResult). */
+export type BrainPreflightResult = Awaited<ReturnType<BrainExports['preflight']>>;
+
+export type MemoryModule = Pick<
+  MemoryExports,
+  | 'remember'
+  | 'replaceFact'
+  | 'reinforceFact'
+  | 'recall'
+  | 'getProfile'
+  | 'profileFacts'
+  | 'fixFact'
+  | 'verifyFact'
+  | 'factSource'
+  | 'supersede'
+  | 'forgetFact'
+  | 'traceExtraction'
+>;
+
+export type VisionModule = Pick<VisionExports, 'captureScreen' | 'askScreen'>;
+
+// ---- Lazy loaders. `import()` caches the loaded module; `@vite-ignore` keeps the bundler from
+// hoisting these heavy modules into the eager startup graph.
+
+export async function loadBrain(): Promise<BrainModule> {
+  return import(/* @vite-ignore */ '../brain/index');
 }
-
-/** Result of the brain's startup self-check (structural mirror of brain.PreflightResult). */
-export interface BrainPreflightResult {
-  required: { reason: string; vision: string; embed: string };
-  found: string[];
-  missing: string[];
-}
-
-export interface BrainModule {
-  // Streaming hooks are optional; siblings that ignore the 2nd arg still satisfy this.
-  decide(input: DecideInput, hooks?: BrainStreamHooks): Promise<Decision>;
-  describeScreen(input: { b64: string; mime: string }): Promise<string>;
-  /** Ground a phrase to a normalized [0,1] box on the frame (paw-on-the-pixel), or null when not found. */
-  groundTarget(
-    input: { b64: string; mime: string; width?: number; height?: number },
-    phrase: string,
-  ): Promise<{ box: { x: number; y: number; w: number; h: number }; confidence: number } | null>;
-  embed(input: string | string[]): Promise<number[] | number[][]>;
-  extractFact(input: FactExtractInput): Promise<FactCandidate | null>;
-  /** Verify the configured provider is reachable + models present. Throws (loud) on a problem. */
-  preflight(): Promise<BrainPreflightResult>;
-  /** User-visible label for the active brain (provider-aware). */
-  describeBrain(): string;
-}
-
-export interface MemoryModule {
-  remember(input: RememberInput): Promise<MemoryRow>;
-  replaceFact(input: ReplaceFactInput): Promise<MemoryRow>;
-  /** Corroborate the active fact for (owner_id, key): strengthen its confidence in place. null if none. */
-  reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null>;
-  recall(input: RecallInput): Promise<MemoryMatch[]>;
-  getProfile(ownerId: string): Promise<MemoryRow[]>;
-  /** Renderer-safe active profile facts for the Memory panel. */
-  profileFacts(ownerId: string): Promise<ProfileFactView[]>;
-  /** MAIN-owned memory correction loop; owner/key are resolved from the active profile. */
-  fixFact(ownerId: string, id: string, value: string): Promise<ProfileFactView>;
-  /** MAIN-owned corroboration loop; owner/key are resolved from the active profile. */
-  verifyFact(ownerId: string, id: string): Promise<ProfileFactView>;
-  /** Safe local source metadata only; no transcript payload. */
-  factSource(ownerId: string, id: string): Promise<ProfileFactSourceView>;
-  supersede(id: string): Promise<void>;
-  /** HARD-delete one of the owner's active facts (the Forget panel — M8). */
-  forgetFact(ownerId: string, id: string): Promise<void>;
-  /** Record a per-turn extraction outcome to the RORO_TRACE sink. One-way, sync, NOOP unless RORO_TRACE=1. */
-  traceExtraction(event: TraceEvent): void;
-}
-
-export interface CaptureResult {
-  b64: string;
-  mime: string;
-  /** Pixel dims of the (downscaled) capture — used to normalize a VL grounding box back to [0,1]. */
-  width?: number;
-  height?: number;
-}
-
-/** Callback the vision module invokes to caption a captured frame (the brain's describeScreen). */
-export type DescribeFn = (img: CaptureResult) => Promise<string>;
-
-export interface VisionModule {
-  captureScreen(): Promise<CaptureResult>;
-  // `describe` is injected: vision captures the screen, then calls describe(frame) to caption it.
-  askScreen(prompt: string, describe: DescribeFn): Promise<string>;
-}
-
-// ---- Lazy loaders. Each caches the resolved module (or the failure) once. ----
-
-type Loaded<T> = { ok: true; mod: T } | { ok: false; err: Error };
-
-function makeLoader<T>(
-  label: 'brain' | 'memory' | 'vision',
-  importer: () => Promise<unknown>,
-): () => Promise<T> {
-  let cached: Loaded<T> | null = null;
-  return async (): Promise<T> => {
-    if (cached?.ok) return cached.mod;
-    // Re-attempt on a previous failure: the sibling agent may have finished since.
-    try {
-      const raw = (await importer()) as Record<string, unknown>;
-      // Accept either a namespace export shape (decide/remember/etc. as named exports)
-      // or a `default` export carrying them.
-      const mod = (raw && typeof raw === 'object' && 'default' in raw &&
-        raw.default && typeof raw.default === 'object'
-        ? raw.default
-        : raw) as T;
-      cached = { ok: true, mod };
-      return mod;
-    } catch (e) {
-      const err =
-        e instanceof Error
-          ? e
-          : new Error(`failed to load ${label} module: ${String(e)}`);
-      cached = { ok: false, err };
-      throw new Error(
-        `[main] ${label} module unavailable (sibling not built yet?): ${err.message}`,
-      );
-    }
-  };
-}
-
-// NOTE: the specifiers below are written so the bundler treats them as dynamic (lazy)
-// imports. They point at the sibling index modules the other agents are authoring.
-// `@vite-ignore` keeps Vite from eagerly trying to resolve a possibly-absent path at
-// build time; the try/catch above turns any runtime resolution failure into a clean error.
-export const loadBrain = makeLoader<BrainModule>('brain', () =>
-  import(/* @vite-ignore */ '../brain/index'),
-);
-const loadMemoryModule = makeLoader<MemoryModule>('memory', () =>
-  import(/* @vite-ignore */ '../memory2/index'),
-);
 
 export async function loadMemory(): Promise<MemoryModule> {
-  return loadMemoryModule();
+  return import(/* @vite-ignore */ '../memory2/index');
 }
-export const loadVision = makeLoader<VisionModule>('vision', () =>
-  import(/* @vite-ignore */ '../vision/index'),
-);
+
+export async function loadVision(): Promise<VisionModule> {
+  return import(/* @vite-ignore */ '../vision/index');
+}

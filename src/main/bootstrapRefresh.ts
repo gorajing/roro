@@ -63,14 +63,17 @@ export async function refreshBootstrapStatus(
     let message = baseMessage;
     let status: BootstrapStatusMsg | null = null;
 
-    if (env.BRAIN_PROVIDER !== 'nebius') {
+    // An unsupported BRAIN_PROVIDER (e.g. the removed 'nebius' cloud fork) fails preflight with a
+    // config error — keep that exact message; Ollama bootstrap guidance would mask the real problem.
+    const provider = env.BRAIN_PROVIDER;
+    if (provider === undefined || provider === '' || provider === 'ollama') {
       let probe: OllamaProbe;
       try {
         probe = { kind: 'reachable', models: await tags() };
       } catch (probeErr) {
         probe = probeKindFromError(probeErr);
       }
-      message = bootstrapFailureMessage(baseMessage, 'ollama', probe);
+      message = bootstrapFailureMessage(baseMessage, probe);
       status = bootstrapStatusFor(probe);
     }
 

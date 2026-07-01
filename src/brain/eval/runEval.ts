@@ -1,7 +1,6 @@
 // src/brain/eval/runEval.ts — the LIVE brain eval runner (opt-in; needs a running Ollama + the model).
 //
-//   npm run eval:brain                     # score the default local brain (qwen2.5:3b)
-//   BRAIN_PROVIDER=nebius npm run eval:brain   # score the cloud ceiling (DeepSeek) for reference
+//   npm run eval:brain                     # score the local brain (qwen2.5:3b)
 //
 // Scores both halves of the magic moment — DECIDE command-selection and extractFact null-discipline — over
 // the golden fixtures, prints a per-case + per-failure-mode report, and writes a checked-in baseline so
