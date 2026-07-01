@@ -21,7 +21,7 @@ function makeStore() {
   const getProfile = async (ownerId: string) => rows.filter((r) => r.owner_id === ownerId && r.kind === 'fact' && !r.superseded);
   // recall: naive substring match scoped to owner (stands in for pgvector cosine + owner filter).
   const recall = async ({ query, ownerId }: { query: string; ownerId: string; k?: number; sessionId?: string }): Promise<MemoryMatch[]> =>
-    rows.filter((r) => r.owner_id === ownerId && r.kind !== 'fact' && query.split(' ').some((w) => r.text.includes(w))).map((r) => ({ ...r, similarity: 0.9 }));
+    rows.filter((r) => r.owner_id === ownerId && r.kind !== 'fact' && query.split(' ').some((w) => r.text.includes(w))).map((r) => ({ ...r, similarity: 0.9, guaranteed: false }));
   return { rows, deps: { getProfile, replaceFact, recall } as FactStoreDeps & RecallDeps };
 }
 

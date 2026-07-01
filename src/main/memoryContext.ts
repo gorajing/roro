@@ -1,6 +1,7 @@
 // src/main/memoryContext.ts — compose recall into a LABELED memory string for DecideInput.memory.
 // Facts (the durable "knows-you" segment) come first so truncation never drops them before episodes.
 import type { MemoryRow, MemoryMatch, RecallInput } from '../shared/memory';
+import { MEMORY_EPISODES_HEADER, MEMORY_FACTS_HEADER } from '../shared/memoryFormat';
 
 export interface RecallDeps {
   getProfile(ownerId: string): Promise<MemoryRow[]>;
@@ -10,10 +11,10 @@ export interface RecallDeps {
 export function composeMemoryContext(facts: MemoryRow[], episodes: MemoryMatch[]): string | undefined {
   const sections: string[] = [];
   if (facts.length > 0) {
-    sections.push(['KNOWN ABOUT THIS USER:', ...facts.map((f) => `- ${f.text}`)].join('\n'));
+    sections.push([MEMORY_FACTS_HEADER, ...facts.map((f) => `- ${f.text}`)].join('\n'));
   }
   if (episodes.length > 0) {
-    sections.push(['RELATED PAST CONTEXT:', ...episodes.map((e) => `- ${e.text}`)].join('\n'));
+    sections.push([MEMORY_EPISODES_HEADER, ...episodes.map((e) => `- ${e.text}`)].join('\n'));
   }
   return sections.length > 0 ? sections.join('\n\n') : undefined;
 }
@@ -38,10 +39,11 @@ export async function buildRecallContext(
   }
   const facts = factsResult.status === 'fulfilled' ? factsResult.value : [];
   const matches = matchesResult.status === 'fulfilled' ? matchesResult.value : [];
-  // Inclusive floor: memory2's recall already blend-ranks and guarantees recent rows, which carry
-  // cosine 0 — a strict `>` with any non-negative floor would drop exactly those, nullifying the
-  // temporal-recall fix. With minSimilarity=0 (the memory2 path) this keeps the ranked top-k as-is.
-  const episodes = matches.filter((m) => m.similarity >= minSimilarity);
+  // The floor NEVER applies to recency-guaranteed rows: memory2 promises those surface regardless of
+  // cosine (they carry similarity 0), and the `guaranteed` flag carries that promise through the type
+  // so no floor value — present or future — can silently kill temporal recall. Inclusive `>=` for the
+  // scored rows so a 0 floor keeps memory2's ranked top-k as-is.
+  const episodes = matches.filter((m) => m.guaranteed || m.similarity >= minSimilarity);
   return {
     context: composeMemoryContext(facts, episodes),
     factCount: facts.length,

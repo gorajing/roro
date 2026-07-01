@@ -1,4 +1,5 @@
 import type { Decision, DecideInput } from '../shared/brain';
+import { MEMORY_EPISODES_HEADER } from '../shared/memoryFormat';
 
 interface ClarifyRule {
   readonly match: RegExp;
@@ -65,9 +66,16 @@ export function clarifyForReferentlessRequest(input: DecideInput): Decision | nu
   };
 }
 
+// Built from the SHARED header constant (src/shared/memoryFormat.ts) so the composer in
+// src/main/memoryContext.ts and this inspector can never silently desynchronize.
+const EPISODES_SECTION_PATTERN = new RegExp(
+  MEMORY_EPISODES_HEADER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + String.raw`\s*([\s\S]*)`,
+  'i',
+);
+
 function hasRelatedPastContext(memory: string | undefined): boolean {
   if (!memory?.trim()) return false;
-  const match = /RELATED PAST CONTEXT:\s*([\s\S]*)/i.exec(memory);
+  const match = EPISODES_SECTION_PATTERN.exec(memory);
   return Boolean(match?.[1]?.trim());
 }
 

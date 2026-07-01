@@ -33,6 +33,7 @@ import { repoId as deriveRepoId } from '../memory2/repoId';
 import { isPlausiblePreference, type FactExtractInput } from '../brain/extractFact';
 import { buildDecisionPrompt } from '../brain/decisionPrompt';
 import { sendToPetWindow } from './safeSend';
+import { isActivityEvent, silentRunWarning } from '../executor/formatDrift';
 import { getExecutorReadiness } from './executorReadiness';
 
 const RECALL_K = 5;
@@ -353,6 +354,7 @@ async function dispatchExecutor(
 
   try {
     const executor = getExecutor(agent);
+    let activityCount = 0; // format-drift tripwire: a completed run that mapped ZERO activity is suspicious
     for await (const ev of executor.run({
       repo,
       prompt,
@@ -375,10 +377,13 @@ async function dispatchExecutor(
         continue;
       }
       pushEvent(stamped);
+      if (isActivityEvent(stamped.kind)) activityCount++;
       // Native "job done" notification on terminal events — visible even when the
       // window is hidden or in floating mode.
       if (stamped.kind === 'run.completed' || stamped.kind === 'run.failed') {
         terminalSeen = true;
+        const drift = silentRunWarning(activityCount, stamped.kind);
+        if (drift) console.warn(drift);
         notifyJobDone(stamped.kind === 'run.completed', terminalEventText(stamped));
         // Off-critical-path: extract AT MOST one durable fact from this turn (supersede-not-
         // overwrite). Fire-and-forget; this survives the Phase-B dispatch-return change.

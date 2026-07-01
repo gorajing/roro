@@ -6,8 +6,8 @@ const OWNER = 'owner-A';
 function factRow(text: string, over: Partial<MemoryRow> = {}): MemoryRow {
   return { id: 'f', owner_id: OWNER, session_id: 's', kind: 'fact', text, payload: {}, superseded: false, created_at: '2026-06-21T00:00:00Z', ...over };
 }
-function match(text: string, similarity: number): MemoryMatch {
-  return { ...factRow(text), kind: 'observation', similarity };
+function match(text: string, similarity: number, guaranteed = false): MemoryMatch {
+  return { ...factRow(text), kind: 'observation', similarity, guaranteed };
 }
 
 describe('composeMemoryContext', () => {
@@ -47,6 +47,16 @@ describe('buildRecallContext (cross-launch: facts survive a session change)', ()
     const out = await buildRecallContext(deps, { ownerId: OWNER, sessionId: 'launch-B', query: 'add a logout route', minSimilarity: 0.3 });
     expect(out.factCount).toBe(1);
     expect(out.context).toContain('writes a test alongside each feature');
+  });
+
+  it('a recency-GUARANTEED episode survives ANY positive similarity floor (typed invariant, not a comment)', async () => {
+    // THE invariant that used to live in comments across three files: memory2 hard-guarantees the
+    // most-recent rows, which carry cosine 0. A caller-side floor must be structurally unable to drop
+    // them — otherwise "what did we just do?" silently dies the day someone raises the floor.
+    const deps = fakeDeps({ profile: [], matches: [match('what we just did', 0, true)] });
+    const out = await buildRecallContext(deps, { ownerId: OWNER, sessionId: 'launch-B', query: 'what did we just do', minSimilarity: 0.5 });
+    expect(out.episodeCount).toBe(1);
+    expect(out.context).toContain('what we just did');
   });
 
   it('keeps a recency-only episode (similarity 0) when the floor is 0 — memory2 is the recall authority', async () => {

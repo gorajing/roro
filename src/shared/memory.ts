@@ -58,7 +58,12 @@ export interface MemoryRow {
 }
 
 export interface MemoryMatch extends MemoryRow {
+  /** RAW cosine for vector-channel rows; recency-guaranteed rows carry 0 (they were never scored). */
   similarity: number;
+  /** memory2's recency guarantee: the store PROMISES this row surfaces regardless of cosine. Callers
+   *  must exempt guaranteed rows from any similarity floor — dropping one silently kills temporal
+   *  recall ("what did we just do?"). Typed here so the invariant can't be lost in a refactor. */
+  guaranteed: boolean;
 }
 
 /** Provenance for a thin profile fact. */

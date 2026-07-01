@@ -22,6 +22,13 @@ import { readManifest } from './manifest';
 import { readEpisodes } from './episodeLog';
 import { readEntryFile, writeEntryFile, entryPath } from './entryFile';
 import { blendCandidates, DEFAULT_WEIGHTS, type BlendWeights, type ScoredEntry } from './memoryScore';
+
+/** A recall result row. `guaranteed` marks the recency-guaranteed heads — rows the store PROMISES to
+ *  surface regardless of cosine (they often carry cosine 0). Callers must never filter these by any
+ *  similarity floor; the flag makes that contract typed instead of comment-held. */
+export interface RecalledEntry extends ScoredEntry {
+  guaranteed: boolean;
+}
 import { openEntry, type Cipher } from './cipher';
 import { effectiveConfidence } from './forgetting';
 import { assertEncryptionMode } from './encryptionMode';
@@ -60,7 +67,7 @@ export interface MemoryStore {
   /** Episodic HYBRID recall: blends cosine relevance + recency + importance (excludes facts), owner-scoped.
    *  The recency channel ensures temporal/meta queries ("what did we just do?") surface recent work even
    *  when cosine misses — the bug a real turn exposed. Returns ranked entries with explainable parts. */
-  recall(opts: { query: string; ownerId: string; k?: number; weights?: BlendWeights; repoId?: string }): Promise<ScoredEntry[]>;
+  recall(opts: { query: string; ownerId: string; k?: number; weights?: BlendWeights; repoId?: string }): Promise<RecalledEntry[]>;
   /** Most-recent episodes for an owner (the temporal/"what did we just do" path). */
   recent(opts: { ownerId: string; k?: number }): Promise<Entry[]>;
   /** Active profile facts for an owner ("KNOWN ABOUT THIS USER"), ordered by EFFECTIVE (time-decayed)
@@ -269,7 +276,7 @@ export async function createMemoryStore(opts: {
       });
     },
 
-    async recall({ query, ownerId, k = 5, weights, repoId }): Promise<ScoredEntry[]> {
+    async recall({ query, ownerId, k = 5, weights, repoId }): Promise<RecalledEntry[]> {
       // Cosine channel — but a query-time embed outage must NOT suppress recent memories, so degrade to
       // recency-only on failure (the docs' "never return zero when recent rows exist").
       let vec: Awaited<ReturnType<IndexStore['vectorSearch']>> = [];
@@ -295,7 +302,12 @@ export async function createMemoryStore(opts: {
         .filter((b): b is ScoredEntry => Boolean(b));
       const gIds = new Set(guaranteed.map((g) => g.entry.id));
       // Blend on the SEALED entries (structural fields only), then decrypt the survivors for the caller.
-      const result = [...guaranteed, ...blended.filter((b) => !gIds.has(b.entry.id))]
+      // The guaranteed heads are MARKED, not just ordered first: downstream similarity floors must be
+      // able to exempt them (a recency-only row carries cosine 0 and would otherwise be droppable).
+      const result = [
+        ...guaranteed.map((s) => ({ ...s, guaranteed: true })),
+        ...blended.filter((b) => !gIds.has(b.entry.id)).map((s) => ({ ...s, guaranteed: false })),
+      ]
         .slice(0, k)
         .map((s) => ({ ...s, entry: open(s.entry) }));
       // Observation tap: log the FULL candidate pool's score COMPONENTS + which were returned (no result
