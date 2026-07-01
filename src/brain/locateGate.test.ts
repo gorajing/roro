@@ -43,6 +43,8 @@ describe('captureForLocateRequest — deterministic capture_screen routing for p
       'where is the submit button defined in the code',
       'point to the auth middleware',          // pointing verb but no UI noun / screen context (code nav)
       'show me where config is loaded',        // pointing verb but no screen target + code phrasing
+      'point to the save button in src/App.tsx', // UI noun but a FILE PATH → code navigation
+      'locate the submit button in README.md',   // UI noun but a file reference → code navigation
       'refactor the auth module',
     ]) {
       expect(at(q), q).toBeNull();

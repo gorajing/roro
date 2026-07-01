@@ -95,7 +95,14 @@ app.whenReady().then(async () => {
   }
 
   // 3. Secure window + summon shortcut.
-  const win = createWindow();
+  // Tear the pointing overlay down whenever the main window closes, so the transparent, click-through
+  // overlay never lingers in BrowserWindow.getAllWindows() — otherwise it would block `window-all-closed`
+  // (non-macOS), suppress dock re-creation on `activate`, and let first-window sends/shortcuts target it.
+  const withOverlayCleanup = (w: BrowserWindow): BrowserWindow => {
+    w.on('closed', () => destroyPointerOverlay());
+    return w;
+  };
+  const win = withOverlayCleanup(createWindow());
   startCursorTracking(win);
   registerSummonShortcut();
 
@@ -122,7 +129,7 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     // macOS: re-create a window when the dock icon is clicked and none are open.
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      withOverlayCleanup(createWindow());
     }
   });
 });

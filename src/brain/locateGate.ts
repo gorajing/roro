@@ -19,7 +19,11 @@ const UI_NOUN_PATTERN =
   /\b(button|icon|menu|tab|field|link|toggle|checkbox|dropdown|logo|thumbnail|toolbar|window|dialog|banner|slider|cursor|scrollbar)s?\b/;
 const SCREEN_CONTEXT_PATTERN = /\bon (the|my) (screen|display)\b/;
 const CODE_CONTEXT_PATTERN =
-  /\b(implement|implements|implemented|define|defined|declared|loaded|codebase|source code|in the (code|file|repo|function|method|class)|function|method|class|variable|module|import|endpoint|middleware|handler|component)\b/;
+  /\b(implement|implements|implemented|define|defined|declared|loaded|codebase|source code|in the (code|file|repo|function|method|class)|function|method|class|variable|module|import|endpoint|middleware|handler|component|readme)\b/;
+// A file path or extension ("src/App.tsx", "README.md") means the REPO — checked on the RAW transcript
+// because normalize() shreds paths into words. "point to the save button in src/App.tsx" → run_agent.
+const FILE_REF_PATTERN =
+  /[\w./-]+\.(tsx?|jsx?|mjs|cjs|py|rb|go|rs|java|kt|c|cc|cpp|h|hpp|cs|php|swift|css|scss|less|html?|json|ya?ml|md|sh|sql|toml|xml|vue|svelte)\b|\b(src|lib|app|components?|pages?|routes?|utils?|hooks?|tests?)\/[\w-]/i;
 
 function normalize(transcript: string): string {
   return transcript
@@ -33,6 +37,7 @@ function normalize(transcript: string): string {
  *  captured yet). Returns null otherwise, so the normal model decision (and the post-capture answer) run. */
 export function captureForLocateRequest(input: DecideInput): Decision | null {
   if (input.screen?.trim()) return null; // already looked → let the model answer
+  if (FILE_REF_PATTERN.test(input.transcript)) return null; // references a file/path → code navigation
   const n = normalize(input.transcript);
   const hasScreenTarget = UI_NOUN_PATTERN.test(n) || SCREEN_CONTEXT_PATTERN.test(n);
   const isPointing = POINTING_PATTERN.test(n) && hasScreenTarget;
