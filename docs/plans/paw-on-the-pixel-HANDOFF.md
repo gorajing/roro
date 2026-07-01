@@ -9,8 +9,8 @@ The **paw-on-the-pixel** wedge is **built, green, and computer-use-verified end-
 - **Branch:** `feat/paw-on-the-pixel` (4 commits off `main` @ `45ac398`). **PR #135** open.
 - **Green:** `npm test` → **902 pass / 5 skip**, `npx tsc --noEmit` clean, `npx eslint` → **0 errors** (warnings are pre-existing test-file non-null-assertions).
 - **Proven live:** roro grounded *"the clock in the top-right corner"* → global **(2479, 101)** on a 2560×1440 screen (the correct corner). Full pipeline confirmed.
-- **Review:** codex `review --base main` run twice; **5 real bugs** found and fixed, each with a regression test that fails against the old code. **A round-3 review was in flight at handoff** — see "Immediate next steps".
-- **Untouched:** `src/renderer/character/gaze.ts` + `gaze.test.ts` are someone else's uncommitted WIP. **Do not stage or touch them.**
+- **Review:** codex `review --base main` run **4 rounds** (the skill's cap); **8 real bugs** found and fixed, each with a regression test that fails against the old code, plus 2 doc-accuracy fixes. A **round-5 confirmation** was the last step — see "Immediate next steps".
+- **Not mine:** `src/renderer/character/gaze.ts` + `gaze.test.ts` show as modified in the working tree but are **pre-existing uncommitted WIP — NOT in this branch's commits and NOT in PR #135.** I never staged or touched them; don't fold them into this PR (they'd smuggle in an unrelated gaze-behavior change). `git diff main...HEAD` confirms the PR contains only the pointing work.
 
 ## What shipped (files, grounded in the real code)
 
@@ -21,7 +21,7 @@ The **paw-on-the-pixel** wedge is **built, green, and computer-use-verified end-
 | `src/vision/index.ts` | `captureScreen()` now also returns the JPEG `width`/`height` (from sharp) so pixel grounding boxes can be normalized per-axis. |
 | `src/brain/locateGate.ts` | Deterministic routing (mirrors `clarifyGate`). Forces `capture_screen` + `args.locate` for **unambiguous** pointing intents (`point at/to`, `show me where`) OR `where is X <ui-noun>` **with explicit screen context**. Screen-reading and code questions fall through. |
 | `src/main/pointerOverlay.ts` | The pointing surface: a dedicated desktop-wide, transparent, **OS-click-through** (`setIgnoreMouseEvents(true,{forward:true})`), focus-less, screen-saver-level overlay covering the primary display. Draws a transient ring+paw via `executeJavaScript` (no preload/IPC/2nd renderer). `showInactive()` + re-assert bounds so it paints and covers the menu bar. Low confidence → wide "around here" halo. Torn down on quit. |
-| `src/main/orchestrator.ts` | Wires it into the existing `capture_screen` branch. **Fast locate path** (`args.locate`): ONE vision call — ground → point → short answer, skipping caption+re-decide. Grounding is **fail-loud** there (errors → `run.failed`, not masked as not-found); **Stop honored** after the awaits. Non-locate screen turns get a best-effort courtesy paw alongside the caption. |
+| `src/main/orchestrator.ts` | Wires it into the existing `capture_screen` branch. **Fast locate path** (`args.locate`): ONE vision call — ground → point → short answer, skipping caption+re-decide. Grounding is **fail-loud** there (errors → `run.failed`, not masked as not-found); **Stop honored** after the awaits. **Non-locate** screen turns ("what's this error on my screen") just caption — **no paw, no grounding** (a second call on the same serialized vision model would slow the answer). |
 | `src/main/siblings.ts` | `BrainModule.groundTarget` + `CaptureResult` dims threaded. |
 | `src/main.ts` | `destroyPointerOverlay()` on `will-quit`. |
 | tests | `src/brain/groundTarget.test.ts` (12), `src/shared/pointing.test.ts` (5), `src/brain/locateGate.test.ts` (5), `src/main/orchestrator.locate.test.ts` (4 — happy / null / fail-loud / Stop). |
@@ -36,11 +36,11 @@ The **paw-on-the-pixel** wedge is **built, green, and computer-use-verified end-
 
 ## Immediate next steps
 
-1. **Read the round-3 codex verdict.** It was running at handoff. Re-run if needed:
+1. **Confirm the review is clean.** Four rounds are done (findings all fixed + regression-tested). Run one final confirmation:
    ```
    cd /Users/jinchoi/Code/roro && codex review --base main
    ```
-   (codex leaves you on your branch; earlier runs returned cleanly to `feat/paw-on-the-pixel`.) The two prior rounds' findings (locate over-match ×2, prompt/parser scale, fail-loud, Stop) are all fixed + regression-tested — round 3 should be clean or only surface the known follow-ups below. Fix anything real the same way (root cause + a test that fails against the old code), commit, re-review until clean.
+   (codex leaves you on your branch; every run returned cleanly to `feat/paw-on-the-pixel`.) Late rounds tend to drift to doc-lag (comments describing pre-fix behavior) rather than new bugs. Adjudicate each finding against the code — fix real ones (root cause + a test that fails against the old code), skip false-positives with a one-line reason.
 2. **Merge decision is the user's.** Once review is clean, the wedge is mergeable. PR #135.
 
 ## Known follow-ups (documented in the PR, not blockers)

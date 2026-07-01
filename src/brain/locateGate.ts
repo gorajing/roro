@@ -13,7 +13,7 @@ import type { Decision, DecideInput } from '../shared/brain';
 // no screen, code-ish) and "where is the login button implemented" (code phrasing) all fall through to the
 // model. "point at the save button" / "where is the merge button on my screen" route to the paw.
 //   isLocate = (POINTING with a screen target) OR (WHERE with screen context), minus code phrasing.
-const POINTING_PATTERN = /\b(point (at|to)|show me where)\b/;
+const POINTING_PATTERN = /\b(point (at|to)|show me where|locate)\b/;
 const WHERE_PATTERN = /\bwhere (is|are|s)\b/;
 const UI_NOUN_PATTERN =
   /\b(button|icon|menu|tab|field|link|toggle|checkbox|dropdown|logo|thumbnail|toolbar|window|dialog|banner|slider|cursor|scrollbar)s?\b/;

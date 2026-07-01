@@ -13,6 +13,7 @@ describe('captureForLocateRequest — deterministic capture_screen routing for p
       'where is the merge button on my screen', // "where is X <ui-noun>" needs screen context
       'where are the tabs on the screen',       // plural UI noun + screen context
       'where is the settings icon on the display',
+      'locate the save button', // the literal "locate" verb (matches the capture_screen contract)
     ]) {
       const d = at(q);
       expect(d, q).not.toBeNull();
