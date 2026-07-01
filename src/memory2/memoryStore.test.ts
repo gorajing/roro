@@ -189,6 +189,19 @@ describe('memoryStore — unified API + cursor-based reconciliation', () => {
     } finally { await store.close(); }
   });
 
+  it('recall MARKS the recency-guaranteed heads guaranteed:true so callers can never floor them away', async () => {
+    const store = await createMemoryStore({ dir, embed, dim: DIM });
+    try {
+      for (let i = 0; i < 5; i++) await store.remember({ tier: 'episode', ownerId: 'o1', text: `topic detail ${i}` });
+      await store.remember({ tier: 'episode', ownerId: 'o1', text: 'newest unrelated thing' });
+      const hits = await store.recall({ query: 'topic detail', ownerId: 'o1', k: 3 });
+      const newest = hits.find((h) => h.entry.text === 'newest unrelated thing');
+      expect(newest?.guaranteed).toBe(true);
+      // and the guarantee is not sprayed over everything — cosine-ranked survivors are not "guaranteed"
+      expect(hits.some((h) => h.guaranteed === false)).toBe(true);
+    } finally { await store.close(); }
+  });
+
   it('temporal recall surfaces the newest episode even amid many strong cosine matches (competition)', async () => {
     const store = await createMemoryStore({ dir, embed, dim: DIM });
     try {

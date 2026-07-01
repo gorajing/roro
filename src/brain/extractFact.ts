@@ -127,8 +127,9 @@ function normalizeKey(key: string): string {
 // collapses behavioral habits to this — observed live). Reject them → null (the safe direction: a missed
 // fact is harmless, a wrong one poisons the profile). A CLOSED allowlist-of-garbage matched by WHOLE-STRING
 // equality on the trimmed+lowercased value — so "no" is rejected but "no semicolons" / "node 20" / "1 space"
-// are kept (no legitimate preference value is a single bare boolean/placeholder token). Keep this set
-// identical to USELESS_VALUES in src/brain/eval/score.ts so the eval's classification matches the runtime guard.
+// are kept (no legitimate preference value is a single bare boolean/placeholder token). This is the ONLY
+// copy of the set: the eval (src/brain/eval/score.ts) deliberately does NOT re-check it — the guard nulls
+// garbage before the eval could see it, so the eval scores the honest downstream outcome (missed_fact).
 const USELESS_VALUES = new Set([
   'true', 'false', 'yes', 'no', 'y', 'n',
   'n/a', 'na', 'none', 'null', 'nil', 'undefined', '0', '1',

@@ -67,3 +67,18 @@ describe('clarifyForReferentlessRequest', () => {
     }
   });
 });
+
+describe('memory-format contract round-trip (composer <-> inspector)', () => {
+  it('the gate recognizes exactly what memoryContext composes — the two can never desynchronize', async () => {
+    // The composer lives in src/main, the inspector in src/brain; they now share the header constant.
+    // This round-trip pins the WHOLE format (header + bullet lines), not just the header token.
+    const { composeMemoryContext } = await import('../main/memoryContext');
+    const episode = {
+      id: 'e', owner_id: 'o', session_id: 's', kind: 'observation', text: 'we added a logout route',
+      payload: {}, superseded: false, created_at: '2026-07-01T00:00:00Z', similarity: 0.9, guaranteed: false,
+    };
+    const composed = composeMemoryContext([], [episode]);
+    expect(__test.hasRelatedPastContext(composed)).toBe(true);
+    expect(__test.hasRelatedPastContext('KNOWN ABOUT THIS USER:\n- prefers pnpm')).toBe(false);
+  });
+});

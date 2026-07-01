@@ -159,10 +159,10 @@ export async function createMemory2Adapter(opts: Memory2AdapterOpts): Promise<Me
       const k = normalizeK(input.k);
       const hits = await store.recall({ query: input.query, ownerId: input.ownerId, k, repoId: input.repoId });
       // similarity = RAW cosine (the old contract's meaning); recency-only rows have none -> 0. The hybrid
-      // improvement lives in the result ORDER (blend-ranked), not in this field. NOTE for the wiring step:
-      // the caller's cosine floor (memoryContext.ts) must be reconciled with the recency guarantee — a
-      // recency-only row carries cosine 0 and would be dropped by a >0.3 cosine filter.
-      return hits.map((h) => ({ ...entryToRow(h.entry), similarity: h.cosine ?? 0 }));
+      // improvement lives in the result ORDER (blend-ranked). `guaranteed` carries the store's recency
+      // promise through the contract so caller-side similarity floors exempt those rows BY TYPE (they
+      // carry cosine 0 and a naive floor would drop exactly them).
+      return hits.map((h) => ({ ...entryToRow(h.entry), similarity: h.cosine ?? 0, guaranteed: h.guaranteed }));
     },
 
     async getProfile(ownerId: string): Promise<MemoryRow[]> {

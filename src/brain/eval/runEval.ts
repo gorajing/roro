@@ -97,13 +97,23 @@ async function main(): Promise<void> {
   const behavioralSummary = summarize(behavioralRows.map((r) => r.mode));
   console.log(`\n[eval] BEHAVIORAL value-quality ${pct(behavioralSummary.accuracy)} (${behavioralSummary.ok}/${behavioralSummary.total})  ${JSON.stringify(behavioralSummary.byMode)}`);
 
-  // Baseline = the summaries only (stable, diffable). Non-deterministic at temperature>0, so it's a SNAPSHOT
-  // reference for spotting regressions, not a fixture. Only written on a FULL run (not EVAL_SET=behavioral).
+  // Results = the summaries only (stable, diffable). Non-deterministic at temperature>0, so a run is a
+  // SNAPSHOT, not a fixture. Every full run writes latest.json (untracked scratch); baseline.json — the
+  // checked-in reference other runs are judged against — is ONLY written with an explicit
+  // `--write-baseline` flag. The old behavior overwrote the baseline in place on every run, so a lucky
+  // run silently raised the bar and an unlucky diff read as a regression.
   if (!onlyBehavioral && decideSummary && extractSummary) {
-    const baseline = { brain: describeBrain(), decide: decideSummary, extract: extractSummary, behavioral: behavioralSummary };
-    const out = join(process.cwd(), 'src/brain/eval/baseline.json');
-    writeFileSync(out, JSON.stringify(baseline, null, 2) + '\n');
-    console.log(`\n[eval] wrote ${out}`);
+    const results = { brain: describeBrain(), decide: decideSummary, extract: extractSummary, behavioral: behavioralSummary };
+    const latest = join(process.cwd(), 'src/brain/eval/latest.json');
+    writeFileSync(latest, JSON.stringify(results, null, 2) + '\n');
+    console.log(`\n[eval] wrote ${latest}`);
+    if (process.argv.includes('--write-baseline')) {
+      const out = join(process.cwd(), 'src/brain/eval/baseline.json');
+      writeFileSync(out, JSON.stringify(results, null, 2) + '\n');
+      console.log(`[eval] BASELINE UPDATED: ${out} (explicit --write-baseline)`);
+    } else {
+      console.log('[eval] baseline.json untouched — pass --write-baseline to update the reference');
+    }
   }
 }
 
