@@ -13,11 +13,13 @@ export class Gaze {
 
   /**
    * @param ease    per-step approach fraction (0..1). Higher = snappier.
-   * @param maxLook largest eye offset in grid-pixels.
+   * @param maxLook largest eye offset in grid-pixels. Defaults to a half pixel
+   *                so extreme cursor targets do not push the eyes outside the
+   *                side-facing placeholder head.
    */
   constructor(
     private readonly ease = 0.18,
-    private readonly maxLook = 1,
+    private readonly maxLook = 0.5,
   ) {}
 
   /** Set the gaze target; null returns the gaze to centre. */
@@ -30,9 +32,10 @@ export class Gaze {
   step(): { lookX: number; lookY: number } {
     this.curX += (this.tgtX - this.curX) * this.ease;
     this.curY += (this.tgtY - this.curY) * this.ease;
+    const snap = (v: number) => Math.round(v * 2) / 2;
     return {
-      lookX: Math.round(this.curX * this.maxLook),
-      lookY: Math.round(this.curY * this.maxLook),
+      lookX: snap(this.curX * this.maxLook),
+      lookY: snap(this.curY * this.maxLook),
     };
   }
 }
