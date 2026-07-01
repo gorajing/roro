@@ -1,37 +1,21 @@
-// src/renderer/voice/voicePacks.ts — the voice-pack catalog + selection (Phase 5, the cosmetics bridge).
+// src/renderer/voice/voicePacks.ts — voice-pack selection runtime (Phase 5, the cosmetics bridge).
 //
-// Voice packs are roro's first monetizable COSMETIC: a free default voice (af_heart) + paid bundles. Each
-// pack is a Kokoro voice id (the style .bin is fetched on demand by kokoroSynthesize.ts), with display +
-// tier metadata for the future store. The engine already takes an injected voiceId: () => string; Phase 5
-// makes that selection a real, validated, runtime-switchable thing.
+// Voice packs are roro's first monetizable COSMETIC: a free default voice (af_heart) + paid bundles. The
+// CATALOG itself (VoicePack type + VOICE_PACKS data) lives in src/shared/voicePacks.ts — a data-only module
+// the cosmetics store also reads, so the store never depends on the voice subsystem (the seam that lets
+// src/renderer/voice move into its own package). THIS file is the runtime side: validated lookup + a
+// runtime-switchable selection feeding the engine's injected voiceId: () => string. The shared exports are
+// re-exported here so voice-side consumers keep a single import path.
 //
 // ENTITLEMENT IS OUT OF SCOPE here: the `tier` field is the DATA the store will render and gate on, but no
 // purchase/ownership check exists yet (the store is gated by the cosmetics willingness-to-pay validation).
 // All catalogued voices are selectable today; entitlement slots in at createVoiceSelection.set() later.
 
-export type VoiceTier = 'free' | 'paid';
+import { DEFAULT_VOICE_ID, VOICE_PACKS } from '../../shared/voicePacks';
+import type { VoicePack } from '../../shared/voicePacks';
 
-export interface VoicePack {
-  /** Kokoro voice id (e.g. 'af_heart'); the voices/<id>.bin is fetched on demand. */
-  id: string;
-  /** Display name for the store / picker. */
-  name: string;
-  tier: VoiceTier;
-  accent: 'us' | 'gb';
-  gender: 'f' | 'm';
-}
-
-export const DEFAULT_VOICE_ID = 'af_heart'; // the A-graded en-us default; free, always available
-
-// A curated catalog of real Kokoro-82M v1.0 voices. af_heart is free; the rest are the paid bundle (the
-// cosmetics hook). Kept small + hand-picked rather than exposing all 55 — quality over quantity.
-export const VOICE_PACKS: readonly VoicePack[] = [
-  { id: 'af_heart', name: 'Heart', tier: 'free', accent: 'us', gender: 'f' },
-  { id: 'af_bella', name: 'Bella', tier: 'paid', accent: 'us', gender: 'f' },
-  { id: 'am_michael', name: 'Michael', tier: 'paid', accent: 'us', gender: 'm' },
-  { id: 'bf_emma', name: 'Emma', tier: 'paid', accent: 'gb', gender: 'f' },
-  { id: 'bm_george', name: 'George', tier: 'paid', accent: 'gb', gender: 'm' },
-];
+export type { VoiceTier, VoicePack } from '../../shared/voicePacks';
+export { DEFAULT_VOICE_ID, VOICE_PACKS } from '../../shared/voicePacks';
 
 const BY_ID = new Map(VOICE_PACKS.map((p) => [p.id, p]));
 
