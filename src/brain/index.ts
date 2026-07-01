@@ -21,6 +21,20 @@ export interface ScreenInput {
   mime: string;
 }
 
+/** A grounded target box, NORMALIZED to [0,1] (top-left x/y + size) relative to the captured image. */
+export interface GroundBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface GroundResult {
+  box: GroundBox;
+  /** the model's self-reported confidence in [0,1] (0.5 when unstated) — used to size the point halo. */
+  confidence: number;
+}
+
 export interface ModelIds {
   reason: string;
   vision: string;
@@ -321,6 +335,52 @@ export async function describeScreen(input: ScreenInput): Promise<string> {
   return content.trim();
 }
 
+// Ground a natural-language phrase to a box on the screenshot (the paw-on-the-pixel wedge). qwen2.5-VL
+// has native bbox grounding; we ask for plain JSON so the parse is model-agnostic and fail-safe.
+const GROUND_PROMPT = (phrase: string): string =>
+  `Look at this screenshot. Locate the single on-screen element the user means by: "${phrase}". ` +
+  `Respond with ONLY a JSON object and nothing else: ` +
+  `{"found": true|false, "box": [x0, y0, x1, y1], "confidence": 0.0-1.0}. ` +
+  `The box is a TIGHT rectangle around that element; x0,y0 is its top-left corner and x1,y1 its ` +
+  `bottom-right, each a fraction from 0 to 1 of the image width/height. ` +
+  `If you cannot confidently find it, respond {"found": false}.`;
+
+/** Ground `phrase` to a normalized box on the screenshot, or null when the model can't find it. Fail-loud
+ *  by design: a null (no box) makes roro show no paw / say "I can't find that" rather than point wrongly. */
+export async function groundTarget(input: ScreenInput, phrase: string): Promise<GroundResult | null> {
+  const models = getModelIds();
+  const prompt = GROUND_PROMPT(phrase);
+
+  if (brainProvider() === 'ollama') {
+    const content = await ollamaChat({
+      model: models.vision,
+      user: prompt,
+      images: [cleanImageB64(input)],
+      temperature: 0,
+      stream: false,
+    });
+    return parseGroundResponse(content);
+  }
+
+  const dataUri = toImageDataUri(input);
+  const response = await getNebiusClient().chat.completions.create({
+    model: models.vision,
+    temperature: 0,
+    max_tokens: 120,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: dataUri } },
+        ],
+      },
+    ],
+  });
+  const content = response.choices[0]?.message?.content;
+  return typeof content === 'string' ? parseGroundResponse(content) : null;
+}
+
 export async function embed(text: string): Promise<number[]>;
 export async function embed(text: string[]): Promise<number[][]>;
 export async function embed(text: string | string[]): Promise<number[] | number[][]> {
@@ -402,6 +462,56 @@ function parseDecision(raw: string): Decision {
     command,
     args: (args ?? {}) as Record<string, unknown>,
   };
+}
+
+/** Parse a grounding response ({"found":bool,"box":[x0,y0,x1,y1],"confidence":n}) into a normalized box,
+ *  or null when not found / malformed. FAIL-SAFE: any bad parse yields NO box (roro shows no paw) rather
+ *  than a confident wrong point. Tolerates 0-1000-scale boxes (a common VL convention) but not raw pixels. */
+export function parseGroundResponse(raw: string): GroundResult | null {
+  let json: string;
+  try {
+    json = extractJsonObject(raw);
+  } catch {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json) as unknown;
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  if (parsed.found === false) return null;
+
+  const b = parsed.box;
+  if (!Array.isArray(b) || b.length !== 4 || !b.every((n) => typeof n === 'number' && Number.isFinite(n))) {
+    return null;
+  }
+  let [x0, y0, x1, y1] = b as [number, number, number, number];
+
+  // Normalize scale: the prompt asks for 0-1 fractions, but VL models often emit 0-1000. Coords up to 1.5
+  // are treated as 0-1 with slight model overshoot (then clamped); clearly-large coords (>1.5, ≤1000) are
+  // rescaled from 0-1000; anything larger is raw pixels we can't normalize without image dims → fail safe.
+  const maxCoord = Math.max(x0, y0, x1, y1);
+  if (maxCoord > 1.5) {
+    if (maxCoord <= 1000) {
+      x0 /= 1000; y0 /= 1000; x1 /= 1000; y1 /= 1000;
+    } else {
+      return null;
+    }
+  }
+
+  const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
+  x0 = clamp01(x0); y0 = clamp01(y0); x1 = clamp01(x1); y1 = clamp01(y1);
+  const left = Math.min(x0, x1);
+  const top = Math.min(y0, y1);
+  const w = Math.abs(x1 - x0);
+  const h = Math.abs(y1 - y0);
+  if (w <= 0 || h <= 0) return null; // degenerate box — treat as not found
+
+  const confRaw = parsed.confidence;
+  const confidence = typeof confRaw === 'number' && Number.isFinite(confRaw) ? clamp01(confRaw) : 0.5;
+  return { box: { x: left, y: top, w, h }, confidence };
 }
 
 function extractJsonObject(raw: string): string {

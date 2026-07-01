@@ -16,6 +16,7 @@ import { guardDeferredEnv } from './shared/releaseChannel';
 import { registerIpcHandlers } from './main/ipc';
 import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorTracking } from './main/window';
 import { cancelAllRuns } from './main/orchestrator';
+import { destroyPointerOverlay } from './main/pointerOverlay';
 import { initOwnerId } from './main/identity';
 import { hydrateWorkdirConfig } from './main/configStore';
 import { loadMemory } from './main/siblings';
@@ -136,4 +137,5 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   unregisterShortcuts();
   cancelAllRuns();
+  destroyPointerOverlay();
 });

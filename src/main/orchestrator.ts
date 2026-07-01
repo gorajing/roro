@@ -21,7 +21,7 @@ import { newRunId, SCREEN_CAPTURE_STATUS_TEXT } from '../shared/events';
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import type { MemoryKind } from '../shared/memory';
 import { getExecutor } from '../executor';
-import { loadBrain, loadMemory, loadVision, type MemoryModule } from './siblings';
+import { loadBrain, loadMemory, loadVision, type MemoryModule, type BrainModule } from './siblings';
 import { getOwnerId } from './identity';
 import { buildRecallContext } from './memoryContext';
 import { extractAndStoreFact } from './factStore';
@@ -494,6 +494,25 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
  * the capture_screen re-decide reuses it rather than re-recalling (a second recall would
  * self-match the just-persisted transcript as top "RELATED PAST CONTEXT").
  */
+/** Best-effort paw-on-the-pixel: ground the phrase on the captured frame and point a paw at it. Never
+ *  throws — pointing is a courtesy on top of the answer, and it only READs the screen + POINTs (no action).
+ *  The pointerOverlay (which imports electron) is loaded dynamically so the orchestrator's node unit tests
+ *  don't statically pull in electron. */
+async function groundAndPoint(
+  brain: BrainModule,
+  img: { b64: string; mime: string },
+  phrase: string,
+): Promise<void> {
+  try {
+    const result = await brain.groundTarget(img, phrase);
+    if (!result) return; // fail-loud: no confident target → no paw
+    const { showPointForBox } = await import('./pointerOverlay');
+    await showPointForBox(result.box, result.confidence);
+  } catch {
+    /* pointing must never break the answer path */
+  }
+}
+
 async function actOnDecision(
   runId: string,
   input: TurnInput,
@@ -539,8 +558,13 @@ async function actOnDecision(
       let screen: string;
       try {
         const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
-        // Inject the brain's describeScreen so vision captures, then captions via Qwen2.5-VL.
-        screen = await vision.askScreen(transcript, (img) => brain.describeScreen(img));
+        // Inject describeScreen so vision captures ONCE, then captions via Qwen2.5-VL. On that SAME frame
+        // we ALSO ground the phrase and point a paw at it (the wedge) — best-effort and in parallel, so it
+        // never delays or fails the answer. READ-screen + POINT only (point-don't-act); one metered glance.
+        screen = await vision.askScreen(transcript, (img) => {
+          void groundAndPoint(brain, img, transcript);
+          return brain.describeScreen(img);
+        });
       } catch (err) {
         pushEvent({
           kind: 'run.failed',
