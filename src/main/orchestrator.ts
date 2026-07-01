@@ -500,16 +500,19 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
  *  don't statically pull in electron. */
 async function groundAndPoint(
   brain: BrainModule,
-  img: { b64: string; mime: string },
+  img: { b64: string; mime: string; width?: number; height?: number },
   phrase: string,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const result = await brain.groundTarget(img, phrase);
-    if (!result) return; // fail-loud: no confident target → no paw
+    if (!result) return false; // fail-loud: no confident target → no paw
     const { showPointForBox } = await import('./pointerOverlay');
     await showPointForBox(result.box, result.confidence);
-  } catch {
-    /* pointing must never break the answer path */
+    return true;
+  } catch (err) {
+    // Pointing must never break the answer path — but log the failure (fail-loud) rather than swallow it.
+    console.warn('[paw] grounding/point failed:', (err as Error).message);
+    return false;
   }
 }
 
@@ -555,6 +558,25 @@ async function actOnDecision(
         pushStopped(runId);
         return;
       }
+
+      // Fast locate path: a pure "point at X" turn (marked by the locate gate) grounds + points with ONE
+      // vision call and answers briefly — no caption + re-decide (which would double the vision latency).
+      if (decision.args.locate === true) {
+        let pointed = false;
+        try {
+          const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
+          const img = await vision.captureScreen();
+          pointed = await groundAndPoint(brain, img, transcript);
+        } catch (err) {
+          pushEvent({ kind: 'run.failed', runId, ok: false, error: `vision failed: ${(err as Error).message}`, ts: Date.now() });
+          pushRunEnd(runId);
+          return;
+        }
+        emitNarration(runId, pointed ? 'There it is.' : "I can't find that on your screen.");
+        pushRunEnd(runId);
+        return;
+      }
+
       let screen: string;
       try {
         const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);

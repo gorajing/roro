@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import { buildFactPrompt, parseFactResponse, isPlausiblePreference, FACT_SYSTEM_PROMPT, type FactExtractInput, type FactCandidate } from './extractFact';
 import { clarifyForReferentlessRequest } from './clarifyGate';
+import { captureForLocateRequest } from './locateGate';
 import { buildDecisionPrompt } from './decisionPrompt';
 import { ollamaChat, ollamaEmbed, ollamaTags, hasModel, resolveOllamaEmbedDim, assertEmbedDimMatch } from './ollama';
 
@@ -19,6 +20,9 @@ export interface DecideOptions {
 export interface ScreenInput {
   b64: string;
   mime: string;
+  /** Pixel dims of the image — lets groundTarget normalize a VL pixel-coordinate box back to [0,1]. */
+  width?: number;
+  height?: number;
 }
 
 /** A grounded target box, NORMALIZED to [0,1] (top-left x/y + size) relative to the captured image. */
@@ -108,8 +112,9 @@ RULES:
 - Put all technical detail in args.task, not in narration.
 - DEFAULT to "run_agent" for any coding, debugging, file, test, or build task — the executor reads and
   edits the project itself. Naming a file (e.g. "fix calc.py") is NOT a reason to capture the screen.
-- Choose "capture_screen" ONLY when the request refers to something VISIBLE ON SCREEN that is not in the
-  codebase — e.g. "what's this error on my screen", "look at what I'm seeing", a GUI/app/browser state.
+- Choose "capture_screen" when the request refers to something VISIBLE ON SCREEN that is not in the
+  codebase — e.g. "what's this error on my screen", "look at what I'm seeing", a GUI/app/browser state —
+  OR when asked to POINT AT / SHOW WHERE / LOCATE something on the screen (roro must SEE it to point).
 - Choose "clarify" when the request has no concrete target yet — e.g. "fix it", "make it better",
   "update it", "change the color", or "do that thing we talked about" with no relevant memory/screen.
   Ask exactly one question that would make the task executable.
@@ -188,6 +193,11 @@ export async function preflight(): Promise<PreflightResult> {
 export async function decide(input: DecideInput, options: DecideOptions = {}): Promise<Decision> {
   const clarification = clarifyForReferentlessRequest(input);
   if (clarification) return clarification;
+
+  // Paw-on-the-pixel: a clear on-screen "point at / where is X" intent deterministically routes to
+  // capture_screen (the 3B is unreliable at inferring it). Stands down once the screen is captured.
+  const locate = captureForLocateRequest(input);
+  if (locate) return locate;
 
   const models = getModelIds();
   const userPrompt = buildDecisionPrompt(input);
@@ -335,15 +345,15 @@ export async function describeScreen(input: ScreenInput): Promise<string> {
   return content.trim();
 }
 
-// Ground a natural-language phrase to a box on the screenshot (the paw-on-the-pixel wedge). qwen2.5-VL
-// has native bbox grounding; we ask for plain JSON so the parse is model-agnostic and fail-safe.
+// Ground a natural-language phrase to a box on the screenshot (the paw-on-the-pixel wedge). Uses
+// qwen2.5-VL's NATIVE grounding format (bbox_2d) — the model grounds far better when asked the way it was
+// trained than with a bespoke schema. Coordinates are requested normalized to 0-1000 so no image-dimension
+// threading is needed; parseGroundResponse handles that scale and fails safe on anything malformed.
 const GROUND_PROMPT = (phrase: string): string =>
-  `Look at this screenshot. Locate the single on-screen element the user means by: "${phrase}". ` +
-  `Respond with ONLY a JSON object and nothing else: ` +
-  `{"found": true|false, "box": [x0, y0, x1, y1], "confidence": 0.0-1.0}. ` +
-  `The box is a TIGHT rectangle around that element; x0,y0 is its top-left corner and x1,y1 its ` +
-  `bottom-right, each a fraction from 0 to 1 of the image width/height. ` +
-  `If you cannot confidently find it, respond {"found": false}.`;
+  `Locate "${phrase}" in this screenshot. Output ONLY a JSON object and nothing else: ` +
+  `{"bbox_2d": [x1, y1, x2, y2]} — the tight bounding box of that element, coordinates normalized to a ` +
+  `0-1000 scale where 0 is the left/top edge and 1000 is the right/bottom edge (x1,y1 = top-left corner, ` +
+  `x2,y2 = bottom-right). If that element is not visible on the screen, output {"bbox_2d": null}.`;
 
 /** Ground `phrase` to a normalized box on the screenshot, or null when the model can't find it. Fail-loud
  *  by design: a null (no box) makes roro show no paw / say "I can't find that" rather than point wrongly. */
@@ -359,7 +369,7 @@ export async function groundTarget(input: ScreenInput, phrase: string): Promise<
       temperature: 0,
       stream: false,
     });
-    return parseGroundResponse(content);
+    return parseGroundResponse(content, input.width, input.height);
   }
 
   const dataUri = toImageDataUri(input);
@@ -378,7 +388,7 @@ export async function groundTarget(input: ScreenInput, phrase: string): Promise<
     ],
   });
   const content = response.choices[0]?.message?.content;
-  return typeof content === 'string' ? parseGroundResponse(content) : null;
+  return typeof content === 'string' ? parseGroundResponse(content, input.width, input.height) : null;
 }
 
 export async function embed(text: string): Promise<number[]>;
@@ -467,7 +477,7 @@ function parseDecision(raw: string): Decision {
 /** Parse a grounding response ({"found":bool,"box":[x0,y0,x1,y1],"confidence":n}) into a normalized box,
  *  or null when not found / malformed. FAIL-SAFE: any bad parse yields NO box (roro shows no paw) rather
  *  than a confident wrong point. Tolerates 0-1000-scale boxes (a common VL convention) but not raw pixels. */
-export function parseGroundResponse(raw: string): GroundResult | null {
+export function parseGroundResponse(raw: string, imgW?: number, imgH?: number): GroundResult | null {
   let json: string;
   try {
     json = extractJsonObject(raw);
@@ -482,19 +492,22 @@ export function parseGroundResponse(raw: string): GroundResult | null {
   }
   if (!isRecord(parsed)) return null;
   if (parsed.found === false) return null;
+  if (parsed.bbox_2d === null) return null; // qwen2.5-VL "not visible" sentinel
 
-  const b = parsed.box;
+  const b = parsed.bbox_2d ?? parsed.box; // prefer the native bbox_2d, accept a plain box too
   if (!Array.isArray(b) || b.length !== 4 || !b.every((n) => typeof n === 'number' && Number.isFinite(n))) {
     return null;
   }
   let [x0, y0, x1, y1] = b as [number, number, number, number];
 
-  // Normalize scale: the prompt asks for 0-1 fractions, but VL models often emit 0-1000. Coords up to 1.5
-  // are treated as 0-1 with slight model overshoot (then clamped); clearly-large coords (>1.5, ≤1000) are
-  // rescaled from 0-1000; anything larger is raw pixels we can't normalize without image dims → fail safe.
+  // Normalize scale. Coords ≤1.5 are already 0-1 fractions (slight model overshoot; clamped below).
+  // Larger coords are qwen2.5-VL's native PIXEL coordinates of the input image → normalize PER-AXIS by the
+  // known image size. Without image dims, fall back to a 0-1000 scale; anything else is unnormalizable → null.
   const maxCoord = Math.max(x0, y0, x1, y1);
   if (maxCoord > 1.5) {
-    if (maxCoord <= 1000) {
+    if (imgW && imgH && imgW > 0 && imgH > 0) {
+      x0 /= imgW; x1 /= imgW; y0 /= imgH; y1 /= imgH;
+    } else if (maxCoord <= 1000) {
       x0 /= 1000; y0 /= 1000; x1 /= 1000; y1 /= 1000;
     } else {
       return null;
@@ -509,8 +522,10 @@ export function parseGroundResponse(raw: string): GroundResult | null {
   const h = Math.abs(y1 - y0);
   if (w <= 0 || h <= 0) return null; // degenerate box — treat as not found
 
+  // The native bbox_2d format carries no confidence; a returned box means the model located it, so default
+  // to a confident (tight-ring) value. An explicit low `confidence` (if a provider gives one) still widens.
   const confRaw = parsed.confidence;
-  const confidence = typeof confRaw === 'number' && Number.isFinite(confRaw) ? clamp01(confRaw) : 0.5;
+  const confidence = typeof confRaw === 'number' && Number.isFinite(confRaw) ? clamp01(confRaw) : 0.8;
   return { box: { x: left, y: top, w, h }, confidence };
 }
 

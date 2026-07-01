@@ -59,7 +59,7 @@ export interface BrainModule {
   describeScreen(input: { b64: string; mime: string }): Promise<string>;
   /** Ground a phrase to a normalized [0,1] box on the frame (paw-on-the-pixel), or null when not found. */
   groundTarget(
-    input: { b64: string; mime: string },
+    input: { b64: string; mime: string; width?: number; height?: number },
     phrase: string,
   ): Promise<{ box: { x: number; y: number; w: number; h: number }; confidence: number } | null>;
   embed(input: string | string[]): Promise<number[] | number[][]>;
@@ -95,6 +95,9 @@ export interface MemoryModule {
 export interface CaptureResult {
   b64: string;
   mime: string;
+  /** Pixel dims of the (downscaled) capture — used to normalize a VL grounding box back to [0,1]. */
+  width?: number;
+  height?: number;
 }
 
 /** Callback the vision module invokes to caption a captured frame (the brain's describeScreen). */

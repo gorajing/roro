@@ -18,6 +18,9 @@ const NEAR_BLACK_STDEV = 2;
 export interface ScreenImage {
   b64: string;
   mime: 'image/jpeg';
+  /** Pixel dimensions of the (downscaled) JPEG — needed to normalize a VL grounding box back to [0,1]. */
+  width: number;
+  height: number;
 }
 
 export class BlackFrameError extends Error {
@@ -58,18 +61,20 @@ export async function captureScreen(): Promise<ScreenImage> {
       );
     }
 
-    const jpeg = await sharp(png)
+    const { data: jpeg, info } = await sharp(png)
       .resize({
         width: MAX_CAPTURE_WIDTH,
         fit: 'inside',
         withoutEnlargement: true,
       })
       .jpeg({ quality: JPEG_QUALITY, mozjpeg: true })
-      .toBuffer();
+      .toBuffer({ resolveWithObject: true });
 
     return {
       b64: jpeg.toString('base64'),
       mime: 'image/jpeg',
+      width: info.width,
+      height: info.height,
     };
   } finally {
     await unlink(pngPath).catch(() => undefined);

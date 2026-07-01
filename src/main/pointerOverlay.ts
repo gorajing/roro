@@ -89,6 +89,10 @@ export function ensurePointerOverlay(): BrowserWindow {
   overlay.setAlwaysOnTop(true, 'screen-saver');
   overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlay.setIgnoreMouseEvents(true, { forward: true }); // OS click-through: never blocks the app underneath
+  // Re-assert full-display bounds AFTER raising the level: at normal level macOS pushes the window below
+  // the menu bar (a ~30px Y shift); at screen-saver level it can cover the whole display incl. the menu bar.
+  overlay.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height });
+  overlay.showInactive(); // paint it on-screen without stealing focus from the app underneath
   loaded = false;
   overlay.webContents.once('did-finish-load', () => { loaded = true; });
   overlay.on('closed', () => { overlay = null; loaded = false; });

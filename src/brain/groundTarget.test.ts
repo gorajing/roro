@@ -18,12 +18,35 @@ describe('parseGroundResponse — phrase→box grounding parser', () => {
     expect(parseGroundResponse('{"found": false}')).toBeNull();
   });
 
-  it('normalizes a 0-1000-scale box (common VL convention)', () => {
-    const r = parseGroundResponse('{"found": true, "box": [200, 100, 600, 400]}');
+  it('parses qwen2.5-VL native bbox_2d in 0-1000 scale', () => {
+    const r = parseGroundResponse('{"bbox_2d": [200, 100, 600, 400]}');
     expect(r).not.toBeNull();
     expect(r!.box.x).toBeCloseTo(0.2);
     expect(r!.box.w).toBeCloseTo(0.4);
-    expect(r!.confidence).toBeCloseTo(0.5); // unstated → 0.5
+    expect(r!.confidence).toBeCloseTo(0.8); // unstated → confident (a returned box means it was located)
+  });
+
+  it('returns null for the qwen "not visible" sentinel {"bbox_2d": null}', () => {
+    expect(parseGroundResponse('{"bbox_2d": null}')).toBeNull();
+  });
+
+  it('normalizes qwen pixel coords per-axis using the image dimensions (the real observed output)', () => {
+    // The model boxed the whole ~1280x720 screen with slight overshoot; clamps to the full frame.
+    const r = parseGroundResponse('```json\n{"bbox_2d": [0, 0, 1287, 728]}\n```', 1280, 720);
+    expect(r).not.toBeNull();
+    expect(r!.box.x).toBe(0);
+    expect(r!.box.y).toBe(0);
+    expect(r!.box.w).toBeCloseTo(1);
+    expect(r!.box.h).toBeCloseTo(1);
+  });
+
+  it('grounds a small element from pixel coords + dims (per-axis normalization)', () => {
+    const r = parseGroundResponse('{"bbox_2d": [960, 72, 1040, 108]}', 1280, 720);
+    expect(r).not.toBeNull();
+    expect(r!.box.x).toBeCloseTo(0.75); // 960/1280
+    expect(r!.box.y).toBeCloseTo(0.1);  // 72/720
+    expect(r!.box.w).toBeCloseTo(80 / 1280);
+    expect(r!.box.h).toBeCloseTo(36 / 720);
   });
 
   it('strips a ```json fence before parsing', () => {
