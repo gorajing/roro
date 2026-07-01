@@ -1,9 +1,9 @@
 // src/renderer/character/driver.ts — the CharacterDriver facade.
 //
-// Wraps AvatarStateMachine + AmplitudeLipSync behind the model-agnostic
+// Wraps AvatarStateMachine + AmplitudeLipSync behind the character-agnostic
 // CharacterDriver surface. Voice and the action-event pipeline only ever see
-// setState / setActivity / setMouthOpen / setTalking / speak. Whether a real
-// Live2D model or the placeholder is mounted is invisible to them.
+// setState / setActivity / setMouthOpen / setTalking / speak — the pixel cat
+// is an implementation detail behind this seam.
 
 import { createAvatar, type Avatar } from './avatar';
 import { AvatarStateMachine } from './stateMachine';
@@ -12,11 +12,9 @@ import type { ActivityCue, CharacterDriver } from './types';
 import type { AvatarState } from '../../shared/avatar';
 import type { GazeTarget } from '../../shared/gaze';
 
-class Live2DCharacterDriver implements CharacterDriver {
+class CatCharacterDriver implements CharacterDriver {
   private readonly sm: AvatarStateMachine;
   private readonly lipsync: AmplitudeLipSync;
-  /** True while a pre-rendered speak() clip plays; amplitude is suppressed then. */
-  private speaking = false;
 
   constructor(private readonly avatar: Avatar) {
     this.sm = new AvatarStateMachine(avatar);
@@ -35,82 +33,55 @@ class Live2DCharacterDriver implements CharacterDriver {
   }
 
   setActivity(cue: ActivityCue | null): void {
-    this.avatar.placeholder?.setActivity(cue);
+    this.avatar.cat.setActivity(cue);
   }
 
   setMouthOpen(v: number): void {
-    // While a speak() clip drives the mouth itself, ignore live amplitude so the
-    // two paths don't fight over ParamMouthOpenY.
-    if (this.speaking) return;
     this.lipsync.setAmplitude(v);
   }
 
   setTalking(talking: boolean): void {
     // The 6 canonical states have no 'talking'; we keep state untouched and use
-    // this only as a hook (and to rest the mouth closed when talk ends). When a
-    // real model is present its talking body motion is implicit in the current
-    // state; the placeholder uses this for its speech signal and mouth rest.
-    this.avatar.placeholder?.setTalking(talking);
+    // this only as a hook (and to rest the mouth closed when talk ends). The cat
+    // uses it for its speech signal and mouth rest.
+    this.avatar.cat.setTalking(talking);
     if (!talking) this.lipsync.setAmplitude(0);
   }
 
   setMuted(muted: boolean): void {
-    this.avatar.placeholder?.setMuted(muted);
+    this.avatar.cat.setMuted(muted);
     if (muted) this.lipsync.setAmplitude(0);
   }
 
   setGaze(target: GazeTarget | null): void {
-    this.avatar.placeholder?.setGaze(target);
+    this.avatar.cat.setGaze(target);
   }
 
   pet(): void {
-    this.avatar.placeholder?.pet();
+    this.avatar.cat.pet();
   }
 
   poke(): void {
-    this.avatar.placeholder?.poke();
+    this.avatar.cat.poke();
   }
 
   setBusy(busy: boolean): void {
-    this.avatar.placeholder?.setBusy(busy);
+    this.avatar.cat.setBusy(busy);
   }
 
   setInCall(active: boolean): void {
-    this.avatar.placeholder?.setInCall(active);
+    this.avatar.cat.setInCall(active);
   }
 
   speak(audioUrl: string, onFinish?: () => void): void {
-    const model = this.avatar.model;
-    if (!model || typeof model.speak !== 'function') {
-      // No model (placeholder): can't lip-sync a clip; just fire onFinish so
-      // callers' state transitions still proceed. (Audio playback itself is the
-      // voice layer's concern via the on-device TTS; this path is only for the
-      // model.speak lip-sync integration.)
-      onFinish?.();
-      return;
-    }
-    this.speaking = true;
-    void model.speak(audioUrl, {
-      volume: 1.0,
-      resetExpression: true,
-      crossOrigin: 'anonymous',
-      onFinish: () => {
-        this.speaking = false;
-        onFinish?.();
-      },
-      onError: (e: Error) => {
-        this.speaking = false;
-        console.error('[avatar] speak error', e);
-      },
-    });
+    // The cat has no clip-driven lip-sync (audio playback is the voice layer's
+    // concern; live amplitude arrives via setMouthOpen). Fire onFinish so
+    // callers' state transitions still proceed.
+    void audioUrl;
+    onFinish?.();
   }
 
   stopSpeaking(): void {
-    const model = this.avatar.model;
-    if (model && typeof model.stopSpeaking === 'function') {
-      model.stopSpeaking();
-    }
-    this.speaking = false;
     this.lipsync.setAmplitude(0);
   }
 }
@@ -118,17 +89,15 @@ class Live2DCharacterDriver implements CharacterDriver {
 export interface Character {
   driver: CharacterDriver;
   avatar: Avatar;
-  /** True when a real Live2D model is mounted (false => placeholder). */
-  hasModel: boolean;
 }
 
 /**
- * Build the avatar + its CharacterDriver. Resolves even when no model file is
- * present (placeholder path) so the rest of the renderer always has a driver.
+ * Build the avatar + its CharacterDriver. Always resolves — the pixel cat is
+ * procedural, so the rest of the renderer always has a driver.
  */
-export async function createCharacter(canvas: HTMLCanvasElement, modelUrl: string): Promise<Character> {
-  const avatar = await createAvatar(canvas, modelUrl);
-  const driver = new Live2DCharacterDriver(avatar);
+export async function createCharacter(canvas: HTMLCanvasElement): Promise<Character> {
+  const avatar = await createAvatar(canvas);
+  const driver = new CatCharacterDriver(avatar);
   driver.setState('idle');
-  return { driver, avatar, hasModel: avatar.hasModel };
+  return { driver, avatar };
 }

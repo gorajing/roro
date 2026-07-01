@@ -1,7 +1,8 @@
 // src/renderer/character/types.ts — the public facade the rest of the renderer
-// targets. Voice and the action-event pipeline NEVER touch Pixi/Live2D directly;
-// they only call CharacterDriver. This is what makes the renderer model-agnostic:
-// a real Live2D model and the placeholder both implement this identical surface.
+// targets. Voice and the action-event pipeline NEVER touch Pixi directly; they
+// only call CharacterDriver. This is the deliberate swap seam: the pixel cat is
+// the shipped implementation, and any future character must present this same
+// surface.
 
 import type { AvatarState } from '../../shared/avatar';
 import type { GazeTarget } from '../../shared/gaze';
@@ -42,12 +43,11 @@ export interface CharacterDriver {
    * Optional: gate the "talking" body animation on/off. The 6 canonical states
    * have no 'talking' member, so assistant-speech boundaries (on-device TTS
    * speech-start/speech-end) toggle this instead of inventing a 7th state.
-   * No-op for the placeholder beyond a visual cue.
    */
   setTalking(talking: boolean): void;
   /** Presentation-mode input gate: show whether the user's mic is muted. */
   setMuted(muted: boolean): void;
-  /** Point the eyes toward a normalized cursor target; null re-centres. No-op for a real model. */
+  /** Point the eyes toward a normalized cursor target; null re-centres. */
   setGaze?(target: GazeTarget | null): void;
   /** Trigger a one-shot happy "petted" reaction (ears perk, tail flick, sparkle). */
   pet?(): void;
@@ -57,7 +57,7 @@ export interface CharacterDriver {
   setBusy?(busy: boolean): void;
   /** A live voice call is active (keeps the cat awake). */
   setInCall?(active: boolean): void;
-  /** Play a pre-rendered narration clip with built-in lip-sync (model.speak). */
+  /** Play a pre-rendered narration clip with built-in lip-sync. */
   speak?(audioUrl: string, onFinish?: () => void): void;
   /** Stop any speak() playback. */
   stopSpeaking?(): void;

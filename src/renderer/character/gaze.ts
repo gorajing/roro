@@ -15,7 +15,7 @@ export class Gaze {
    * @param ease    per-step approach fraction (0..1). Higher = snappier.
    * @param maxLook largest eye offset in grid-pixels. Defaults to a half pixel
    *                so extreme cursor targets do not push the eyes outside the
-   *                side-facing placeholder head.
+   *                cat's side-facing head.
    */
   constructor(
     private readonly ease = 0.18,

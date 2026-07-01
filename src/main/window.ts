@@ -43,7 +43,6 @@ export function createWindow(): BrowserWindow {
   // voice stack, or the debug bridge — regardless of launch env. On dev/smoke builds it passes through.
   const env = guardDeferredEnv(process.env);
   const roroCfg = {
-    modelUrl: env.LIVE2D_MODEL_URL ?? '',
     floatingWindow: FLOATING_WINDOW_FLAG, // not deferred-v0 (window mode); read straight from process.env
     // On-device voice dev flags — the renderer's only activation path (config.ts reads window.RORO_CFG, and
     // its viteEnv() is a deliberate no-op). RORO_STT_VOICE=1 npm start → real VAD + whisper STT; RORO_VAD_VOICE

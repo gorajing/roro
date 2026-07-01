@@ -81,18 +81,9 @@ const forbidden = [
     prefix: '/.vite/renderer/main_window/models',
   },
   {
-    label: 'Live2D model/runtime assets',
-    prefix: '/.vite/renderer/main_window/live2d',
-  },
-  {
     label: 'voice dynamic chunks',
     prefix: '/.vite/renderer/main_window/assets/',
     pattern: /\/(?:sileroVad|whisperTranscribe|kokoroSynthesize|kokoroVoiceEngine|onnxRuntimeEnv)-.*\.js$|\/ort-wasm-simd-threaded\.jsep-.*\.wasm$/,
-  },
-  {
-    label: 'Live2D dynamic chunks',
-    prefix: '/.vite/renderer/main_window/assets/',
-    pattern: /\/[^/]*(?:live2d|cubism)[^/]*$/i,
   },
 ];
 

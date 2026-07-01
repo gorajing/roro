@@ -17,7 +17,7 @@ import type { RoroConfig } from './config';
 
 declare global {
   interface Window {
-    /** Renderer-safe runtime config placeholder (Live2D model path + non-secret feature flags). */
+    /** Renderer-safe runtime config (non-secret feature flags + window mode). */
     RORO_CFG?: Partial<RoroConfig>;
     /** @deprecated legacy alias of RORO_CFG — still read for back-compat. */
     COMPANION_CFG?: Partial<RoroConfig>;

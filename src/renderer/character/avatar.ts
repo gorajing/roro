@@ -1,20 +1,21 @@
 // src/renderer/character/avatar.ts — the canvas/mount layer.
 //
-// createAvatar() renders Roro's procedural pixel cat by default. Internal builds
-// can opt into a Cubism 4 Live2D model by supplying modelUrl; if the runtime or
-// model fails to load, we fall back to the same placeholder shape so the state
-// machine, lip-sync, and CharacterDriver facade stay identical.
+// createAvatar() mounts Roro's procedural pixel cat — the product's character —
+// on the given canvas and returns the Avatar handle the state machine, lip-sync,
+// and CharacterDriver facade drive.
 
+// Self-installing patch: replaces PIXI's ShaderSystem uniform-sync codegen (which
+// uses `new Function`) with a static interpreter, so rendering works without
+// 'unsafe-eval' in the CSP.
 import '@pixi/unsafe-eval';
 import * as PIXI from 'pixi.js';
-import type { Live2DModel as Live2DModelType } from 'pixi-live2d-display-lipsyncpatch';
 import type { AvatarState } from '../../shared/avatar';
 import type { GazeTarget } from '../../shared/gaze';
 import type { ActivityCue } from './types';
 import { Gaze } from './gaze';
 import { Activity, type Energy } from './activity';
 import { framePolicy } from './framePolicy';
-import { placeholderHeadOriginForAction, type PlaceholderCatAction } from './placeholderGeometry';
+import { catHeadOriginForAction, type CatAction } from './catGeometry';
 import { derivePetState } from './petState';
 import { petExpression } from './petExpression';
 
@@ -26,23 +27,14 @@ const FLOATING_FIT = {
   maxScale: 1.12,
 } as const;
 
-// REQUIRED by the plugin: it reads window.PIXI.Ticker to auto-update models, and
-// for some bundlers grabs other PIXI internals. Must be set before from().
-(window as unknown as { PIXI: typeof PIXI }).PIXI = PIXI;
-type Live2DModule = typeof import('pixi-live2d-display-lipsyncpatch');
-
 export interface Avatar {
   app: PIXI.Application;
-  /** The loaded Live2D model, or null when running the placeholder. */
-  model: Live2DModelType | null;
-  /** The placeholder display object, or null when a real model loaded. */
-  placeholder: Placeholder | null;
-  /** True when a real Live2D model is mounted. */
-  readonly hasModel: boolean;
+  /** The procedural pixel cat mounted on the stage. */
+  cat: Cat;
 }
 
-/** A state-aware fallback avatar shown when no model is available. */
-export interface Placeholder {
+/** The state-aware procedural pixel cat — Roro's shipped character. */
+export interface Cat {
   container: PIXI.Container;
   aura: PIXI.Graphics;
   body: PIXI.Container;
@@ -75,57 +67,11 @@ export interface Placeholder {
   debugSetEnergy(energy: Energy | null): void;
 }
 
-async function modelExists(url: string): Promise<boolean> {
-  if (!url.trim()) return false;
-  try {
-    // HEAD avoids downloading the model just to probe. Some static servers don't
-    // support HEAD; fall back to a ranged GET on failure.
-    const head = await fetch(url, { method: 'HEAD' });
-    if (head.ok) return true;
-    if (head.status === 405 || head.status === 501) {
-      const get = await fetch(url, { headers: { Range: 'bytes=0-0' } });
-      return get.ok;
-    }
-    return false;
-  } catch {
-    // Network/path error => treat as absent so we render the placeholder.
-    return false;
-  }
-}
-
-async function loadLive2DCore(): Promise<boolean> {
-  if (typeof (window as unknown as { Live2DCubismCore?: unknown }).Live2DCubismCore !== 'undefined') return true;
-
-  return new Promise((resolve) => {
-    const script = document.createElement('script');
-    script.src = '/live2d/live2dcubismcore.min.js';
-    script.async = true;
-    script.onload = () => resolve(typeof (window as unknown as { Live2DCubismCore?: unknown }).Live2DCubismCore !== 'undefined');
-    script.onerror = () => resolve(false);
-    document.head.append(script);
-  });
-}
-
-async function loadLive2D(): Promise<Live2DModule | null> {
-  try {
-    const mod = await import('pixi-live2d-display-lipsyncpatch');
-    // Belt-and-suspenders for tree-shaking bundlers.
-    mod.Live2DModel.registerTicker(PIXI.Ticker);
-    mod.config.logLevel = mod.config.LOG_LEVEL_WARNING;
-    // We drive audio ourselves (speak / amplitude); don't let motions trigger sound.
-    mod.config.sound = false;
-    return mod;
-  } catch (err) {
-    console.warn('[avatar] Live2D runtime unavailable; using placeholder:', err);
-    return null;
-  }
-}
-
 function isFloatingWindow(): boolean {
   return typeof document !== 'undefined' && document.body.classList.contains('floating-window');
 }
 
-function buildPlaceholder(app: PIXI.Application): Placeholder {
+function buildCat(app: PIXI.Application): Cat {
   const container = new PIXI.Container();
   container.sortableChildren = true;
 
@@ -238,8 +184,6 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
   const trimActivityText = (text: string): string =>
     text.length > 28 ? `${text.slice(0, 25)}...` : text;
 
-  type CatAction = PlaceholderCatAction;
-
   const actionForTick = (tick = 0): CatAction => {
     if (energy === 'asleep' && !busy && !inCall) return 'sleeping';
     if (state === 'working') return 'walking';
@@ -262,7 +206,7 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
   const energyForNow = (nowMs: number): Energy => debugEnergyOverride ?? presence.energy(nowMs);
 
   const faceForAction = (action: CatAction) => {
-    const head = placeholderHeadOriginForAction(action);
+    const head = catHeadOriginForAction(action);
     return {
       eyeLeft: head.x + 3,
       eyeRight: head.x + 6,
@@ -306,7 +250,7 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
     const rightEarTwitch = !earTwitch && state === 'idle' && Math.floor(tick / 90) % 7 === 2;
 
     const drawHead = (action: CatAction) => {
-      const { x, y } = placeholderHeadOriginForAction(action);
+      const { x, y } = catHeadOriginForAction(action);
       const earTop = y + (earsPerked ? -2 : -1);
       const leftEarTop = earTop - (earTwitch ? 1 : 0);
       const rightEarTop = earTop - (rightEarTwitch ? 1 : 0);
@@ -828,21 +772,11 @@ function buildPlaceholder(app: PIXI.Application): Placeholder {
   };
 }
 
-function fitModel(app: PIXI.Application, model: Live2DModelType) {
-  model.anchor.set(0.5, 0.5);
-  model.position.set(app.renderer.width / 2, app.renderer.height / 2);
-  // internalModel.height is native px height (NOT scaled) — avoids a feedback loop.
-  const target = app.renderer.height * 0.85;
-  const nativeH = model.internalModel?.height ?? target;
-  model.scale.set(target / nativeH);
-}
-
 /**
- * Mount the avatar onto `canvas`. Loads a real Live2D model only when `modelUrl`
- * is explicitly provided and resolves; otherwise renders the placeholder.
- * Never throws on a missing model.
+ * Mount the pixel cat onto `canvas`. Never throws: the cat is drawn procedurally
+ * and needs no model files or downloads.
  */
-export async function createAvatar(canvas: HTMLCanvasElement, modelUrl: string): Promise<Avatar> {
+export async function createAvatar(canvas: HTMLCanvasElement): Promise<Avatar> {
   const app = new PIXI.Application({
     view: canvas,
     resizeTo: window,
@@ -852,32 +786,5 @@ export async function createAvatar(canvas: HTMLCanvasElement, modelUrl: string):
     resolution: window.devicePixelRatio || 1,
   });
 
-  const wantsLive2D = modelUrl.trim().length > 0;
-  const coreLoaded = wantsLive2D ? await loadLive2DCore() : false;
-  const present = coreLoaded && (await modelExists(modelUrl));
-
-  if (present) {
-    try {
-      const live2d = await loadLive2D();
-      if (!live2d) throw new Error('Live2D runtime import failed');
-      const model = await live2d.Live2DModel.from(modelUrl, { autoInteract: false });
-      app.stage.addChild(model);
-      const fit = () => fitModel(app, model);
-      fit();
-      window.addEventListener('resize', fit);
-      console.info('[avatar] loaded Live2D model:', modelUrl);
-      return { app, model, placeholder: null, hasModel: true };
-    } catch (err) {
-      // Loading failed despite the file existing (bad/missing texture, etc.).
-      // Fall through to the placeholder rather than leaving a blank canvas.
-      console.warn('[avatar] Live2D model failed to load, using placeholder:', err);
-    }
-  } else if (wantsLive2D && !coreLoaded) {
-    console.warn('[avatar] Live2DCubismCore not loaded; using pixel cat.');
-  } else if (wantsLive2D) {
-    console.warn('[avatar] no model at', modelUrl, '— using placeholder.');
-  }
-
-  const placeholder = buildPlaceholder(app);
-  return { app, model: null, placeholder, hasModel: false };
+  return { app, cat: buildCat(app) };
 }

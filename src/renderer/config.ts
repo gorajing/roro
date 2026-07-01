@@ -1,7 +1,7 @@
 // src/renderer/config.ts — renderer-side configuration.
 //
-// The renderer holds ONLY non-secret presentation/feature values (the Live2D model
-// path, the floating-window flag, the on-device voice dev flags). Every key
+// The renderer holds ONLY non-secret presentation/feature values (the
+// floating-window flag, the on-device voice dev flags). Every key
 // (Nebius/Anthropic admin keys) lives ONLY in MAIN — never read those here.
 //
 // Resolution order for each value:
@@ -15,8 +15,6 @@
 // here (a .d.ts has no JS to import).
 
 export interface RoroConfig {
-  /** Live2D model path under /live2d (public dir). Absent file -> placeholder. */
-  modelUrl: string;
   /** Opt-in transparent frameless window mode for the floating character demo. */
   floatingWindow: boolean;
   /** Dev: mount the on-device voice path against a FAKE engine (no whisper/Silero/Kokoro, no mic) so the
@@ -78,7 +76,6 @@ function readBool(field: keyof RoroConfig, viteKey: string, fallback: boolean): 
 
 export function loadConfig(): RoroConfig {
   return {
-    modelUrl: read('modelUrl', 'VITE_LIVE2D_MODEL_URL', ''),
     // Floating desktop-pet UI is the product default (MAIN sets window.RORO_CFG.floatingWindow from
     // FLOATING_WINDOW_FLAG, which is on unless RORO_FLOATING_WINDOW=0). This fallback only applies when
     // RORO_CFG is absent (bare-browser/Vite dev) — kept in sync with MAIN so both default to floating.

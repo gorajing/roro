@@ -1,26 +1,13 @@
 // src/renderer/character/lipsync.ts — amplitude-driven mouth movement.
 //
 // Feed setAmplitude() from the on-device TTS amplitude (0..1) while the assistant
-// speaks. A ticker registered at UPDATE_PRIORITY.LOW runs AFTER the model's own
-// per-frame update (Live2D auto-updates at HIGH), so our ParamMouthOpenY write
-// isn't overwritten by the idle/talking motion. For the placeholder we drive its
-// mouth graphic instead.
-//
-// Do NOT run this together with model.speak() on the same utterance — both write
-// the mouth param and fight. The driver enforces that (amplitude is paused while
-// a speak() clip plays).
+// speaks. A ticker registered at UPDATE_PRIORITY.LOW smooths the amplitude and
+// drives the cat's mouth graphic each frame.
 
 import * as PIXI from 'pixi.js';
 import type { Avatar } from './avatar';
 
-const MOUTH_PARAM_C4 = 'ParamMouthOpenY';
-const MOUTH_PARAM_C2 = 'PARAM_MOUTH_OPEN_Y';
 const SMOOTHING = 0.35; // exponential smoothing factor; higher = snappier
-
-interface CubismCoreModel {
-  setParameterValueById?: (id: string, value: number) => void;
-  setParamFloat?: (id: string | number, value: number, weight?: number) => unknown;
-}
 
 export class AmplitudeLipSync {
   private target = 0;
@@ -54,18 +41,6 @@ export class AmplitudeLipSync {
   };
 
   private apply(v: number): void {
-    if (this.avatar.placeholder) {
-      this.avatar.placeholder.setMouthOpen(v);
-      return;
-    }
-    const model = this.avatar.model;
-    if (!model) return;
-    const core = model.internalModel?.coreModel as unknown as CubismCoreModel | undefined;
-    if (!core) return;
-    if (typeof core.setParameterValueById === 'function') {
-      core.setParameterValueById(MOUTH_PARAM_C4, v); // Cubism 4 (model3)
-    } else if (typeof core.setParamFloat === 'function') {
-      core.setParamFloat(MOUTH_PARAM_C2, v); // Cubism 2 fallback
-    }
+    this.avatar.cat.setMouthOpen(v);
   }
 }

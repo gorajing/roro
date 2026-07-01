@@ -35,7 +35,7 @@ body.floating-window {
 
 /* The window moves only via the JS pointer drag (moveWindowBy) — no CSS
    app-region drag, so there is a single drag path (interaction spec §12). */
-body.floating-window #live2d-canvas {
+body.floating-window #cat-canvas {
   app-region: no-drag;
   -webkit-app-region: no-drag;
   cursor: grab !important;
@@ -43,17 +43,17 @@ body.floating-window #live2d-canvas {
   user-select: none;
 }
 
-body.floating-window #live2d-canvas.dragging {
+body.floating-window #cat-canvas.dragging {
   cursor: grabbing !important;
 }
 
 html.floating-window #app,
-html.floating-window #live2d-canvas {
+html.floating-window #cat-canvas {
   background: transparent;
 }
 
-/* The Live2D / placeholder canvas fills the window and sits behind the UI. */
-#live2d-canvas {
+/* The cat canvas fills the window and sits behind the UI. */
+#cat-canvas {
   position: absolute;
   inset: 0;
   width: 100%;
