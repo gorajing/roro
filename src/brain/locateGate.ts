@@ -7,17 +7,19 @@ import type { Decision, DecideInput } from '../shared/brain';
 // clarifyGate forces clarify for referent-less requests. Once the screen HAS been captured (input.screen
 // set), the gate stands down so the second decide() produces the real answer (no infinite capture loop).
 
-// Two tiers of locate intent:
-// 1. UNAMBIGUOUS pointing verbs — "point at/to X", "show me where X". These mean the screen; nobody says
-//    "point at the login button" about source code.
-// 2. AMBIGUOUS "where is X <ui-noun>" — could be the screen OR the codebase ("where is the login button
-//    IMPLEMENTED?" is a run_agent repo question). So this tier ALSO requires explicit screen context, else
-//    it falls through to the model (which can pick run_agent). A bare "on my screen" mention alone is NOT a
-//    locate either ("what's this error on my screen" must get the full screen-reading answer, not a paw).
-const POINTING_PATTERNS: RegExp[] = [/\bpoint (at|to)\b/, /\bshow me where\b/];
-const WHERE_UI_PATTERN =
-  /\bwhere (is|are|s) .+\b(button|icon|menu|tab|field|link|toggle|checkbox|dropdown|logo|thumbnail)s?\b/;
+// A locate intent needs a locate VERB *and* a concrete screen target — a UI-element noun ("save button")
+// or explicit screen context ("on my screen") — and must NOT read as code navigation. This keeps repo
+// questions on run_agent: "point to the auth middleware" / "show me where config is loaded" (no UI noun,
+// no screen, code-ish) and "where is the login button implemented" (code phrasing) all fall through to the
+// model. "point at the save button" / "where is the merge button on my screen" route to the paw.
+//   isLocate = (POINTING with a screen target) OR (WHERE with screen context), minus code phrasing.
+const POINTING_PATTERN = /\b(point (at|to)|show me where)\b/;
+const WHERE_PATTERN = /\bwhere (is|are|s)\b/;
+const UI_NOUN_PATTERN =
+  /\b(button|icon|menu|tab|field|link|toggle|checkbox|dropdown|logo|thumbnail|toolbar|window|dialog|banner|slider|cursor|scrollbar)s?\b/;
 const SCREEN_CONTEXT_PATTERN = /\bon (the|my) (screen|display)\b/;
+const CODE_CONTEXT_PATTERN =
+  /\b(implement|implements|implemented|define|defined|declared|loaded|codebase|source code|in the (code|file|repo|function|method|class)|function|method|class|variable|module|import|endpoint|middleware|handler|component)\b/;
 
 function normalize(transcript: string): string {
   return transcript
@@ -32,9 +34,10 @@ function normalize(transcript: string): string {
 export function captureForLocateRequest(input: DecideInput): Decision | null {
   if (input.screen?.trim()) return null; // already looked → let the model answer
   const n = normalize(input.transcript);
-  const isLocate =
-    POINTING_PATTERNS.some((pattern) => pattern.test(n)) ||
-    (WHERE_UI_PATTERN.test(n) && SCREEN_CONTEXT_PATTERN.test(n));
+  const hasScreenTarget = UI_NOUN_PATTERN.test(n) || SCREEN_CONTEXT_PATTERN.test(n);
+  const isPointing = POINTING_PATTERN.test(n) && hasScreenTarget;
+  const isWhere = WHERE_PATTERN.test(n) && SCREEN_CONTEXT_PATTERN.test(n);
+  const isLocate = (isPointing || isWhere) && !CODE_CONTEXT_PATTERN.test(n);
   if (!isLocate) return null;
   // args.locate marks this as a pure locate turn so the orchestrator takes the fast single-vision-call
   // path (ground + point + a short answer) instead of the caption → re-decide flow.

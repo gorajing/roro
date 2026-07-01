@@ -87,6 +87,30 @@ describe('orchestrator fast locate path (args.locate)', () => {
     expect(sent).toContainEqual({ ch: CH.runEnd, payload: { runId } });
   });
 
+  it('a NON-locate screen turn captions WITHOUT grounding (no paw, no extra serialized vision call)', async () => {
+    // "what's this error on my screen" → capture_screen WITHOUT args.locate → caption + re-decide, no paw.
+    // Regression guard: grounding here would queue a second call on the same vision model and slow the answer.
+    let n = 0;
+    h.brain.decide.mockImplementation(async () => {
+      n += 1;
+      return n === 1
+        ? { narration: 'let me look', command: 'capture_screen', args: {} }
+        : { narration: 'I see the error', command: 'answer', args: {} };
+    });
+    h.vision.askScreen.mockImplementation(async (_t: string, describe: (img: unknown) => Promise<string>) =>
+      describe({ b64: 'z', mime: 'image/jpeg', width: 1000, height: 800 }),
+    );
+    h.brain.describeScreen.mockResolvedValue('a screen description');
+
+    await runTurn({ transcript: "what's this error on my screen", sessionId: 's' });
+    await flush();
+
+    expect(h.vision.askScreen).toHaveBeenCalledTimes(1);
+    expect(h.brain.describeScreen).toHaveBeenCalledTimes(1);
+    expect(h.brain.groundTarget).not.toHaveBeenCalled();
+    expect(vi.mocked(showPointForBox)).not.toHaveBeenCalled();
+  });
+
   it('honors a Stop that arrives during grounding — no paw, no answer', async () => {
     h.brain.groundTarget.mockImplementation(async () => {
       cancelTask(); // user hits Stop while the vision call is in flight

@@ -506,22 +506,6 @@ async function showGroundedPoint(box: { x: number; y: number; w: number; h: numb
   }
 }
 
-/** Courtesy paw for a NON-locate screen turn ("what's on my screen"): ground + point alongside the caption,
- *  fire-and-forget. Swallows everything (grounding is a bonus here, not the point of the turn). The locate
- *  fast path does NOT use this — there grounding is the core op, so its errors must surface (fail-loud). */
-async function groundAndPointBestEffort(
-  brain: BrainModule,
-  img: { b64: string; mime: string; width?: number; height?: number },
-  phrase: string,
-): Promise<void> {
-  try {
-    const result = await brain.groundTarget(img, phrase);
-    if (result) await showGroundedPoint(result.box, result.confidence);
-  } catch (err) {
-    console.warn('[paw] grounding/point failed:', (err as Error).message);
-  }
-}
-
 async function actOnDecision(
   runId: string,
   input: TurnInput,
@@ -594,13 +578,10 @@ async function actOnDecision(
       let screen: string;
       try {
         const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
-        // Inject describeScreen so vision captures ONCE, then captions via Qwen2.5-VL. On that SAME frame
-        // we ALSO ground the phrase and point a paw at it (the wedge) — best-effort and in parallel, so it
-        // never delays or fails the answer. READ-screen + POINT only (point-don't-act); one metered glance.
-        screen = await vision.askScreen(transcript, (img) => {
-          void groundAndPointBestEffort(brain, img, transcript);
-          return brain.describeScreen(img);
-        });
+        // A NON-locate screen turn ("what's this error on my screen?") just captions the frame — no paw.
+        // The paw is a locate-turn thing (the fast path above); grounding here would queue a second call on
+        // the same serialized vision model and add a full grounding latency to an ordinary screen answer.
+        screen = await vision.askScreen(transcript, (img) => brain.describeScreen(img));
       } catch (err) {
         pushEvent({
           kind: 'run.failed',

@@ -32,14 +32,16 @@ describe('captureForLocateRequest — deterministic capture_screen routing for p
     }
   });
 
-  it('does NOT route pure coding/referent requests to capture_screen', () => {
+  it('does NOT route code-navigation requests to capture_screen (they belong on run_agent)', () => {
     for (const q of [
       'add a health check endpoint to my api',
       'fix the bug in calc.py',
       'point out the typo in the readme',      // "point out" = identify, not a screen point
       'where is the config loaded',            // no UI noun, no screen reference
-      'where is the login button implemented', // code question (UI noun but no screen context) → run_agent
+      'where is the login button implemented', // code phrasing → run_agent, not a paw
       'where is the submit button defined in the code',
+      'point to the auth middleware',          // pointing verb but no UI noun / screen context (code nav)
+      'show me where config is loaded',        // pointing verb but no screen target + code phrasing
       'refactor the auth module',
     ]) {
       expect(at(q), q).toBeNull();
