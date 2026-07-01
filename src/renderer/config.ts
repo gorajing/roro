@@ -2,11 +2,11 @@
 //
 // The renderer holds ONLY non-secret presentation/feature values (the
 // floating-window flag, the on-device voice dev flags). Every key
-// (Nebius/Anthropic admin keys) lives ONLY in MAIN — never read those here.
+// (e.g. the Anthropic executor key) lives ONLY in MAIN — never read those here.
 //
 // Resolution order for each value:
 //   1. window.RORO_CFG.<field>  (injected at runtime by MAIN/preload or a <script> tag;
-//      the deployment-time placeholder this component consumes; legacy COMPANION_CFG still read)
+//      the deployment-time placeholder this component consumes)
 //   2. import.meta.env.VITE_*         (Vite build-time env, optional)
 //   3. a safe empty default
 //
@@ -55,10 +55,10 @@ function viteEnv(_key: string): string | undefined {
   return undefined;
 }
 
-/** Runtime config field, preferring window.RORO_CFG and falling back to the deprecated COMPANION_CFG. */
+/** Runtime config field from window.RORO_CFG (the only runtime injection path). */
 function cfgField(field: keyof RoroConfig): string | boolean | undefined {
   if (typeof window === 'undefined') return undefined;
-  return window.RORO_CFG?.[field] ?? window.COMPANION_CFG?.[field];
+  return window.RORO_CFG?.[field];
 }
 
 function read(field: keyof RoroConfig, viteKey: string, fallback: string): string {

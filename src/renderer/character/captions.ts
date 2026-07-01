@@ -60,8 +60,8 @@ function summarizeEvent(e: ActionEvent): { label: string; detail: string; status
     case 'turn.started':
       return { label: 'Task accepted', detail: '' };
     case 'reasoning':
-      // This event comes from the EXECUTOR (the coding agent), not the Nebius
-      // brain — the brain's reasoning streams over a separate channel. Label it
+      // This event comes from the EXECUTOR (the coding agent), not the brain —
+      // the brain's reasoning streams over a separate channel. Label it
       // honestly as the agent's reasoning.
       return { label: 'Agent is thinking', detail: e.text };
     case 'command':

@@ -157,7 +157,9 @@ export function registerIpcHandlers(): void {
       CH.brainEmbed,
       async (_e, input: string | string[]): Promise<number[] | number[][]> => {
         const brain = await loadBrain();
-        return brain.embed(input);
+        // The real embed() is overloaded (string -> number[], string[] -> number[][]) and does not
+        // accept the union directly — narrow before calling so each overload resolves.
+        return Array.isArray(input) ? brain.embed(input) : brain.embed(input);
       },
     );
   }

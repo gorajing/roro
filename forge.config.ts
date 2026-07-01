@@ -1,9 +1,6 @@
 import type { ForgeConfig } from '@electron-forge/shared-types';
-import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { MakerDMG } from '@electron-forge/maker-dmg';
-import { MakerDeb } from '@electron-forge/maker-deb';
-import { MakerRpm } from '@electron-forge/maker-rpm';
 import { notarize } from '@electron/notarize';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
@@ -137,14 +134,12 @@ const config: ForgeConfig = {
       return makeResults;
     },
   },
+  // macOS-only product (signing, keychain, entitlements, darwin-only smokes) — no Windows/Linux makers.
   makers: [
-    new MakerSquirrel({}),
     new MakerZIP({}, ['darwin']),
     // The public macOS distribution gate is a downloadable .dmg, not just the basic ZIP archive.
     // Keep the default versioned name (`Roro-<version>-<arch>.dmg`) so release artifacts are traceable.
     new MakerDMG({}, ['darwin']),
-    new MakerRpm({}),
-    new MakerDeb({}),
   ],
   plugins: [
     // Unpacks `*.node` native addons out of the asar (e.g. sharp's addon). NOTE: this is necessary but

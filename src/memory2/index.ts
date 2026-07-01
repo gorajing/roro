@@ -28,15 +28,13 @@ import type {
 declare const process: { env: Record<string, string | undefined>; cwd(): string; platform: string };
 
 // The brain's embedder determines the vector space + dimension (local nomic-embed-text → 768, or
-// OLLAMA_EMBED_DIM when overriding; the Nebius escape hatch → 1536). Shares brain/ollama's resolver so
-// this and the brain can never desync; stamped on every entry (embedModel/embedDim).
+// OLLAMA_EMBED_DIM when overriding). Shares brain/ollama's resolver so this and the brain can never
+// desync; stamped on every entry (embedModel/embedDim).
 function embeddingDim(): number {
-  return process.env.BRAIN_PROVIDER === 'nebius' ? 1536 : resolveOllamaEmbedDim(process.env.OLLAMA_EMBED_DIM);
+  return resolveOllamaEmbedDim(process.env.OLLAMA_EMBED_DIM);
 }
 function embedModel(): string {
-  return process.env.BRAIN_PROVIDER === 'nebius'
-    ? process.env.NEBIUS_EMBED_MODEL || 'Qwen/Qwen3-Embedding-8B'
-    : process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text';
+  return process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text';
 }
 
 // memory2's layout (durable files + derived index/ subdir) lives in its own dir so it never collides

@@ -75,8 +75,10 @@ describe('refreshBootstrapStatus', () => {
     expect(result.status.message).toBe('Local brain unavailable: request timed out');
   });
 
-  it('does not probe Ollama for Nebius provider failures', async () => {
-    const b = brain({ preflight: vi.fn(async () => { throw new Error('Nebius key missing'); }) });
+  it('does not probe Ollama for an unsupported BRAIN_PROVIDER — the config error stays loud', async () => {
+    const b = brain({
+      preflight: vi.fn(async () => { throw new Error("BRAIN_PROVIDER='nebius' is not supported."); }),
+    });
     const tags = vi.fn(async () => []);
 
     const result = await refreshBootstrapStatus({
@@ -87,6 +89,6 @@ describe('refreshBootstrapStatus', () => {
 
     expect(tags).not.toHaveBeenCalled();
     expect(result.status.missing).toEqual([]);
-    expect(result.status.message).toBe('Local brain unavailable: Nebius key missing');
+    expect(result.status.message).toBe("Local brain unavailable: BRAIN_PROVIDER='nebius' is not supported.");
   });
 });
