@@ -8,8 +8,8 @@
 // default in bootstrap). Catalog data is rendered with textContent only (never innerHTML).
 
 import { PET_VARIANTS } from '../../shared/pets';
+import { VOICE_PACKS } from '../../shared/voicePacks';
 import { resolveSoul } from '../character/souls';
-import { VOICE_PACKS } from '../voice/voicePacks';
 
 export interface CosmeticIntent {
   kind: 'pet' | 'voice';
