@@ -9,7 +9,7 @@ The **paw-on-the-pixel** wedge is **built, green, and computer-use-verified end-
 - **Branch:** `feat/paw-on-the-pixel` (4 commits off `main` @ `45ac398`). **PR #135** open.
 - **Green:** `npm test` → **902 pass / 5 skip**, `npx tsc --noEmit` clean, `npx eslint` → **0 errors** (warnings are pre-existing test-file non-null-assertions).
 - **Proven live:** roro grounded *"the clock in the top-right corner"* → global **(2479, 101)** on a 2560×1440 screen (the correct corner). Full pipeline confirmed.
-- **Review:** codex `review --base main` run **4 rounds** (the skill's cap); **8 real bugs** found and fixed, each with a regression test that fails against the old code, plus 2 doc-accuracy fixes. A **round-5 confirmation** was the last step — see "Immediate next steps".
+- **Review:** codex `review --base main` run **6 rounds**; **12 real bugs** found and fixed, plus 2 doc-accuracy fixes. Each logic bug has a regression test that fails against the old code; the electron-window-lifecycle fixes (overlay teardown on window close, primary-bounds re-sync) match the codebase's untested integration layer (`main.ts`/`window.ts`/`pointerOverlay.ts`). Loop **stopped at round 6** — findings had marched from systemic (routing, grounding format) to marginal edge cases (multi-display bounds, timeout tuning); the rest is documented follow-ups. See "Immediate next steps".
 - **Not mine:** `src/renderer/character/gaze.ts` + `gaze.test.ts` show as modified in the working tree but are **pre-existing uncommitted WIP — NOT in this branch's commits and NOT in PR #135.** I never staged or touched them; don't fold them into this PR (they'd smuggle in an unrelated gaze-behavior change). `git diff main...HEAD` confirms the PR contains only the pointing work.
 
 ## What shipped (files, grounded in the real code)
@@ -36,16 +36,16 @@ The **paw-on-the-pixel** wedge is **built, green, and computer-use-verified end-
 
 ## Immediate next steps
 
-1. **Confirm the review is clean.** Four rounds are done (findings all fixed + regression-tested). Run one final confirmation:
+1. **Review loop was intentionally stopped at 6 rounds** (all findings fixed). If you want one more confirmation before merge:
    ```
    cd /Users/jinchoi/Code/roro && codex review --base main
    ```
-   (codex leaves you on your branch; every run returned cleanly to `feat/paw-on-the-pixel`.) Late rounds tend to drift to doc-lag (comments describing pre-fix behavior) rather than new bugs. Adjudicate each finding against the code — fix real ones (root cause + a test that fails against the old code), skip false-positives with a one-line reason.
-2. **Merge decision is the user's.** Once review is clean, the wedge is mergeable. PR #135.
+   (codex leaves you on your branch; every run returned cleanly to `feat/paw-on-the-pixel`.) Adjudicate each finding against the code — fix real ones (root cause + a test that fails against the old code), skip false-positives/scope-creep with a one-line reason. Don't loop indefinitely: a deterministic NL gate + async window lifecycle have a long edge-case tail; the remaining ones are captured under "Known follow-ups".
+2. **Merge decision is the user's.** The wedge is green and mergeable. PR #135.
 
 ## Known follow-ups (documented in the PR, not blockers)
 
-- **Vision latency** — qwen2.5-VL:7b grounding is slow *and highly variable* on this hardware (~37s to >150s per call). It's the single biggest UX gap. Inherent to the local 7B; levers: a faster model / GPU, or the crop-and-zoom refinement (from the clicky research) which also improves small-element accuracy.
+- **Vision latency** — qwen2.5-VL:7b grounding is slow *and highly variable* on this hardware (~37s to >150s per call). It's the single biggest UX gap. Inherent to the local 7B; levers: a faster model / GPU, or the crop-and-zoom refinement (from the clicky research) which also improves small-element accuracy. *(The functional failure mode — a slow call timing out — is fixed: vision calls now use a 300s timeout, `OLLAMA_VISION_TIMEOUT_MS`. The remaining issue is the wait itself.)*
 - **`screencapture` CLI can't see the overlay** — *verified*: the transparent GPU-composited overlay layer is invisible to the `screencapture` CLI (an **opaque** version IS captured, proving the window is on-screen). The **user sees the paw** (standard transparent-overlay pattern). **Open question worth confirming:** whether a real screen recorder (QuickTime/CleanShot) captures it — this matters for the shareable "cat walks to the bug" GIF, a core distribution mechanism.
 - **v0 = primary display only.** Multi-display needs a union-bounds overlay + per-display bounds.
 - **Presentation follow-ups:** the full PixiJS cat *flying across* the overlay (v0 = paw+ring); the **drop-to-refer** third gesture verb (drag cat onto a thing); **hold-to-talk** voice.
