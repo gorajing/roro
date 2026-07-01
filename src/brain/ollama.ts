@@ -159,6 +159,8 @@ export interface OllamaChatOpts {
   temperature?: number;
   stream?: boolean;
   onContent?: (delta: string) => void;
+  /** Per-call request timeout override (ms). Vision calls need far longer than the reason-model default. */
+  timeoutMs?: number;
 }
 
 /** Call /api/chat. Streams incrementally (firing onContent) when stream is true. */
@@ -169,7 +171,7 @@ export async function ollamaChat(opts: OllamaChatOpts): Promise<string> {
   const stream = opts.stream ?? false;
   const body = buildChatBody({ model: opts.model, messages, stream, json: opts.json, temperature: opts.temperature });
 
-  const res = await fetchOllama('/api/chat', body);
+  const res = await fetchOllama('/api/chat', body, opts.timeoutMs);
   if (!res.ok) {
     throw new Error(`Ollama chat failed ${res.status}: ${await res.text().catch(() => '')}`);
   }
@@ -281,14 +283,15 @@ export async function pullModel(
   emit(buf); // trailing line without a newline
 }
 
-async function fetchOllama(path: string, body: unknown): Promise<Response> {
+async function fetchOllama(path: string, body: unknown, timeoutMs?: number): Promise<Response> {
   const url = `${ollamaHost()}${path}`;
   try {
     return await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(ollamaTimeoutMs()), // a wedged daemon must fail, not hang the turn
+      // a wedged daemon must fail, not hang the turn — but vision calls need a longer bound (see callers).
+      signal: AbortSignal.timeout(timeoutMs ?? ollamaTimeoutMs()),
     });
   } catch (err) {
     throw new Error(ollamaFetchError(err));

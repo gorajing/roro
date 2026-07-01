@@ -302,6 +302,15 @@ export async function extractFact(input: FactExtractInput): Promise<FactCandidat
   return typeof content === 'string' ? parseFactResponse(content) : null;
 }
 
+// Local vision (qwen2.5-VL) is far slower than the reason model — a caption/grounding call can take
+// minutes on a cold model load or a slow machine. Give vision calls a generous per-call timeout (well
+// above the 120s reason-model default, overridable) so a valid-but-slow locate draws the paw instead of
+// failing with a chat timeout. See docs/plans/paw-on-the-pixel-HANDOFF.md (vision latency).
+function visionTimeoutMs(): number {
+  const v = Number(process.env.OLLAMA_VISION_TIMEOUT_MS);
+  return Number.isFinite(v) && v > 0 ? v : 300_000;
+}
+
 const VISION_PROMPT =
   'Describe this screen for a coding assistant. Focus on visible apps, editor content, errors, terminal output, and UI state. Be concise.';
 
@@ -316,6 +325,7 @@ export async function describeScreen(input: ScreenInput): Promise<string> {
       images: [cleanImageB64(input)],
       temperature: 0.2,
       stream: false,
+      timeoutMs: visionTimeoutMs(),
     });
     if (content.trim().length === 0) throw new Error('Ollama vision returned empty content');
     return content.trim();
@@ -367,6 +377,7 @@ export async function groundTarget(input: ScreenInput, phrase: string): Promise<
       images: [cleanImageB64(input)],
       temperature: 0,
       stream: false,
+      timeoutMs: visionTimeoutMs(),
     });
     return parseGroundResponse(content, input.width, input.height);
   }

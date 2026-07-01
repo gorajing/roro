@@ -64,8 +64,17 @@ const OVERLAY_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
 
 /** Lazily create the click-through overlay covering the primary display. Reused across points. */
 export function ensurePointerOverlay(): BrowserWindow {
-  if (overlay && !overlay.isDestroyed()) return overlay;
   const b = screen.getPrimaryDisplay().bounds; // DIP
+  if (overlay && !overlay.isDestroyed()) {
+    // Re-sync to the CURRENT primary display: bounds can change (monitor plugged in, resolution change),
+    // and a stale full-screen overlay would offset/clip the paw — showPointForBox() maps against current
+    // bounds while showPointAt() subtracts the window's own bounds, so the two must agree.
+    const cur = overlay.getBounds();
+    if (cur.x !== b.x || cur.y !== b.y || cur.width !== b.width || cur.height !== b.height) {
+      overlay.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height });
+    }
+    return overlay;
+  }
   overlay = new BrowserWindow({
     x: b.x,
     y: b.y,
