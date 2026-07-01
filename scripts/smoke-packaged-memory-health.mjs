@@ -339,7 +339,7 @@ async function inspectPackagedApp({ home, cwd, userDataDir, ollamaUrl, floating 
       };
       const selectorFor = (el) => {
         if (!el) return null;
-        const target = el.closest?.('#ask-pill,#ask-input,#floating-ask,#live2d-canvas,#memory-health-details,#memory-health-dismiss,#memory-health-banner,#app');
+        const target = el.closest?.('#ask-pill,#ask-input,#floating-ask,#cat-canvas,#memory-health-details,#memory-health-dismiss,#memory-health-banner,#app');
         return target?.id ? '#' + target.id : el.tagName?.toLowerCase?.() ?? null;
       };
       const center = (rect) => rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
@@ -511,9 +511,9 @@ try {
     floating.banner.rect?.bottom <= floating.banner.viewport?.height, JSON.stringify(floating.banner));
   check('floating memory health banner does not overlap Ask', !rectsOverlap(floating.banner.rect, floating.banner.askRect), JSON.stringify(floating.banner));
   check('floating memory health banner leaves a large gap above Ask', floating.banner.askRect?.top - floating.banner.rect?.bottom >= 48, JSON.stringify(floating.banner));
-  check('floating banner background does not intercept canvas hits', floating.banner.bannerBackgroundHit === '#live2d-canvas', JSON.stringify(floating.banner));
-  check('floating cat body remains canvas-hit', floating.banner.catBodyHit === '#live2d-canvas', JSON.stringify(floating.banner));
-  check('floating cat middle remains canvas-hit', floating.banner.catMiddleHit === '#live2d-canvas', JSON.stringify(floating.banner));
+  check('floating banner background does not intercept canvas hits', floating.banner.bannerBackgroundHit === '#cat-canvas', JSON.stringify(floating.banner));
+  check('floating cat body remains canvas-hit', floating.banner.catBodyHit === '#cat-canvas', JSON.stringify(floating.banner));
+  check('floating cat middle remains canvas-hit', floating.banner.catMiddleHit === '#cat-canvas', JSON.stringify(floating.banner));
   check('floating memory details button is hidden to avoid clipped detail copy', floating.banner.detailsVisible === false && floating.banner.detailsHit !== '#memory-health-details', JSON.stringify(floating.banner));
   check('floating memory dismiss button remains hit-testable', floating.banner.dismissHit === '#memory-health-dismiss', JSON.stringify(floating.banner));
   check('floating Ask center hits the Ask pill', floating.banner.askHit === '#ask-pill', JSON.stringify(floating.banner));

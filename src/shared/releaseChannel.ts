@@ -1,7 +1,7 @@
 // src/shared/releaseChannel.ts — the build-time release/cohort channel + deferred-v0 flag guard.
 //
 // WHY: a real cohort/release build must honour NONE of the deferred-v0 flags (cosmetics fake-door,
-// voice, Live2D, and the runtime-DANGEROUS debug bridge that exposes direct runTask/brain.decide IPC).
+// voice, and the runtime-DANGEROUS debug bridge that exposes direct runTask/brain.decide IPC).
 // A launch-time env (`.env`, an exported var, argv) must NOT be able to re-enable them on a shipped
 // build. So the discriminator is a COMPILE-TIME channel constant baked by Vite `define`
 // (`__RORO_BUILD_CHANNEL__`), set only by the release build (`make:release`/`package:release`):

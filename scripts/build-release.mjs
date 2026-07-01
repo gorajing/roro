@@ -6,8 +6,8 @@
 //   1. Bake RORO_BUILD_CHANNEL=release so the in-binary guard (src/shared/releaseChannel.ts) refuses every
 //      deferred-v0 flag at runtime.
 //   2. STRIP the deferred-v0 env set BEFORE packaging, so forge.config.ts's package-time asset gates
-//      (which read RORO_*_VOICE / LIVE2D_MODEL_URL) cannot bundle a voice/Live2D payload the runtime would
-//      only refuse — otherwise the release artifact ships dead deferred payload.
+//      (which read RORO_*_VOICE) cannot bundle a voice payload the runtime would only refuse —
+//      otherwise the release artifact ships dead deferred payload.
 //
 // We run electron-forge DIRECTLY (not `npm run make`, which IS this script → infinite recursion) and run
 // the asset-staging step explicitly first, with the stripped env, so it stages nothing. (The npm `premake`

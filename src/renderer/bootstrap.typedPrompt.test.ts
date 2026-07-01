@@ -5,7 +5,6 @@ import type { BootstrapStatusMsg, MemoryHealthStatusMsg, WorkdirConfigMsg } from
 
 vi.mock('./config', () => ({
   loadConfig: () => ({
-    modelUrl: undefined as string | undefined,
     floatingWindow: false,
     floatingSmoke: false,
     memoryPanelSmoke: false,
@@ -16,7 +15,6 @@ vi.mock('./config', () => ({
 
 vi.mock('./character/driver', () => ({
   createCharacter: vi.fn(async () => ({
-    hasModel: false,
     driver: {
       setState: vi.fn(),
       setBusy: vi.fn(),
@@ -80,7 +78,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 function renderApp(): void {
   document.body.innerHTML = `
     <div id="app">
-      <canvas id="live2d-canvas"></canvas>
+      <canvas id="cat-canvas"></canvas>
       <div id="overlay">
         <div id="controls"></div>
         <div id="status" role="status" aria-live="polite">Loading...</div>

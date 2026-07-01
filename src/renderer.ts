@@ -1,5 +1,4 @@
-// src/renderer.ts — renderer entry. Loaded by Vite (module bundle) AFTER the
-// classic <script> that installs window.Live2DCubismCore in index.html.
+// src/renderer.ts — renderer entry, loaded by Vite as the module bundle.
 //
 // All real work lives in src/renderer/** modules; this file just boots them once
 // the DOM is ready.

@@ -1,5 +1,4 @@
 export const V0_DEFERRED_ENV_KEYS = [
-  'LIVE2D_MODEL_URL',
   'RORO_FAKE_VOICE',
   'RORO_VAD_VOICE',
   'RORO_STT_VOICE',
@@ -22,7 +21,7 @@ export function enabledV0DeferredEnv(env) {
   return V0_DEFERRED_ENV_KEYS.filter((key) => {
     const value = env[key];
     if (value === undefined || value === '') return false;
-    if (key === 'LIVE2D_MODEL_URL' || key === 'RORO_VOICE_PACK' || key === 'RORO_MEMORY_HEALTH_SMOKE_FAIL') return true;
+    if (key === 'RORO_VOICE_PACK' || key === 'RORO_MEMORY_HEALTH_SMOKE_FAIL') return true;
     return value === '1';
   });
 }

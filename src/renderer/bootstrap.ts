@@ -1,14 +1,14 @@
 // src/renderer/bootstrap.ts — wires the whole renderer together.
 //
 // Order:
-//   1. load config (Live2D model path + on-device voice feature flags)
-//   2. build the character (real Live2D model OR placeholder) on #live2d-canvas
+//   1. load config (on-device voice feature flags + window mode)
+//   2. build the character (the procedural pixel cat) on #cat-canvas
 //   3. subscribe to the executor ActionEvent stream + brain reasoning
 //   4. bind the Mute control; optionally mount the on-device voice path (dev flags)
 //
 // There is no cloud-voice call. The default surface is the typed prompt path; the
 // on-device voice path (Silero VAD + whisper STT + Kokoro TTS) mounts only behind
-// RORO_*_VOICE flags. model.speak()/AudioContext still need a user gesture to unlock.
+// RORO_*_VOICE flags. AudioContext still needs a user gesture to unlock.
 
 import { loadConfig, voiceSurfaceEnabled } from './config';
 import { sessionId } from './session';
@@ -82,15 +82,15 @@ export async function bootstrap(): Promise<void> {
   document.documentElement.classList.toggle('floating-window', config.floatingWindow);
   document.body.classList.toggle('floating-window', config.floatingWindow);
 
-  const canvas = el<HTMLCanvasElement>('live2d-canvas');
+  const canvas = el<HTMLCanvasElement>('cat-canvas');
   if (!canvas) {
-    console.error('[bootstrap] #live2d-canvas not found');
+    console.error('[bootstrap] #cat-canvas not found');
     return;
   }
 
-  // 1 + 2: character (resolves even with no model — placeholder path).
-  const { driver, avatar, hasModel } = await createCharacter(canvas, config.modelUrl);
-  setStatus(hasModel ? 'Character model loaded.' : 'Roro is ready.');
+  // 1 + 2: character (always resolves — the pixel cat is procedural).
+  const { driver, avatar } = await createCharacter(canvas);
+  setStatus('Roro is ready.');
 
   // 3: captions + timeline + executor/brain subscriptions.
   const captions = new CaptionPanel();
@@ -398,8 +398,8 @@ export async function bootstrap(): Promise<void> {
       setMouthOpen: (v: number) => driver.setMouthOpen(v),
       setMuted: (v: boolean) => setMicMuted(v),
       pet: () => driver.pet?.(),
-      setEnergy: (energy: Parameters<NonNullable<typeof avatar.placeholder>['debugSetEnergy']>[0]) => {
-        avatar.placeholder?.debugSetEnergy(energy);
+      setEnergy: (energy: Parameters<typeof avatar.cat['debugSetEnergy']>[0]) => {
+        avatar.cat.debugSetEnergy(energy);
       },
     };
   }

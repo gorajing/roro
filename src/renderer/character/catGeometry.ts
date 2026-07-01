@@ -1,4 +1,4 @@
-export type PlaceholderCatAction = 'standing' | 'sitting' | 'walking' | 'sleeping';
+export type CatAction = 'standing' | 'sitting' | 'walking' | 'sleeping';
 
 export interface GridPoint {
   x: number;
@@ -26,16 +26,16 @@ export const SLEEPING_HEAD_BOUNDS: GridBounds = {
   bottom: 10,
 };
 
-export function placeholderHeadOriginForAction(action: PlaceholderCatAction): GridPoint {
+export function catHeadOriginForAction(action: CatAction): GridPoint {
   if (action === 'walking') return { x: 8, y: 4 };
   if (action === 'sitting') return { x: 7, y: 4 };
   if (action === 'sleeping') return { x: 7, y: 4 };
   return { x: 8, y: 4 };
 }
 
-export function placeholderHeadBoundsForAction(action: PlaceholderCatAction): GridBounds {
+export function catHeadBoundsForAction(action: CatAction): GridBounds {
   if (action === 'sleeping') return SLEEPING_HEAD_BOUNDS;
-  const { x, y } = placeholderHeadOriginForAction(action);
+  const { x, y } = catHeadOriginForAction(action);
   return {
     left: x,
     top: y + 1,

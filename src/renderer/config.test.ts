@@ -3,7 +3,6 @@ import { loadConfig, voiceSurfaceEnabled, type RoroConfig } from './config';
 
 function config(overrides: Partial<RoroConfig> = {}): RoroConfig {
   return {
-    modelUrl: '',
     floatingWindow: false,
     fakeVoice: false,
     vadVoice: false,

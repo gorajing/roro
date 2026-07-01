@@ -26,7 +26,6 @@ describe('releaseChannel', () => {
       RORO_WS5_STORE: '1',
       RORO_DEBUG_BRIDGE: '1',
       RORO_FAKE_VOICE: '1',
-      LIVE2D_MODEL_URL: 'https://x/model.json',
       RORO_MEMORY_HEALTH_SMOKE_FAIL: 'keychain',
       // a NON-deferred key must always survive
       RORO_FLOATING_WINDOW: '1',

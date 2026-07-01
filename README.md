@@ -69,9 +69,9 @@ and gold for success, and red/orange for errors.
 | `error` | flattens ears and shows alert pixels |
 | talking layer | opens the mouth and adds signal pixels while speech is active |
 
-The renderer talks to a model-agnostic `CharacterDriver`
-(`setState`, `setMouthOpen`, `setTalking`, `speak`), so a Live2D model can still
-be mounted later behind the same interface.
+The renderer talks to a character-agnostic `CharacterDriver`
+(`setState`, `setMouthOpen`, `setTalking`, `speak`), so a different character
+implementation can be mounted later behind the same interface.
 
 ## How It Works
 
@@ -238,7 +238,6 @@ What needs extra setup or a real device:
 - on-device voice (Silero VAD + whisper STT + Kokoro TTS) behind internal
   `RORO_*_VOICE` dev flags + microphone permission — fully local, no cloud/model keys
 - screen capture permission for vision (the 7B vision model needs substantial RAM)
-- internal optional Live2D model swap
 
 ## Project Shape
 
@@ -249,6 +248,5 @@ src/brain/                local Ollama decision, vision, embeddings
 src/memory2/              local encrypted files-as-truth + PGlite-HNSW memory
 src/executor/             Codex and Claude adapters
 src/shared/               IPC, event, memory, avatar, env contracts
-public/live2d/            optional Live2D assets
 RUN.md                    live setup and integration guide
 ```
