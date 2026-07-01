@@ -21,7 +21,7 @@ import { newRunId, SCREEN_CAPTURE_STATUS_TEXT } from '../shared/events';
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import type { MemoryKind } from '../shared/memory';
 import { getExecutor } from '../executor';
-import { loadBrain, loadMemory, loadVision, type MemoryModule } from './siblings';
+import { loadBrain, loadMemory, loadVision, type MemoryModule, type BrainModule } from './siblings';
 import { getOwnerId } from './identity';
 import { buildRecallContext } from './memoryContext';
 import { extractAndStoreFact } from './factStore';
@@ -32,7 +32,7 @@ import { resolveWorkdir, tryResolveWorkdir } from './workdir';
 import { repoId as deriveRepoId } from '../memory2/repoId';
 import { isPlausiblePreference, type FactExtractInput } from '../brain/extractFact';
 import { buildDecisionPrompt } from '../brain/decisionPrompt';
-import { sendToFirstWindow } from './safeSend';
+import { sendToPetWindow } from './safeSend';
 import { getExecutorReadiness } from './executorReadiness';
 
 const RECALL_K = 5;
@@ -64,18 +64,18 @@ let dispatchLock = false;
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 function pushEvent(e: ActionEvent): void {
-  sendToFirstWindow(CH.actionEvent, e);
+  sendToPetWindow(CH.actionEvent, e);
 }
 
 function pushRunEnd(runId: string): void {
   preemptedTurns.delete(runId);
   inFlightTurns.delete(runId);
-  sendToFirstWindow(CH.runEnd, { runId });
+  sendToPetWindow(CH.runEnd, { runId });
 }
 
 /** Push the destructive-confirm request to the renderer (it shows a confirm chip). */
 function pushConfirmRequest(req: { runId: string; summary: string }): void {
-  sendToFirstWindow(CH.confirmRequest, req);
+  sendToPetWindow(CH.confirmRequest, req);
 }
 
 /** Emit a synthetic terminal failure (preempt / stop) + runEnd for a turn. */
@@ -132,11 +132,11 @@ async function guardedDispatch(runId: string, destructive: boolean, repo: string
 }
 
 function pushReasoning(delta: string): void {
-  sendToFirstWindow(CH.brainReasoning, delta);
+  sendToPetWindow(CH.brainReasoning, delta);
 }
 
 function pushContent(delta: string): void {
-  sendToFirstWindow(CH.brainContent, delta);
+  sendToPetWindow(CH.brainContent, delta);
 }
 
 /**
@@ -494,6 +494,18 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
  * the capture_screen re-decide reuses it rather than re-recalling (a second recall would
  * self-match the just-persisted transcript as top "RELATED PAST CONTEXT").
  */
+/** Draw the paw for a grounded box. BEST-EFFORT: never throws — the paw is a courtesy on top of the answer,
+ *  and showing it is secondary to the grounding itself. The pointerOverlay (which imports electron) is loaded
+ *  dynamically so the orchestrator's node unit tests don't statically pull in electron. */
+async function showGroundedPoint(box: { x: number; y: number; w: number; h: number }, confidence: number): Promise<void> {
+  try {
+    const { showPointForBox } = await import('./pointerOverlay');
+    await showPointForBox(box, confidence);
+  } catch (err) {
+    console.warn('[paw] show failed:', (err as Error).message);
+  }
+}
+
 async function actOnDecision(
   runId: string,
   input: TurnInput,
@@ -536,10 +548,39 @@ async function actOnDecision(
         pushStopped(runId);
         return;
       }
+
+      // Fast locate path: a pure "point at X" turn (marked by the locate gate) grounds + points with ONE
+      // vision call and answers briefly — no caption + re-decide (which would double the vision latency).
+      if (decision.args.locate === true) {
+        let result: Awaited<ReturnType<BrainModule['groundTarget']>>;
+        try {
+          const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
+          const img = await vision.captureScreen();
+          // Grounding IS the core op here — let its errors (vision model missing, Ollama/API down) surface
+          // as a terminal failure (fail-loud), NOT get masked as an ordinary "I can't find that".
+          result = await brain.groundTarget(img, transcript);
+        } catch (err) {
+          pushEvent({ kind: 'run.failed', runId, ok: false, error: `vision failed: ${(err as Error).message}`, ts: Date.now() });
+          pushRunEnd(runId);
+          return;
+        }
+        // Honor a Stop that arrived during capture/grounding, before showing the paw or speaking.
+        if (preemptedTurns.has(runId)) {
+          pushStopped(runId);
+          return;
+        }
+        if (result) await showGroundedPoint(result.box, result.confidence); // best-effort paw
+        emitNarration(runId, result ? 'There it is.' : "I can't find that on your screen.");
+        pushRunEnd(runId);
+        return;
+      }
+
       let screen: string;
       try {
         const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
-        // Inject the brain's describeScreen so vision captures, then captions via Qwen2.5-VL.
+        // A NON-locate screen turn ("what's this error on my screen?") just captions the frame — no paw.
+        // The paw is a locate-turn thing (the fast path above); grounding here would queue a second call on
+        // the same serialized vision model and add a full grounding latency to an ordinary screen answer.
         screen = await vision.askScreen(transcript, (img) => brain.describeScreen(img));
       } catch (err) {
         pushEvent({

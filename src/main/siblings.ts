@@ -57,6 +57,11 @@ export interface BrainModule {
   // Streaming hooks are optional; siblings that ignore the 2nd arg still satisfy this.
   decide(input: DecideInput, hooks?: BrainStreamHooks): Promise<Decision>;
   describeScreen(input: { b64: string; mime: string }): Promise<string>;
+  /** Ground a phrase to a normalized [0,1] box on the frame (paw-on-the-pixel), or null when not found. */
+  groundTarget(
+    input: { b64: string; mime: string; width?: number; height?: number },
+    phrase: string,
+  ): Promise<{ box: { x: number; y: number; w: number; h: number }; confidence: number } | null>;
   embed(input: string | string[]): Promise<number[] | number[][]>;
   extractFact(input: FactExtractInput): Promise<FactCandidate | null>;
   /** Verify the configured provider is reachable + models present. Throws (loud) on a problem. */
@@ -90,6 +95,9 @@ export interface MemoryModule {
 export interface CaptureResult {
   b64: string;
   mime: string;
+  /** Pixel dims of the (downscaled) capture — used to normalize a VL grounding box back to [0,1]. */
+  width?: number;
+  height?: number;
 }
 
 /** Callback the vision module invokes to caption a captured frame (the brain's describeScreen). */

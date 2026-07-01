@@ -22,6 +22,17 @@ vi.mock('./siblings', () => ({
 }));
 vi.mock('./identity', () => ({ getOwnerId: () => 'owner-test' }));
 
+// safeSend now routes pushes through the window registry (never getAllWindows()[0], which the
+// pointer overlay would hijack) — point the registry at the same single fake window this file's
+// electron mock exposes.
+vi.mock('./windowRegistry', async (importOriginal) => {
+  const electron = await import('electron');
+  return {
+    ...(await importOriginal<typeof import('./windowRegistry')>()),
+    getPetWindow: () => (electron.BrowserWindow as unknown as { getAllWindows(): unknown[] }).getAllWindows()[0] ?? null,
+  };
+});
+
 import { runTurn } from './orchestrator';
 
 function rowFor(i: { owner_id: string; session_id: string; kind?: string; text: string; payload?: unknown }) {

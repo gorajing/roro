@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import { buildFactPrompt, parseFactResponse, isPlausiblePreference, FACT_SYSTEM_PROMPT, type FactExtractInput, type FactCandidate } from './extractFact';
 import { clarifyForReferentlessRequest } from './clarifyGate';
+import { captureForLocateRequest } from './locateGate';
 import { buildDecisionPrompt } from './decisionPrompt';
 import { ollamaChat, ollamaEmbed, ollamaTags, hasModel, resolveOllamaEmbedDim, assertEmbedDimMatch } from './ollama';
 
@@ -19,6 +20,23 @@ export interface DecideOptions {
 export interface ScreenInput {
   b64: string;
   mime: string;
+  /** Pixel dims of the image — lets groundTarget normalize a VL pixel-coordinate box back to [0,1]. */
+  width?: number;
+  height?: number;
+}
+
+/** A grounded target box, NORMALIZED to [0,1] (top-left x/y + size) relative to the captured image. */
+export interface GroundBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface GroundResult {
+  box: GroundBox;
+  /** the model's self-reported confidence in [0,1] (0.5 when unstated) — used to size the point halo. */
+  confidence: number;
 }
 
 export interface ModelIds {
@@ -94,8 +112,9 @@ RULES:
 - Put all technical detail in args.task, not in narration.
 - DEFAULT to "run_agent" for any coding, debugging, file, test, or build task — the executor reads and
   edits the project itself. Naming a file (e.g. "fix calc.py") is NOT a reason to capture the screen.
-- Choose "capture_screen" ONLY when the request refers to something VISIBLE ON SCREEN that is not in the
-  codebase — e.g. "what's this error on my screen", "look at what I'm seeing", a GUI/app/browser state.
+- Choose "capture_screen" when the request refers to something VISIBLE ON SCREEN that is not in the
+  codebase — e.g. "what's this error on my screen", "look at what I'm seeing", a GUI/app/browser state —
+  OR when asked to POINT AT / SHOW WHERE / LOCATE something on the screen (roro must SEE it to point).
 - Choose "clarify" when the request has no concrete target yet — e.g. "fix it", "make it better",
   "update it", "change the color", or "do that thing we talked about" with no relevant memory/screen.
   Ask exactly one question that would make the task executable.
@@ -174,6 +193,11 @@ export async function preflight(): Promise<PreflightResult> {
 export async function decide(input: DecideInput, options: DecideOptions = {}): Promise<Decision> {
   const clarification = clarifyForReferentlessRequest(input);
   if (clarification) return clarification;
+
+  // Paw-on-the-pixel: a clear on-screen "point at / where is X" intent deterministically routes to
+  // capture_screen (the 3B is unreliable at inferring it). Stands down once the screen is captured.
+  const locate = captureForLocateRequest(input);
+  if (locate) return locate;
 
   const models = getModelIds();
   const userPrompt = buildDecisionPrompt(input);
@@ -278,6 +302,15 @@ export async function extractFact(input: FactExtractInput): Promise<FactCandidat
   return typeof content === 'string' ? parseFactResponse(content) : null;
 }
 
+// Local vision (qwen2.5-VL) is far slower than the reason model — a caption/grounding call can take
+// minutes on a cold model load or a slow machine. Give vision calls a generous per-call timeout (well
+// above the 120s reason-model default, overridable) so a valid-but-slow locate draws the paw instead of
+// failing with a chat timeout. See docs/plans/paw-on-the-pixel-HANDOFF.md (vision latency).
+function visionTimeoutMs(): number {
+  const v = Number(process.env.OLLAMA_VISION_TIMEOUT_MS);
+  return Number.isFinite(v) && v > 0 ? v : 300_000;
+}
+
 const VISION_PROMPT =
   'Describe this screen for a coding assistant. Focus on visible apps, editor content, errors, terminal output, and UI state. Be concise.';
 
@@ -292,6 +325,7 @@ export async function describeScreen(input: ScreenInput): Promise<string> {
       images: [cleanImageB64(input)],
       temperature: 0.2,
       stream: false,
+      timeoutMs: visionTimeoutMs(),
     });
     if (content.trim().length === 0) throw new Error('Ollama vision returned empty content');
     return content.trim();
@@ -319,6 +353,52 @@ export async function describeScreen(input: ScreenInput): Promise<string> {
   }
 
   return content.trim();
+}
+
+// Ground a natural-language phrase to a box on the screenshot (the paw-on-the-pixel wedge). Uses qwen2.5-VL's
+// NATIVE grounding format (bbox_2d in the image's own PIXEL coordinates) — the model grounds far better asked
+// the way it was trained than with a bespoke schema/scale. parseGroundResponse normalizes those pixels to
+// [0,1] using the JPEG dimensions threaded from captureScreen, and fails safe on anything malformed.
+const GROUND_PROMPT = (phrase: string): string =>
+  `Locate "${phrase}" in this screenshot. Output ONLY a JSON object and nothing else: ` +
+  `{"bbox_2d": [x1, y1, x2, y2]} — the tight bounding box of that element in PIXEL coordinates of this image ` +
+  `(x1,y1 = top-left corner, x2,y2 = bottom-right). If that element is not visible, output {"bbox_2d": null}.`;
+
+/** Ground `phrase` to a normalized box on the screenshot, or null when the model can't find it. Fail-loud
+ *  by design: a null (no box) makes roro show no paw / say "I can't find that" rather than point wrongly. */
+export async function groundTarget(input: ScreenInput, phrase: string): Promise<GroundResult | null> {
+  const models = getModelIds();
+  const prompt = GROUND_PROMPT(phrase);
+
+  if (brainProvider() === 'ollama') {
+    const content = await ollamaChat({
+      model: models.vision,
+      user: prompt,
+      images: [cleanImageB64(input)],
+      temperature: 0,
+      stream: false,
+      timeoutMs: visionTimeoutMs(),
+    });
+    return parseGroundResponse(content, input.width, input.height);
+  }
+
+  const dataUri = toImageDataUri(input);
+  const response = await getNebiusClient().chat.completions.create({
+    model: models.vision,
+    temperature: 0,
+    max_tokens: 120,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: dataUri } },
+        ],
+      },
+    ],
+  });
+  const content = response.choices[0]?.message?.content;
+  return typeof content === 'string' ? parseGroundResponse(content, input.width, input.height) : null;
 }
 
 export async function embed(text: string): Promise<number[]>;
@@ -402,6 +482,61 @@ function parseDecision(raw: string): Decision {
     command,
     args: (args ?? {}) as Record<string, unknown>,
   };
+}
+
+/** Parse a grounding response ({"found":bool,"box":[x0,y0,x1,y1],"confidence":n}) into a normalized box,
+ *  or null when not found / malformed. FAIL-SAFE: any bad parse yields NO box (roro shows no paw) rather
+ *  than a confident wrong point. Tolerates 0-1000-scale boxes (a common VL convention) but not raw pixels. */
+export function parseGroundResponse(raw: string, imgW?: number, imgH?: number): GroundResult | null {
+  let json: string;
+  try {
+    json = extractJsonObject(raw);
+  } catch {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json) as unknown;
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  if (parsed.found === false) return null;
+  if (parsed.bbox_2d === null) return null; // qwen2.5-VL "not visible" sentinel
+
+  const b = parsed.bbox_2d ?? parsed.box; // prefer the native bbox_2d, accept a plain box too
+  if (!Array.isArray(b) || b.length !== 4 || !b.every((n) => typeof n === 'number' && Number.isFinite(n))) {
+    return null;
+  }
+  let [x0, y0, x1, y1] = b as [number, number, number, number];
+
+  // Normalize scale. Coords ≤1.5 are already 0-1 fractions (slight model overshoot; clamped below).
+  // Larger coords are qwen2.5-VL's native PIXEL coordinates of the input image → normalize PER-AXIS by the
+  // known image size. Without image dims, fall back to a 0-1000 scale; anything else is unnormalizable → null.
+  const maxCoord = Math.max(x0, y0, x1, y1);
+  if (maxCoord > 1.5) {
+    if (imgW && imgH && imgW > 0 && imgH > 0) {
+      x0 /= imgW; x1 /= imgW; y0 /= imgH; y1 /= imgH;
+    } else if (maxCoord <= 1000) {
+      x0 /= 1000; y0 /= 1000; x1 /= 1000; y1 /= 1000;
+    } else {
+      return null;
+    }
+  }
+
+  const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
+  x0 = clamp01(x0); y0 = clamp01(y0); x1 = clamp01(x1); y1 = clamp01(y1);
+  const left = Math.min(x0, x1);
+  const top = Math.min(y0, y1);
+  const w = Math.abs(x1 - x0);
+  const h = Math.abs(y1 - y0);
+  if (w <= 0 || h <= 0) return null; // degenerate box — treat as not found
+
+  // The native bbox_2d format carries no confidence; a returned box means the model located it, so default
+  // to a confident (tight-ring) value. An explicit low `confidence` (if a provider gives one) still widens.
+  const confRaw = parsed.confidence;
+  const confidence = typeof confRaw === 'number' && Number.isFinite(confRaw) ? clamp01(confRaw) : 0.8;
+  return { box: { x: left, y: top, w, h }, confidence };
 }
 
 function extractJsonObject(raw: string): string {

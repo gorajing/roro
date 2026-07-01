@@ -13,6 +13,7 @@ import { decideSummonAction } from './summon';
 import { withCrossOriginIsolation } from './crossOriginIsolation';
 import { isSafeNavigation } from './navigation';
 import { sendToWindow } from './safeSend';
+import { getPetWindow, registerPetWindow } from './windowRegistry';
 import { voiceRuntimeEnabled } from './voiceFlags';
 import { guardDeferredEnv } from '../shared/releaseChannel';
 
@@ -94,6 +95,10 @@ export function createWindow(): BrowserWindow {
       additionalArguments: ['--roro-cfg=' + JSON.stringify(roroCfg)],
     },
   });
+  // Register as THE pet window: every MAIN->renderer push (safeSend.sendToPetWindow) and the
+  // summon shortcut resolve their target here, so a second window (the pointer overlay) can
+  // never intercept them. Registration self-clears on close; activate re-registers.
+  registerPetWindow(mainWindow);
 
   if (FLOATING_WINDOW_FLAG) {
     mainWindow.setAspectRatio(FLOATING_WINDOW_ASPECT_RATIO);
@@ -172,7 +177,9 @@ export function startCursorTracking(win: BrowserWindow): () => void {
  */
 export function registerSummonShortcut(): void {
   const summonOk = globalShortcut.register(SUMMON_ACCELERATOR, () => {
-    const win = BrowserWindow.getAllWindows()[0];
+    // The registry, never getAllWindows()[0]: the pointer overlay orders FIRST while it exists,
+    // and summoning an invisible click-through window would strand the user.
+    const win = getPetWindow();
     if (!win) return;
     const action = decideSummonAction({
       visible: win.isVisible(),
@@ -201,9 +208,7 @@ export function registerSummonShortcut(): void {
 
   if (VOICE_RUNTIME_ENABLED) {
     const muteOk = globalShortcut.register(MUTE_ACCELERATOR, () => {
-      for (const win of BrowserWindow.getAllWindows()) {
-        sendToWindow(win, CH.micToggleMute);
-      }
+      sendToWindow(getPetWindow(), CH.micToggleMute);
     });
     if (!muteOk) {
       console.error(
