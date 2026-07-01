@@ -494,25 +494,31 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
  * the capture_screen re-decide reuses it rather than re-recalling (a second recall would
  * self-match the just-persisted transcript as top "RELATED PAST CONTEXT").
  */
-/** Best-effort paw-on-the-pixel: ground the phrase on the captured frame and point a paw at it. Never
- *  throws — pointing is a courtesy on top of the answer, and it only READs the screen + POINTs (no action).
- *  The pointerOverlay (which imports electron) is loaded dynamically so the orchestrator's node unit tests
- *  don't statically pull in electron. */
-async function groundAndPoint(
+/** Draw the paw for a grounded box. BEST-EFFORT: never throws — the paw is a courtesy on top of the answer,
+ *  and showing it is secondary to the grounding itself. The pointerOverlay (which imports electron) is loaded
+ *  dynamically so the orchestrator's node unit tests don't statically pull in electron. */
+async function showGroundedPoint(box: { x: number; y: number; w: number; h: number }, confidence: number): Promise<void> {
+  try {
+    const { showPointForBox } = await import('./pointerOverlay');
+    await showPointForBox(box, confidence);
+  } catch (err) {
+    console.warn('[paw] show failed:', (err as Error).message);
+  }
+}
+
+/** Courtesy paw for a NON-locate screen turn ("what's on my screen"): ground + point alongside the caption,
+ *  fire-and-forget. Swallows everything (grounding is a bonus here, not the point of the turn). The locate
+ *  fast path does NOT use this — there grounding is the core op, so its errors must surface (fail-loud). */
+async function groundAndPointBestEffort(
   brain: BrainModule,
   img: { b64: string; mime: string; width?: number; height?: number },
   phrase: string,
-): Promise<boolean> {
+): Promise<void> {
   try {
     const result = await brain.groundTarget(img, phrase);
-    if (!result) return false; // fail-loud: no confident target → no paw
-    const { showPointForBox } = await import('./pointerOverlay');
-    await showPointForBox(result.box, result.confidence);
-    return true;
+    if (result) await showGroundedPoint(result.box, result.confidence);
   } catch (err) {
-    // Pointing must never break the answer path — but log the failure (fail-loud) rather than swallow it.
     console.warn('[paw] grounding/point failed:', (err as Error).message);
-    return false;
   }
 }
 
@@ -562,17 +568,25 @@ async function actOnDecision(
       // Fast locate path: a pure "point at X" turn (marked by the locate gate) grounds + points with ONE
       // vision call and answers briefly — no caption + re-decide (which would double the vision latency).
       if (decision.args.locate === true) {
-        let pointed = false;
+        let result: Awaited<ReturnType<BrainModule['groundTarget']>>;
         try {
           const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
           const img = await vision.captureScreen();
-          pointed = await groundAndPoint(brain, img, transcript);
+          // Grounding IS the core op here — let its errors (vision model missing, Ollama/API down) surface
+          // as a terminal failure (fail-loud), NOT get masked as an ordinary "I can't find that".
+          result = await brain.groundTarget(img, transcript);
         } catch (err) {
           pushEvent({ kind: 'run.failed', runId, ok: false, error: `vision failed: ${(err as Error).message}`, ts: Date.now() });
           pushRunEnd(runId);
           return;
         }
-        emitNarration(runId, pointed ? 'There it is.' : "I can't find that on your screen.");
+        // Honor a Stop that arrived during capture/grounding, before showing the paw or speaking.
+        if (preemptedTurns.has(runId)) {
+          pushStopped(runId);
+          return;
+        }
+        if (result) await showGroundedPoint(result.box, result.confidence); // best-effort paw
+        emitNarration(runId, result ? 'There it is.' : "I can't find that on your screen.");
         pushRunEnd(runId);
         return;
       }
@@ -584,7 +598,7 @@ async function actOnDecision(
         // we ALSO ground the phrase and point a paw at it (the wedge) — best-effort and in parallel, so it
         // never delays or fails the answer. READ-screen + POINT only (point-don't-act); one metered glance.
         screen = await vision.askScreen(transcript, (img) => {
-          void groundAndPoint(brain, img, transcript);
+          void groundAndPointBestEffort(brain, img, transcript);
           return brain.describeScreen(img);
         });
       } catch (err) {

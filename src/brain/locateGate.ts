@@ -7,14 +7,17 @@ import type { Decision, DecideInput } from '../shared/brain';
 // clarifyGate forces clarify for referent-less requests. Once the screen HAS been captured (input.screen
 // set), the gate stands down so the second decide() produces the real answer (no infinite capture loop).
 
-// Require an EXPLICIT pointing/locating intent. A bare "on my screen" mention is NOT enough — that also
-// covers "what's this error on my screen" / "look at my screen and tell me what's wrong", which must get the
-// full screen-reading answer (caption → re-decide), not a paw + "There it is".
-const LOCATE_PATTERNS: RegExp[] = [
-  /\bpoint (at|to)\b/,
-  /\bshow me where\b/,
-  /\bwhere (is|are|s) .+\b(button|icon|menu|tab|field|link|toggle|checkbox|dropdown|logo|thumbnail)s?\b/,
-];
+// Two tiers of locate intent:
+// 1. UNAMBIGUOUS pointing verbs — "point at/to X", "show me where X". These mean the screen; nobody says
+//    "point at the login button" about source code.
+// 2. AMBIGUOUS "where is X <ui-noun>" — could be the screen OR the codebase ("where is the login button
+//    IMPLEMENTED?" is a run_agent repo question). So this tier ALSO requires explicit screen context, else
+//    it falls through to the model (which can pick run_agent). A bare "on my screen" mention alone is NOT a
+//    locate either ("what's this error on my screen" must get the full screen-reading answer, not a paw).
+const POINTING_PATTERNS: RegExp[] = [/\bpoint (at|to)\b/, /\bshow me where\b/];
+const WHERE_UI_PATTERN =
+  /\bwhere (is|are|s) .+\b(button|icon|menu|tab|field|link|toggle|checkbox|dropdown|logo|thumbnail)s?\b/;
+const SCREEN_CONTEXT_PATTERN = /\bon (the|my) (screen|display)\b/;
 
 function normalize(transcript: string): string {
   return transcript
@@ -28,8 +31,11 @@ function normalize(transcript: string): string {
  *  captured yet). Returns null otherwise, so the normal model decision (and the post-capture answer) run. */
 export function captureForLocateRequest(input: DecideInput): Decision | null {
   if (input.screen?.trim()) return null; // already looked → let the model answer
-  const normalized = normalize(input.transcript);
-  if (!LOCATE_PATTERNS.some((pattern) => pattern.test(normalized))) return null;
+  const n = normalize(input.transcript);
+  const isLocate =
+    POINTING_PATTERNS.some((pattern) => pattern.test(n)) ||
+    (WHERE_UI_PATTERN.test(n) && SCREEN_CONTEXT_PATTERN.test(n));
+  if (!isLocate) return null;
   // args.locate marks this as a pure locate turn so the orchestrator takes the fast single-vision-call
   // path (ground + point + a short answer) instead of the caption → re-decide flow.
   return {

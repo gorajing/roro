@@ -10,9 +10,9 @@ describe('captureForLocateRequest — deterministic capture_screen routing for p
       'point to the red close button',
       'show me where the settings menu is',
       'look at my screen and point at the apple menu logo in the top-left',
-      'where is the merge button',
-      'where are the tabs on the screen', // plural UI noun
-      'where is the settings icon',
+      'where is the merge button on my screen', // "where is X <ui-noun>" needs screen context
+      'where are the tabs on the screen',       // plural UI noun + screen context
+      'where is the settings icon on the display',
     ]) {
       const d = at(q);
       expect(d, q).not.toBeNull();
@@ -36,8 +36,10 @@ describe('captureForLocateRequest — deterministic capture_screen routing for p
     for (const q of [
       'add a health check endpoint to my api',
       'fix the bug in calc.py',
-      'point out the typo in the readme', // "point out" = identify, not a screen point
-      'where is the config loaded',       // no UI noun, no screen reference
+      'point out the typo in the readme',      // "point out" = identify, not a screen point
+      'where is the config loaded',            // no UI noun, no screen reference
+      'where is the login button implemented', // code question (UI noun but no screen context) → run_agent
+      'where is the submit button defined in the code',
       'refactor the auth module',
     ]) {
       expect(at(q), q).toBeNull();
