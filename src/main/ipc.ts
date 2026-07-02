@@ -217,6 +217,7 @@ export function registerIpcHandlers(): void {
   // itself is the gate — flag off (or a release build, where guardDeferredEnv strips the key) means
   // these channels simply do not exist, same boundary as the debug bridge. ownerId is ALWAYS
   // injected MAIN-side; the renderer only ever supplies the visible proposal id + a boolean.
+  const resolvingProposals = new Set<string>();
   if (guardDeferredEnv(process.env).RORO_EXECUTOR_FACTS === '1') {
     ipcMain.handle(CH.factProposalsGet, async (): Promise<FactProposalView[]> => {
       const { pendingProposals } = await import('./factProposals/runner');
@@ -231,10 +232,15 @@ export function registerIpcHandlers(): void {
           throw new Error('factProposalResolve: expected { id: string, accept: boolean }');
         }
         const { pendingProposals } = await import('./factProposals/runner');
+        // Double-resolve guard: two rapid clicks (or a click racing the push-refresh) must count as
+        // ONE corroboration and ONE store. The second concurrent resolve for an id reports gone.
+        if (resolvingProposals.has(input.id)) return { ok: true, gone: true };
+        resolvingProposals.add(input.id);
         const ownerId = getOwnerId();
         const memory = await loadMemory();
         const trace = (stage: 'confirmed' | 'rejected', p: { key: string; agent: string; sessionId: string }): void =>
           memory.traceExtraction({ kind: 'propose', ownerId, sessionId: p.sessionId, runId: 'resolve', agent: p.agent, stage, factKey: p.key });
+        try {
         if (!input.accept) {
           const p = pendingProposals.take(input.id);
           if (p) trace('rejected', p);
@@ -256,6 +262,9 @@ export function registerIpcHandlers(): void {
         pendingProposals.take(input.id); // only leaves the queue after a successful store
         trace('confirmed', p);
         return { ok: true };
+        } finally {
+          resolvingProposals.delete(input.id);
+        }
       },
     );
   }

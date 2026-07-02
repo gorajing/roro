@@ -182,3 +182,29 @@ describe('profileFacts trust helpers', () => {
     });
   });
 });
+
+describe('executor-proposal provenance (channel/claimed_by/evidence) — never write-only', () => {
+  const provRow = () =>
+    factRow('p1', 'tests_location', 'keeps tests beside features', {
+      payload: {
+        key: 'tests_location',
+        value: 'keeps tests beside features',
+        source: {
+          session_id: 'sess-1', turn_ts: 111,
+          channel: 'executor', claimed_by: 'codex', evidence: 'keeps tests beside features',
+        },
+      },
+    });
+
+  it('sourceOf passes provenance through to the Source view (the trust surface must name WHO claimed it)', async () => {
+    const { deps } = fakeDeps([provRow()]);
+    const view = await factSource(deps, 'owner-1', 'p1');
+    expect(view.source).toMatchObject({ channel: 'executor', claimed_by: 'codex', evidence: 'keeps tests beside features' });
+  });
+
+  it('fixFact PRESERVES provenance when rewriting the value (a user fix must not erase who claimed it)', async () => {
+    const { deps, replaced } = fakeDeps([provRow()]);
+    await fixFact(deps, 'owner-1', 'p1', 'keeps tests in __tests__');
+    expect((replaced[0].payload as FactPayload).source).toMatchObject({ channel: 'executor', claimed_by: 'codex' });
+  });
+});

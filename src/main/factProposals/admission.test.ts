@@ -68,6 +68,23 @@ describe('admitProposals — the deterministic channel gate (cost asymmetry: dro
     expect(out).toEqual([]);
   });
 
+  it('REJECTS evidence longer than 140 chars — the bound is enforced, not just documented', () => {
+    // The spec's ≤140 contract: evidence is rendered in the panel meta line and stored durably in
+    // payload.source.evidence. Long finalText spans self-ground (finalText is in the haystack), so
+    // without a max, an arbitrarily large blob becomes permanent fact provenance.
+    const longEvidence = 'keeps tests beside features, ' + 'x'.repeat(140);
+    const d = { ...digest, finalText: `Added the route. ${longEvidence}` };
+    const out = admitProposals(raw({ evidence: longEvidence }), { digest: d, existing: [] });
+    expect(out).toEqual([]);
+  });
+
+  it('ADMITS evidence exactly at the 140-char bound', () => {
+    const exact = 'keeps tests beside features padded to the bound '.padEnd(140, 'y');
+    const d = { ...digest, finalText: `ok: ${exact}` };
+    const out = admitProposals(raw({ evidence: exact }), { digest: d, existing: [] });
+    expect(out).toHaveLength(1);
+  });
+
   it('REJECTS useless values via the shared extractFact guard (bare booleans poison recall)', () => {
     const out = admitProposals(raw({ value: 'true', evidence: 'keeps tests beside features' }), { digest, existing: [] });
     expect(out).toEqual([]);

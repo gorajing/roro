@@ -14,3 +14,10 @@ describe('deferredEnvKeys ⇄ scripts/v0-deferred-env.mjs', () => {
     expect([...V0_DEFERRED_ENV_KEYS].sort()).toEqual([...mod.V0_DEFERRED_ENV_KEYS].sort());
   });
 });
+
+it('RORO_EXECUTOR_FACTS is in the deferred list — the executor-facts pilot ships dark BECAUSE of this line', () => {
+  // Every gate in the pilot (digest accumulation, IPC registration, renderer mount) reads the flag
+  // through guardDeferredEnv; release builds are only dark because this key is stripped. Removing it
+  // from the list must fail a test, not just a spec.
+  expect(V0_DEFERRED_ENV_KEYS).toContain('RORO_EXECUTOR_FACTS');
+});

@@ -28,7 +28,7 @@ export function buildProposalPrompt(digest: RunDigest): string {
     '- Output a JSON array of at most 2 objects: {"key", "value", "evidence"}.',
     '- "key": short snake_case topic (e.g. "test_style").',
     '- "value": a short descriptive phrase (never a bare yes/no/true/false).',
-    '- "evidence": a VERBATIM quote copied from the material below that proves the claim. No quote, no proposal.',
+    '- "evidence": a SHORT verbatim quote (under 120 characters) copied from the material below that proves the claim. No quote, no proposal.',
     '- Output ONLY the JSON array. No prose, no fences.',
     '',
     body,

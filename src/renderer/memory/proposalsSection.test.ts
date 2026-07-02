@@ -83,3 +83,23 @@ describe('proposalsSection — review surface (nothing stores without Save)', ()
     expect(host.textContent).toContain('<img src=x onerror=alert(1)>');
   });
 });
+
+describe('sourceSummary — executor provenance is NAMED, never misattributed (spec decision 6)', () => {
+  it('renders who claimed it, the confirmation, and the evidence quote', async () => {
+    const { __test } = await import('./forgetPanel');
+    const copy = __test.sourceSummary({
+      session_id: 's1', turn_ts: Date.parse('2026-07-01T12:00:00Z'),
+      channel: 'executor', claimed_by: 'codex', evidence: 'keeps tests beside features',
+    });
+    expect(copy).toContain('codex suggested this after a coding run');
+    expect(copy).toContain('you confirmed it');
+    expect(copy).toContain('keeps tests beside features');
+    expect(copy).not.toContain('Saved from a local Roro turn');
+  });
+
+  it('an ordinary 3B fact keeps the local-turn copy', async () => {
+    const { __test } = await import('./forgetPanel');
+    const copy = __test.sourceSummary({ session_id: 's1', turn_ts: Date.parse('2026-07-01T12:00:00Z') });
+    expect(copy).toContain('Saved from a local Roro turn');
+  });
+});

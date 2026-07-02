@@ -12,6 +12,7 @@ import type { AdmittedProposal, RawProposal, RunDigest } from './types';
 
 export const MAX_ADMITTED_PER_RUN = 2; // confirm fatigue is this channel's poison mode
 const MIN_EVIDENCE_CHARS = 12; // a trivial quote ("the repo") grounds nothing
+export const MAX_EVIDENCE_CHARS = 140; // rendered in the panel + stored durably in payload.source — bounded here
 const MIN_VALUE_CHARS = 3;
 const MAX_VALUE_CHARS = 120;
 const MIN_KEY_CHARS = 2;
@@ -69,6 +70,7 @@ export function admitProposals(raw: RawProposal[], input: AdmissionInput): Admit
     if (isUselessValue(value)) continue; // bare booleans/placeholders — shared guard, single source
     if (SECRET_SHAPE.test(value)) continue;
     if (evidence.length < MIN_EVIDENCE_CHARS) continue;
+    if (p.evidence.trim().length > MAX_EVIDENCE_CHARS) continue; // the ≤140 contract: reject, never truncate (verbatim stays verbatim)
     if (!haystack.includes(evidence)) continue; // THE grounding receipt: unproven → dropped
     // Exact (key,value) duplicate of an active fact adds nothing; a same-key DIFFERENT value is a
     // legitimate supersede candidate — admitted, the user's confirm decides.
