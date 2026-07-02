@@ -8,7 +8,8 @@
 
 import { parseProposals, admitProposals } from './admission';
 import { createPendingQueue, type PendingQueue } from './pendingQueue';
-import type { ProposalSource, RunDigest } from './index';
+import type { ProposalSource } from './proposer';
+import type { RunDigest } from './types';
 
 const ASK_TIMEOUT_MS = 60_000;
 

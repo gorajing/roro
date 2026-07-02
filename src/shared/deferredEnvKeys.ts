@@ -13,6 +13,7 @@
 // `deferredEnvKeys.test.ts` asserts the two are in sync — drift fails the test, not production.
 export const V0_DEFERRED_ENV_KEYS = [
   'RORO_WS5_STORE',
+  'RORO_EXECUTOR_FACTS',
   'RORO_DEBUG_BRIDGE',
   'RORO_FLOATING_SMOKE',
   'RORO_MEMORY_PANEL_SMOKE',
