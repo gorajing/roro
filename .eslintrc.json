@@ -20,6 +20,29 @@
       "rules": {
         "@typescript-eslint/no-empty-function": "off"
       }
+    },
+    {
+      "files": [
+        "src/core/**/*.ts",
+        "src/executor/**/*.ts",
+        "src/brain/**/*.ts",
+        "src/memory2/**/*.ts",
+        "src/vision/**/*.ts",
+        "src/ambient/**/*.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              { "name": "electron", "message": "The core is Electron-free — reach the platform through a port (src/core/ports)." }
+            ],
+            "patterns": [
+              { "group": ["electron/*"], "message": "The core is Electron-free — reach the platform through a port (src/core/ports)." }
+            ]
+          }
+        ]
+      }
     }
   ]
 }
