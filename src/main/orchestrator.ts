@@ -30,6 +30,7 @@ import { requestConfirm } from './confirmGate';
 import { isCleanTree } from './gitTree';
 import { getRunRegistry, type DispatchSection } from './run/runRegistry';
 import { pumpRun } from './run/pump';
+import { buildStages, runGates, RUN_AGENT_GATES, RUN_TASK_GATES, type GateContext } from './run/gates';
 import type { Turn } from './run/turnState';
 import { resolveWorkdir, tryResolveWorkdir } from './workdir';
 import { repoId as deriveRepoId } from '../memory2/repoId';
@@ -86,38 +87,6 @@ async function confirmIfDestructive(
   const approved = await requestConfirm(runId, verdict.reason ?? 'destructive command', pushConfirmRequest);
   if (!approved) return { ok: false, destructive: true, reason: `it looked destructive (${verdict.reason}) and wasn't approved` };
   return { ok: true, destructive: true };
-}
-
-/**
- * Step 2: the section-protected single-executor dispatch. The DispatchSection stays open across
- * the (destructive) clean-tree check AND the synchronous dispatch(), so no other turn can start an
- * executor in between — the clean-tree result is therefore fresh at dispatch (closes the TOCTOU),
- * and only one coding agent ever runs on the repo at a time. Returns false (and emits a terminal)
- * if it can't dispatch.
- */
-async function guardedDispatch(turn: Turn, destructive: boolean, repo: string, dispatch: (section: DispatchSection) => void): Promise<boolean> {
-  const section = getRunRegistry().tryBeginDispatch(turn);
-  if (!section) {
-    emitNarration(turn.runId, "I'm already working on something — Stop that first, or wait for it to finish.");
-    turn.end({ kind: 'refused', reason: 'busy' });
-    return false;
-  }
-  turn.to({ kind: 'dispatching' });
-  try {
-    if (destructive && !(await isCleanTree(repo))) {
-      emitNarration(turn.runId, "Skipping that — the git tree isn't clean, so a destructive step couldn't be safely undone — commit or stash first.");
-      turn.end({ kind: 'refused', reason: 'dirty tree' });
-      return false;
-    }
-    if (turn.stopRequested) {
-      pushStopped(turn);
-      return false;
-    }
-    dispatch(section); // section.commit() registers the pump synchronously inside dispatch()
-    return true;
-  } finally {
-    section.close();
-  }
 }
 
 function pushReasoning(delta: string): void {
@@ -280,22 +249,16 @@ function emitNarration(runId: string, text: string): void {
 }
 
 /**
- * Dispatch the executor for a run: resolve the executor, commit the pump into the slot, and hand
+ * The dispatch gate's startPump: resolve the executor (the ONLY getExecutor call-site), create
+ * the AbortController inside the open dispatch section, commit the pump into the slot, and hand
  * the stream to pumpRun (src/main/run/pump.ts — watchdog, re-stamp, destructive guard, no-verdict
  * synthesis live there). This caller owns WHAT flows into the sinks: the digest accumulator stays
  * HERE so the factProposals digest is built ONLY from the dispatched prompt + the run's own
- * events. Resolves when the stream truly ends.
+ * events. The pump runs detached (resolves at DISPATCH); its stream drains in the background.
  */
-async function dispatchExecutor(
-  turn: Turn,
-  sessionId: string,
-  prompt: string,
-  agent: AgentKind,
-  repo: string,
-  section: DispatchSection,
-  destructiveApproved = false,
-  factCtx?: { transcript: string; narration: string; task: string },
-): Promise<void> {
+function startPump(ctx: GateContext, repo: string, destructiveApproved: boolean, section: DispatchSection): void {
+  const { turn, sessionId, agent, factCtx } = ctx;
+  const prompt = ctx.task;
   const runId = turn.runId;
   const controller = new AbortController();
   // Executor-facts pilot (RORO_EXECUTOR_FACTS, spec: docs/plans/executor-facts-pilot.md): accumulate
@@ -304,7 +267,7 @@ async function dispatchExecutor(
   const digestAcc = guardDeferredEnv(process.env).RORO_EXECUTOR_FACTS === '1' ? createDigestAccumulator() : null;
   section.commit(controller); // occupies the single-executor slot synchronously (turn -> running)
   const executor = getExecutor(agent);
-  await pumpRun(
+  void pumpRun(
     runId,
     { events: executor.run({ repo, prompt, agent, signal: controller.signal }), controller },
     {
@@ -343,6 +306,26 @@ async function dispatchExecutor(
     },
   );
 }
+
+/** Terminal run.failed event + end the turn failed{error} — the gates' fail-loud sink. */
+function failRun(turn: Turn, error: string): void {
+  pushEvent({ kind: 'run.failed', runId: turn.runId, ok: false, error, ts: Date.now() });
+  turn.end({ kind: 'failed', error });
+}
+
+/** The one stage library both compositions draw from (src/main/run/gates.ts owns the stage
+ *  bodies + every pinned user-facing string; this facade injects the effects). */
+const STAGES = buildStages({
+  resolveRepo: () => resolveWorkdir(process.env, process.cwd()),
+  getReadiness: (agent) => getExecutorReadiness(agent),
+  confirmDestructive: confirmIfDestructive,
+  emitNarration,
+  failRun,
+  pushStopped,
+  isCleanTree: (repo) => isCleanTree(repo),
+  beginDispatch: (turn) => getRunRegistry().tryBeginDispatch(turn),
+  startPump,
+});
 
 /**
  * PRIMARY entrypoint. Runs a full voice turn for a final transcript.
@@ -540,16 +523,6 @@ async function actOnDecision(
 
     case 'run_agent': {
       turn.to({ kind: 'gating' });
-      // Choose the repo the agent will edit — FAIL LOUD if none is set, never silently touch cwd
-      // (which is the app bundle / roro's own checkout). Surfaces as a terminal run.failed, not a crash.
-      let repo: string;
-      try {
-        repo = resolveWorkdir(process.env, process.cwd());
-      } catch (err) {
-        pushEvent({ kind: 'run.failed', runId, ok: false, error: (err as Error).message, ts: Date.now() });
-        turn.end({ kind: 'failed', error: (err as Error).message });
-        return;
-      }
       const task =
         typeof decision.args.task === 'string'
           ? decision.args.task
@@ -569,38 +542,17 @@ async function actOnDecision(
       const agent: AgentKind =
         decision.args.agent === 'claude' ? 'claude' : DEFAULT_AGENT;
 
-      const readiness = await getExecutorReadiness(agent);
-      if (!readiness.ready) {
-        pushEvent({ kind: 'run.failed', runId, ok: false, error: readiness.message, ts: Date.now() });
-        turn.end({ kind: 'failed', error: readiness.message });
-        return;
-      }
-
-      // Speak the narration once the selected coding agent is actually startable.
-      if (decision.narration) emitNarration(runId, decision.narration);
-
-      // C1 destructive-confirm gate (BEFORE dispatch). A spoken/typed word can NEVER approve —
-      // approval is only the dedicated CH.confirmResolve channel; 15s default-deny.
-      turn.to({ kind: 'confirming' });
-      const confirm = await confirmIfDestructive(runId, task);
-      if (!confirm.ok) {
-        emitNarration(runId, `Skipping that — ${confirm.reason ?? "it was blocked"}.`);
-        turn.end({ kind: 'refused', reason: confirm.reason ?? 'it was blocked' });
-        return;
-      }
-      // Post-confirm stopCheckpoint: honor a Stop that arrived during decide/confirm.
-      if (turn.stopRequested) {
-        pushStopped(turn);
-        return;
-      }
-      // Section-protected single-executor dispatch (fresh clean-tree check inside; resolves at
-      // DISPATCH — the action stream arrives over push channels; the pump commits synchronously).
-      await guardedDispatch(turn, confirm.destructive, repo, (section) => {
-        void dispatchExecutor(turn, sessionId, task, agent, repo, section, confirm.destructive, {
-          transcript,
-          narration: decision.narration,
-          task,
-        });
+      // The run_agent gate pipeline: workdir (fail-loud repo) → readiness (+ narration once the
+      // selected coding agent is actually startable) → destructive confirm → stopCheckpoint →
+      // section-protected dispatch (fresh clean-tree check inside; resolves at DISPATCH — the
+      // action stream arrives over push channels; the pump commits synchronously).
+      await runGates(RUN_AGENT_GATES, STAGES, {
+        turn,
+        sessionId,
+        task,
+        agent,
+        narration: decision.narration,
+        factCtx: { transcript, narration: decision.narration, task },
       });
       return;
     }
@@ -757,31 +709,16 @@ export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId
   const runId = newRunId();
   const turn = getRunRegistry().mint(runId);
   // runTask bypasses the brain, so the destructive gate MUST run here too (or a renderer caller
-  // could `rm -rf` unconfirmed). Gate then dispatch off the critical path; return {runId} now.
+  // could `rm -rf` unconfirmed) — RUN_TASK_GATES keeps workdir (fail-loud repo) + destructive
+  // confirm + stopCheckpoint + dispatch, and skips the run_agent-only readiness/narration.
+  // Gate then dispatch off the critical path; return {runId} now.
   void (async () => {
     turn.to({ kind: 'gating' });
-    // Same fail-loud repo selection as the run_agent path — runTask bypasses the brain but still edits files.
-    let repo: string;
-    try {
-      repo = resolveWorkdir(process.env, process.cwd());
-    } catch (err) {
-      pushEvent({ kind: 'run.failed', runId, ok: false, error: (err as Error).message, ts: Date.now() });
-      turn.end({ kind: 'failed', error: (err as Error).message });
-      return;
-    }
-    turn.to({ kind: 'confirming' });
-    const confirm = await confirmIfDestructive(runId, prompt);
-    if (!confirm.ok) {
-      emitNarration(runId, `Skipping that — ${confirm.reason ?? "it was blocked"}.`);
-      turn.end({ kind: 'refused', reason: confirm.reason ?? 'it was blocked' });
-      return;
-    }
-    if (turn.stopRequested) {
-      pushStopped(turn);
-      return;
-    }
-    await guardedDispatch(turn, confirm.destructive, repo, (section) => {
-      void dispatchExecutor(turn, `task_${runId}`, prompt, agent, repo, section, confirm.destructive);
+    await runGates(RUN_TASK_GATES, STAGES, {
+      turn,
+      sessionId: `task_${runId}`,
+      task: prompt,
+      agent,
     });
   })();
   return { runId };
