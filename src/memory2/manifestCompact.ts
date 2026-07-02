@@ -6,13 +6,16 @@
 //
 //   - NEVER renumber: kept ops keep their original seq (seq is the recency key, bound into sealed
 //     entries' AAD, and matched to episode-log rows BY SEQ — renumbering would corrupt all three).
-//   - Drop op-pairs for tombstoned ids. The delete op itself is dropped ONLY when no put survives
-//     AND the content is confirmed gone: per-file tiers require the file absent on disk; log tiers
-//     keep their delete op (the JSONL line persists — the tombstone is what keeps it dead).
-//   - Collapse a PER-FILE overwrite chain (reinforce/supersede/core re-puts) to its max-seq
-//     entry-carrying op (the WAL redo payload replays the final state alone). Log-tier put chains
-//     are kept as-is (each op matches its own JSONL row by seq).
-//   - KEEP superseded-fact puts (stored + hidden is live state, not garbage).
+//   - FACT-tier ops are EXEMPT from every dropping rule: the full history is kept (see the incident
+//     comment in planCompaction — supersession is recorded on the SUCCESSOR's op, so dropping any
+//     fact op can brick replay or resurrect a superseded value).
+//   - Drop op-pairs for tombstoned NON-FACT ids. The delete op itself is dropped ONLY when no put
+//     survives AND the content is confirmed gone: per-file tiers require the file absent on disk;
+//     log tiers keep their delete op (the JSONL line persists — the tombstone keeps it dead).
+//   - Collapse a PER-FILE NON-FACT overwrite chain (core re-puts) to its max-seq entry-carrying op
+//     (the WAL redo payload replays the final state alone — valid there because a core overwrite
+//     records its state on its OWN id's op, never on a sibling's). Log-tier put chains are kept
+//     as-is (each op matches its own JSONL row by seq).
 //   - ALWAYS retain the globally max-seq op, even if the rules would drop it — nextSeq() derives
 //     from the manifest max, and losing it would REUSE seqs after a restart (corrupting recency and
 //     AAD identity). A retained delete for an already-absent id replays as a no-op.
@@ -58,7 +61,20 @@ async function planCompaction(dir: string, ops: ManifestOp[]): Promise<ManifestO
   const keep: ManifestOp[] = [];
   for (const idOps of byId.values()) {
     const last = idOps[idOps.length - 1];
-    if (last.op === 'delete') {
+    if (last.tier === 'fact') {
+      // FACT ops are NEVER collapsed or pair-dropped — the FULL history is kept. INCIDENT (PR #147
+      // P0): a fact's supersession is recorded ONLY on its SUCCESSOR's replace_fact op (supersedeIds)
+      // — the prior's file is rewritten at its original seq with no new op of its own. Collapsing the
+      // successor's chain after a routine reinforce (or pair-dropping it after a forget) erased that
+      // record, and replay then indexed the prior's STALE WAL snapshot as ACTIVE: a duplicate-active-
+      // fact throw inside reconcile BRICKED the store on every subsequent launch (rm -rf index/ can't
+      // help — the manifest itself was the damage), and the forget variant RESURRECTED the superseded
+      // prior into the profile. Keeping every fact op replays supersession correctly in seq order; the
+      // cost is bounded by fact ACTIVITY (tiny — episodes dominate manifest churn, and they still
+      // compact). If fact history ever needs compacting, the safe route is rewriting kept snapshots
+      // from just-reconciled on-disk state, with snapshot-freshness pins — not op dropping.
+      keep.push(...idOps);
+    } else if (last.op === 'delete') {
       // Tombstoned id: every put drops. The delete drops too ONLY when the content is confirmed gone
       // (per-file tier + file absent); a log tier's JSONL line persists, so its tombstone must persist.
       if (isLogTier(last.tier) || await fileExists(entryPath(dir, { tier: last.tier, id: last.id } as Entry))) {
