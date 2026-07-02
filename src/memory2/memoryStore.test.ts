@@ -47,12 +47,25 @@ describe('memoryStore — unified API + full-replay reconciliation', () => {
   it('persists importance through remember -> recall (the M5 ranking-nudge channel)', async () => {
     const store = await createMemoryStore({ dir, embed, dim: DIM });
     try {
-      // The adapter stamps importanceFor(kind); here we prove the store carries it end-to-end so the blend
+      // The facade stamps importanceFor(kind); here we prove the store carries it end-to-end so the blend
       // (memoryScore weights importance) can actually use it — a missing channel would silently drop the nudge.
       await store.remember({ tier: 'episode', ownerId: 'o1', text: 'added a logout route', importance: 6 });
       const hits = await store.recall({ query: 'added a logout route', ownerId: 'o1', k: 5 });
       expect(hits.find((h) => h.entry.text === 'added a logout route')?.entry.importance).toBe(6);
     } finally { await store.close(); }
+  });
+
+  it('persists episodeKind through remember -> reopen (W5: the kind survives storage, not just the tier)', async () => {
+    const a = await createMemoryStore({ dir, embed, dim: DIM });
+    await a.remember({ tier: 'episode', ownerId: 'o1', text: 'the user said something', episodeKind: 'observation' });
+    await a.remember({ tier: 'episode', ownerId: 'o1', text: 'the agent did something', episodeKind: 'action' });
+    await a.close();
+    const b = await createMemoryStore({ dir, embed, dim: DIM }); // full replay must carry the field
+    try {
+      const byText = new Map((await b.recent({ ownerId: 'o1', k: 5 })).map((e) => [e.text, e.episodeKind]));
+      expect(byText.get('the user said something')).toBe('observation');
+      expect(byText.get('the agent did something')).toBe('action');
+    } finally { await b.close(); }
   });
 
   it('forget hard-deletes a fact that STAYS gone across reindex (the Forget durability invariant)', async () => {

@@ -19,6 +19,7 @@ import type { Cipher } from './cipher';
 import type { Tracer } from './tracer';
 import type { Entry, Tier } from './types';
 import type {
+  EpisodeKind,
   MemoryKind,
   RememberInput,
   ReplaceFactInput,
@@ -128,15 +129,19 @@ export async function createMemory2Adapter(opts: Memory2AdapterOpts): Promise<Me
       }
       requireText(input.owner_id, 'remember owner_id');
       requireText(input.text, 'remember text');
+      const kind = input.kind as EpisodeKind; // narrowed: the fact guard above rejects the only other member
       const e = await store.remember({
-        tier: KIND_TO_TIER[input.kind],
+        tier: KIND_TO_TIER[kind],
         ownerId: input.owner_id,
         sessionId: input.session_id,
         text: input.text,
         payload: input.payload,
+        // Persist WHICH episodic channel wrote the row (W5): the kind survives storage instead of
+        // collapsing to 'observation' on the way back.
+        episodeKind: kind,
         // Deterministic importance by kind (M5): nudges the recall blend so the user's own words rank above
         // the cat's paraphrase. Derived here so EVERY remember() is stamped without each caller passing it.
-        importance: importanceFor(input.kind),
+        importance: importanceFor(kind),
         // Project scope (M5b): stamp the repo path + a stable derived id so recall can boost same-repo
         // memories. Absent repo_path → empty repoId → an unscoped (global) memory.
         repoPath: input.repo_path,
@@ -169,20 +174,22 @@ export async function createMemory2Adapter(opts: Memory2AdapterOpts): Promise<Me
       return deps.getProfile(ownerId);
     },
 
+    // The trust-loop helpers are Entry-based (W5): the store IS the deps (same signatures), no
+    // row-translation layer in between. Their OUTPUT views stay the frozen renderer shapes.
     profileFacts(ownerId: string): Promise<ProfileFactView[]> {
-      return profileFacts(deps, ownerId);
+      return profileFacts(store, ownerId);
     },
 
     fixFact(ownerId: string, id: string, value: string): Promise<ProfileFactView> {
-      return fixFact(deps, ownerId, id, value);
+      return fixFact(store, ownerId, id, value);
     },
 
     verifyFact(ownerId: string, id: string): Promise<ProfileFactView> {
-      return verifyFact(deps, ownerId, id);
+      return verifyFact(store, ownerId, id);
     },
 
     factSource(ownerId: string, id: string): Promise<ProfileFactSourceView> {
-      return factSource(deps, ownerId, id);
+      return factSource(store, ownerId, id);
     },
 
     supersede(id: string): Promise<void> {
