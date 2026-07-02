@@ -1,39 +1,64 @@
-// src/main/orchestrator.ts — the MAIN-process orchestrator core.
+// src/main/orchestrator.ts — the MAIN-process orchestrator FACADE.
 //
-// turnRun (the PRIMARY entrypoint): final transcript -> memory.recall -> brain.decide
-// (streaming reasoning/content to the renderer) -> dispatch on Decision.command:
-//   - run_agent      -> executor.run(...) for-await the ActionEvent stream
+// The public surface is runTurn, runTask, cancelTask, cancelAllRuns, resolveDestructiveConfirm.
+// The lifecycle itself is the typed run state machine under src/main/run/
+// (docs/plans/run-state-machine.md):
+//   - turnState.ts      the TURN machine — UI truth ("has runEnd been pushed?"): minted →
+//                       deciding{1|2} → capturing → gating → confirming → dispatching → running
+//                       → ended{cause}; `stopping` is preemption AS a phase, consumed by
+//                       explicit stopCheckpoints
+//   - runRegistry.ts    all live Turns + the single-executor SLOT (occupancy = a committed
+//                       pump, freed only at stream drain) + the DispatchSection (the TOCTOU
+//                       lock as a type) + the total requestStop
+//   - pump.ts           the PUMP machine — process truth ("has the child's stream drained?"):
+//                       flowing → finishing → draining → closed; Stop watchdog, runId re-stamp,
+//                       mid-run destructive guard, no-verdict synthesis
+//   - gates.ts          the pre-dispatch pipeline: RUN_AGENT_GATES / RUN_TASK_GATES composed
+//                       from one stage library (workdir, readiness, destructiveConfirm,
+//                       stopCheckpoint, dispatch)
+//   - decisionRouter.ts the bounded two-pass decide loop (capture_screen re-decides ONCE;
+//                       the pass lives in the Turn phase)
+//
+// runTurn (the PRIMARY entrypoint): final transcript -> memory.recall -> brain.decide
+// (streaming reasoning/content to the renderer) -> routeDecision:
+//   - run_agent      -> RUN_AGENT_GATES -> pumpRun over executor.run(...)'s ActionEvent stream
 //   - answer/clarify -> push narration (a synthetic 'message' event), no executor
-//   - capture_screen -> vision.ask -> decide() ONCE more with the screen, then re-dispatch
+//   - capture_screen -> vision (locate fast path, or caption) -> decide() ONCE more, re-route
 //
-// runTask/cancelTask: direct executor dispatch (used after decide() already produced a
-// command). One AbortController per run; cancelTask aborts it (the CLI executors translate
-// an aborted signal into a run.failed('aborted')).
+// runTask/cancelTask: direct executor dispatch bypassing the brain (RUN_TASK_GATES). One
+// AbortController per run, created inside the dispatch section and owned by the pump;
+// cancelTask -> registry.requestStop (the CLI executors translate an aborted signal into a
+// run.failed('aborted')).
 //
 // STREAMING RULE (BUILD_GUIDE): ipcMain.handle is request/response only. ALL token/action
 // streams go over guarded MAIN->renderer push channels (CH.actionEvent, CH.runEnd, CH.brainReasoning,
-// CH.brainContent). The invoke promise resolves only with the final {runId}.
+// CH.brainContent). The invoke promise resolves only with the final {runId}. This facade owns the
+// IPC push sinks + the memory/fact side-effects it injects into the machine as deps.
 import { Notification } from 'electron';
 import { CH } from '../shared/ipc';
 import type { TurnInput } from '../shared/ipc';
 import { formatMemoryStatus, type ActionEvent, type AgentKind } from '../shared/events';
-import { newRunId, SCREEN_CAPTURE_STATUS_TEXT } from '../shared/events';
+import { newRunId } from '../shared/events';
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import type { MemoryKind } from '../shared/memory';
 import { getExecutor } from '../executor';
-import { loadBrain, loadMemory, loadVision, type MemoryModule, type BrainModule } from './siblings';
+import { loadBrain, loadMemory, loadVision, type MemoryModule } from './siblings';
 import { getOwnerId } from './identity';
 import { buildRecallContext } from './memoryContext';
 import { extractAndStoreFact } from './factStore';
 import { classifyDestructive, classifyDestructiveCommand } from './destructive';
-import { requestConfirm, resolveConfirm } from './confirmGate';
+import { requestConfirm } from './confirmGate';
 import { isCleanTree } from './gitTree';
+import { getRunRegistry, type DispatchSection } from './run/runRegistry';
+import { pumpRun } from './run/pump';
+import { buildStages, runGates, RUN_AGENT_GATES, RUN_TASK_GATES, type GateContext } from './run/gates';
+import { routeDecision, type RouterDeps } from './run/decisionRouter';
+import type { Turn } from './run/turnState';
 import { resolveWorkdir, tryResolveWorkdir } from './workdir';
 import { repoId as deriveRepoId } from '../memory2/repoId';
 import { isPlausiblePreference, type FactExtractInput } from '../brain/extractFact';
 import { buildDecisionPrompt } from '../brain/decisionPrompt';
 import { sendToPetWindow } from './safeSend';
-import { isActivityEvent, silentRunWarning } from '../executor/formatDrift';
 import { guardDeferredEnv } from '../shared/releaseChannel';
 import { createDigestAccumulator } from './factProposals/digest';
 import type { RunDigest } from './factProposals/types';
@@ -44,26 +69,9 @@ const RECALL_K = 5;
 // recent rows (which carry cosine 0). A positive caller-side cosine floor would drop exactly those,
 // nullifying the temporal-recall fix — so trust memory2's ranked top-k (0 = keep all it returns).
 const RECALL_MIN_SIMILARITY = 0;
-const DEFAULT_AGENT: AgentKind = 'codex';
-/** How long after an abort we force a terminal event so Stop is provably terminal. */
-const STOP_WATCHDOG_MS = 1500;
-/** Gives the renderer one visible beat to show the privacy tell before an on-demand screen capture. */
-const SCREEN_CAPTURE_TELL_DWELL_MS = 500;
 
-/** Holds the active AbortController per runId so cancelTask can target a specific run. */
-const activeRuns = new Map<string, AbortController>();
-/** Turns the user preempted (Stop) before the executor registered — honored at the decide/confirm
- *  boundary and again right before dispatch, so a barge-in during decide/confirm never runs. */
-const preemptedTurns = new Set<string>();
-/** Every turn from mint to runEnd (covers decide/confirm/exec). Stop is only honored for an id in
- *  this set, which bounds preemptedTurns against stale/garbage ids from the public cancelTask IPC. */
-const inFlightTurns = new Set<string>();
-/** The most recently minted turn/task runId — the no-id Stop fallback, which must also reach a turn
- *  still in decide/confirm (when activeRuns is still empty). */
-let lastTurnId: string | null = null;
-/** Held synchronously across the clean-tree-check → dispatch critical section so that section can't
- *  interleave: it guarantees a destructive run's clean-tree result is fresh at dispatch (no TOCTOU). */
-let dispatchLock = false;
+// Lifecycle state (turns, preemption, the single-executor slot, the dispatch section) lives in
+// the typed run state machine: src/main/run/{turnState,runRegistry}.ts.
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -71,28 +79,23 @@ function pushEvent(e: ActionEvent): void {
   sendToPetWindow(CH.actionEvent, e);
 }
 
-function pushRunEnd(runId: string): void {
-  preemptedTurns.delete(runId);
-  inFlightTurns.delete(runId);
-  sendToPetWindow(CH.runEnd, { runId });
-}
-
 /** Push the destructive-confirm request to the renderer (it shows a confirm chip). */
 function pushConfirmRequest(req: { runId: string; summary: string }): void {
   sendToPetWindow(CH.confirmRequest, req);
 }
 
-/** Emit a synthetic terminal failure (preempt / stop) + runEnd for a turn. */
-function pushStopped(runId: string, error = 'stopped'): void {
-  pushEvent({ kind: 'run.failed', runId, ok: false, error, ts: Date.now() });
-  pushRunEnd(runId);
+/** Emit a synthetic terminal failure (preempt / stop) + end the turn — the stopCheckpoint's
+ *  consumer: it turns a pending `stopping` phase into ended{stopped}. */
+function pushStopped(turn: Turn): void {
+  pushEvent({ kind: 'run.failed', runId: turn.runId, ok: false, error: 'stopped', ts: Date.now() });
+  turn.end({ kind: 'stopped' });
 }
 
 /**
  * Step 1 of the destructive gate (used by BOTH run_agent and the brain-bypassing runTask): classify
  * the task, and if dangerous require explicit approval via the dedicated CH.confirmResolve channel
- * (15s default-DENY). NO lock is held here (the confirm can take up to 15s). The clean-tree check is
- * NOT here — it's done inside guardedDispatch so it's fresh at dispatch (see that fn).
+ * (15s default-DENY). NO dispatch section is held here (the confirm can take up to 15s). The
+ * clean-tree check is NOT here — the dispatch gate does it in-section so it's fresh at dispatch.
  */
 async function confirmIfDestructive(
   runId: string,
@@ -103,36 +106,6 @@ async function confirmIfDestructive(
   const approved = await requestConfirm(runId, verdict.reason ?? 'destructive command', pushConfirmRequest);
   if (!approved) return { ok: false, destructive: true, reason: `it looked destructive (${verdict.reason}) and wasn't approved` };
   return { ok: true, destructive: true };
-}
-
-/**
- * Step 2: the lock-protected single-executor dispatch. Holds dispatchLock across the (destructive)
- * clean-tree check AND the synchronous dispatch(), so no other turn can start an executor in between
- * — the clean-tree result is therefore fresh at dispatch (closes the TOCTOU), and only one coding
- * agent ever runs on the repo at a time. Returns false (and emits a terminal) if it can't dispatch.
- */
-async function guardedDispatch(runId: string, destructive: boolean, repo: string, dispatch: () => void): Promise<boolean> {
-  if (dispatchLock || activeRuns.size > 0) {
-    emitNarration(runId, "I'm already working on something — Stop that first, or wait for it to finish.");
-    pushRunEnd(runId);
-    return false;
-  }
-  dispatchLock = true;
-  try {
-    if (destructive && !(await isCleanTree(repo))) {
-      emitNarration(runId, "Skipping that — the git tree isn't clean, so a destructive step couldn't be safely undone — commit or stash first.");
-      pushRunEnd(runId);
-      return false;
-    }
-    if (preemptedTurns.has(runId)) {
-      pushStopped(runId);
-      return false;
-    }
-    dispatch(); // registers activeRuns synchronously before releasing the lock
-    return true;
-  } finally {
-    dispatchLock = false;
-  }
 }
 
 function pushReasoning(delta: string): void {
@@ -161,12 +134,6 @@ function notifyJobDone(ok: boolean, detail?: string): void {
   } catch (err) {
     console.error('[orchestrator] notification failed:', (err as Error).message);
   }
-}
-
-function terminalEventText(e: ActionEvent): string | undefined {
-  if (e.kind === 'run.completed') return e.finalText;
-  if (e.kind === 'run.failed') return e.error;
-  return undefined;
 }
 
 function unapprovedDestructiveCommandReason(e: ActionEvent, destructiveApproved: boolean, repo?: string): string | null {
@@ -301,98 +268,38 @@ function emitNarration(runId: string, text: string): void {
 }
 
 /**
- * Dispatch the executor for a run, streaming every ActionEvent to the renderer and memory.
- * Owns the AbortController lifecycle for `runId`. Resolves when the stream ends.
+ * The dispatch gate's startPump: resolve the executor (the ONLY getExecutor call-site), create
+ * the AbortController inside the open dispatch section, commit the pump into the slot, and hand
+ * the stream to pumpRun (src/main/run/pump.ts — watchdog, re-stamp, destructive guard, no-verdict
+ * synthesis live there). This caller owns WHAT flows into the sinks: the digest accumulator stays
+ * HERE so the factProposals digest is built ONLY from the dispatched prompt + the run's own
+ * events. The pump runs detached (resolves at DISPATCH); its stream drains in the background.
  */
-async function dispatchExecutor(
-  runId: string,
-  sessionId: string,
-  prompt: string,
-  agent: AgentKind,
-  repo: string,
-  destructiveApproved = false,
-  factCtx?: { transcript: string; narration: string; task: string },
-): Promise<void> {
+function startPump(ctx: GateContext, repo: string, destructiveApproved: boolean, section: DispatchSection): void {
+  const { turn, sessionId, agent, factCtx } = ctx;
+  const prompt = ctx.task;
+  const runId = turn.runId;
   const controller = new AbortController();
   // Executor-facts pilot (RORO_EXECUTOR_FACTS, spec: docs/plans/executor-facts-pilot.md): accumulate
   // a bounded digest of the run's OWN events for the post-run proposal ask. Dark unless the
   // deferred-env flag is on — no accumulation, no ask, zero cost.
   const digestAcc = guardDeferredEnv(process.env).RORO_EXECUTOR_FACTS === '1' ? createDigestAccumulator() : null;
-  let terminalSeen = false;
-  let uiEnded = false;
-  let slotReleased = false;
-  let watchdog: ReturnType<typeof setTimeout> | null = null;
-  activeRuns.set(runId, controller);
-
-  // UI-terminal: push the terminal failure (if forced) + runEnd exactly once. Does NOT free the
-  // executor slot — a watchdog-forced Stop is terminal to the USER while the possibly-still-alive
-  // child keeps the single-executor slot, so guardedDispatch won't start a concurrent run.
-  const endUi = (forcedError?: string): void => {
-    if (uiEnded) return;
-    uiEnded = true;
-    if (forcedError && !terminalSeen) {
-      pushEvent({ kind: 'run.failed', runId, ok: false, error: forcedError, ts: Date.now() });
-      notifyJobDone(false, forcedError);
-    }
-    pushRunEnd(runId);
-  };
-  // Free the executor slot ONLY when the stream has truly ended (the child is confirmed gone), so a
-  // new run never starts against a repo an orphaned child may still be mutating.
-  const releaseSlot = (): void => {
-    if (slotReleased) return;
-    slotReleased = true;
-    if (watchdog) {
-      clearTimeout(watchdog);
-      watchdog = null;
-    }
-    activeRuns.delete(runId);
-  };
-
-  // Stop watchdog: if the child doesn't honor abort within STOP_WATCHDOG_MS, make the run terminal to
-  // the UI (so Stop is provably terminal). It does NOT free the slot — the slot frees when the stream
-  // truly ends. (The executor adapter SIGKILLs its child on abort, so the stream normally ends fast.)
-  controller.signal.addEventListener(
-    'abort',
-    () => {
-      watchdog = setTimeout(() => endUi('stopped'), STOP_WATCHDOG_MS);
-    },
-    { once: true },
-  );
-
-  try {
-    const executor = getExecutor(agent);
-    let activityCount = 0; // format-drift tripwire: a completed run that mapped ZERO activity is suspicious
-    for await (const ev of executor.run({
-      repo,
-      prompt,
-      agent,
-      signal: controller.signal,
-    })) {
-      // Already terminal (watchdog fired): DROP late events but keep DRAINING the stream until it
-      // truly ends, so releaseSlot (in finally) only frees the single-executor slot once the child
-      // has actually exited (the abort signal kills it). Breaking here would free the slot while an
-      // aborted-but-slow child is still alive, admitting a concurrent run against the same repo.
-      if (uiEnded) continue;
-      // Re-stamp to the orchestrator's runId — the executors mint their OWN run ids, but activeRuns
-      // (and so Stop/cancelTask) is keyed by THIS runId. Without this, a targeted Stop from the
-      // renderer (which sees the event's runId) never finds the controller. One id per turn.
-      const stamped = { ...ev, runId } as ActionEvent;
-      const destructiveReason = unapprovedDestructiveCommandReason(stamped, destructiveApproved, repo);
-      if (destructiveReason) {
-        controller.abort();
-        endUi(`blocked unapproved destructive command: ${destructiveReason}`);
-        continue;
-      }
-      pushEvent(stamped);
-      if (isActivityEvent(stamped.kind)) activityCount++;
-      digestAcc?.see(stamped);
-      // Native "job done" notification on terminal events — visible even when the
-      // window is hidden or in floating mode.
-      if (stamped.kind === 'run.completed' || stamped.kind === 'run.failed') {
-        terminalSeen = true;
-        const drift = silentRunWarning(activityCount, stamped.kind);
-        if (drift) console.warn(drift);
-        notifyJobDone(stamped.kind === 'run.completed', terminalEventText(stamped));
+  section.commit(controller); // occupies the single-executor slot synchronously (turn -> running)
+  const executor = getExecutor(agent);
+  void pumpRun(
+    runId,
+    { events: executor.run({ repo, prompt, agent, signal: controller.signal }), controller },
+    {
+      emit: (e) => {
+        pushEvent(e);
+        digestAcc?.see(e);
+      },
+      remember: (e) => {
+        void rememberEvent(sessionId, e);
+      },
+      notify: notifyJobDone,
+      guard: (e) => unapprovedDestructiveCommandReason(e, destructiveApproved, repo),
+      onVerdict: (terminal) => {
         // Off-critical-path: extract AT MOST one durable fact from this turn (supersede-not-
         // overwrite). Fire-and-forget; this survives the Phase-B dispatch-return change.
         if (factCtx) {
@@ -400,52 +307,44 @@ async function dispatchExecutor(
             transcript: factCtx.transcript,
             narration: factCtx.narration,
             task: factCtx.task,
-            outcome: stamped.kind === 'run.completed' ? 'completed' : 'failed',
+            outcome: terminal.kind === 'run.completed' ? 'completed' : 'failed',
           });
         }
         // Executor-facts pilot: one post-run proposal ask, only on a COMPLETED run (a failed run
         // teaches about the repo, not the user). Fire-and-forget like runFactExtraction.
-        if (digestAcc && stamped.kind === 'run.completed') {
-          void proposeFactsFromRun(digestAcc.finish({ runId, sessionId, repo, agent, task: prompt, finalText: stamped.finalText }));
+        if (digestAcc && terminal.kind === 'run.completed') {
+          void proposeFactsFromRun(digestAcc.finish({ runId, sessionId, repo, agent, task: prompt, finalText: terminal.finalText }));
         }
-      }
-      // Fire-and-forget memory persistence so it never stalls the event stream.
-      void rememberEvent(sessionId, stamped);
-    }
-    if (!terminalSeen && !uiEnded && !controller.signal.aborted) {
-      // The executor stream ended with NO terminal event. Both adapters emit a terminal on success AND
-      // failure (+ exitAccounting.ts now fails loud on a nonzero/killed exit), so a MISSING verdict means
-      // the child died/exited without completing — FAIL LOUD, never synthesize a false success (which would
-      // also persist a fabricated outcome to memory). This is the catch-all behind the adapter accounting.
-      const failed: ActionEvent = {
-        kind: 'run.failed',
-        runId,
-        ok: false,
-        error: 'the coding agent ended without a result (no completion or failure was reported)',
-        ts: Date.now(),
-      };
-      pushEvent(failed);
-      notifyJobDone(false, failed.error);
-      void rememberEvent(sessionId, failed);
-    }
-  } catch (err) {
-    // The executors normally translate failures into a run.failed event, but guard the
-    // for-await itself so a thrown error still produces a terminal event + runEnd.
-    if (!terminalSeen && !uiEnded) {
-      pushEvent({
-        kind: 'run.failed',
-        runId,
-        ok: false,
-        error: (err as Error).message,
-        ts: Date.now(),
-      });
-      notifyJobDone(false, (err as Error).message);
-    }
-  } finally {
-    releaseSlot();
-    endUi();
-  }
+      },
+      endUi: (cause) => {
+        turn.end(cause);
+      },
+      releaseSlot: () => {
+        getRunRegistry().releasePump(runId);
+      },
+    },
+  );
 }
+
+/** Terminal run.failed event + end the turn failed{error} — the gates' fail-loud sink. */
+function failRun(turn: Turn, error: string): void {
+  pushEvent({ kind: 'run.failed', runId: turn.runId, ok: false, error, ts: Date.now() });
+  turn.end({ kind: 'failed', error });
+}
+
+/** The one stage library both compositions draw from (src/main/run/gates.ts owns the stage
+ *  bodies + every pinned user-facing string; this facade injects the effects). */
+const STAGES = buildStages({
+  resolveRepo: () => resolveWorkdir(process.env, process.cwd()),
+  getReadiness: (agent) => getExecutorReadiness(agent),
+  confirmDestructive: confirmIfDestructive,
+  emitNarration,
+  failRun,
+  pushStopped,
+  isCleanTree: (repo) => isCleanTree(repo),
+  beginDispatch: (turn) => getRunRegistry().tryBeginDispatch(turn),
+  startPump,
+});
 
 /**
  * PRIMARY entrypoint. Runs a full voice turn for a final transcript.
@@ -454,8 +353,7 @@ async function dispatchExecutor(
 export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
   const { transcript, sessionId } = input;
   const runId = newRunId();
-  lastTurnId = runId;
-  inFlightTurns.add(runId);
+  const turn = getRunRegistry().mint(runId);
 
   // The project this turn belongs to (best-effort, NON-throwing — a no-workdir/answer turn still
   // recalls + remembers, just unscoped). Used to boost same-repo recall AND to stamp this turn's writes.
@@ -481,6 +379,7 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
   });
 
   let decision: Decision;
+  turn.to({ kind: 'deciding', pass: 1 });
   try {
     decision = await decideStreaming({ transcript, memory });
   } catch (err) {
@@ -492,26 +391,20 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
       error: `decide failed: ${(err as Error).message}`,
       ts: Date.now(),
     });
-    pushRunEnd(runId);
+    turn.end({ kind: 'failed', error: `decide failed: ${(err as Error).message}` });
     return { runId };
   }
 
-  // Pre-executor preempt: a Stop/barge-in that arrived during decide is honored before we act.
-  if (preemptedTurns.has(runId)) {
-    pushStopped(runId);
+  // Post-decide stopCheckpoint: a Stop/barge-in that arrived during decide is honored before we act.
+  if (turn.stopRequested) {
+    pushStopped(turn);
     return { runId };
   }
 
-  await actOnDecision(runId, input, decision, /* screenAlreadyCaptured */ false, memory);
+  await routeDecision(turn, input, decision, memory, ROUTER_DEPS);
   return { runId };
 }
 
-/**
- * Dispatch logic for a Decision; capture_screen may loop back into decide() exactly once.
- * `recalledMemory` is the recall computed in runTurn BEFORE this turn's transcript was stored —
- * the capture_screen re-decide reuses it rather than re-recalling (a second recall would
- * self-match the just-persisted transcript as top "RELATED PAST CONTEXT").
- */
 /** Draw the paw for a grounded box. BEST-EFFORT: never throws — the paw is a courtesy on top of the answer,
  *  and showing it is secondary to the grounding itself. The pointerOverlay (which imports electron) is loaded
  *  dynamically so the orchestrator's node unit tests don't statically pull in electron. */
@@ -524,194 +417,32 @@ async function showGroundedPoint(box: { x: number; y: number; w: number; h: numb
   }
 }
 
-async function actOnDecision(
-  runId: string,
-  input: TurnInput,
-  decision: Decision,
-  screenAlreadyCaptured: boolean,
-  recalledMemory: string | undefined,
-): Promise<void> {
-  const { transcript, sessionId } = input;
-  const command: Command = decision.command;
-
-  // Always persist the narration the brain produced.
-  void rememberNarration(sessionId, decision.narration);
-
-  switch (command) {
-    case 'answer':
-    case 'clarify': {
-      // Push the narration for the renderer to speak; no executor, no run.
-      emitNarration(runId, decision.narration);
-      void runFactExtraction(sessionId, { transcript, narration: decision.narration, outcome: 'answered' });
-      pushRunEnd(runId);
-      return;
-    }
-
-    case 'capture_screen': {
-      if (screenAlreadyCaptured) {
-        // Guard against an infinite capture loop: if the brain asks again, fall back to
-        // answering with whatever narration it gave.
-        emitNarration(runId, decision.narration);
-        pushRunEnd(runId);
-        return;
-      }
-      pushEvent({
-        kind: 'status',
-        runId,
-        text: SCREEN_CAPTURE_STATUS_TEXT,
-        ts: Date.now(),
-      });
-      await delay(SCREEN_CAPTURE_TELL_DWELL_MS);
-      if (preemptedTurns.has(runId)) {
-        pushStopped(runId);
-        return;
-      }
-
-      // Fast locate path: a pure "point at X" turn (marked by the locate gate) grounds + points with ONE
-      // vision call and answers briefly — no caption + re-decide (which would double the vision latency).
-      if (decision.args.locate === true) {
-        let result: Awaited<ReturnType<BrainModule['groundTarget']>>;
-        try {
-          const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
-          const img = await vision.captureScreen();
-          // Grounding IS the core op here — let its errors (vision model missing, Ollama/API down) surface
-          // as a terminal failure (fail-loud), NOT get masked as an ordinary "I can't find that".
-          result = await brain.groundTarget(img, transcript);
-        } catch (err) {
-          pushEvent({ kind: 'run.failed', runId, ok: false, error: `vision failed: ${(err as Error).message}`, ts: Date.now() });
-          pushRunEnd(runId);
-          return;
-        }
-        // Honor a Stop that arrived during capture/grounding, before showing the paw or speaking.
-        if (preemptedTurns.has(runId)) {
-          pushStopped(runId);
-          return;
-        }
-        if (result) await showGroundedPoint(result.box, result.confidence); // best-effort paw
-        emitNarration(runId, result ? 'There it is.' : "I can't find that on your screen.");
-        pushRunEnd(runId);
-        return;
-      }
-
-      let screen: string;
-      try {
-        const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
-        // A NON-locate screen turn ("what's this error on my screen?") just captions the frame — no paw.
-        // The paw is a locate-turn thing (the fast path above); grounding here would queue a second call on
-        // the same serialized vision model and add a full grounding latency to an ordinary screen answer.
-        screen = await vision.askScreen(transcript, (img) => brain.describeScreen(img));
-      } catch (err) {
-        pushEvent({
-          kind: 'run.failed',
-          runId,
-          ok: false,
-          error: `vision failed: ${(err as Error).message}`,
-          ts: Date.now(),
-        });
-        pushRunEnd(runId);
-        return;
-      }
-      // Loop back into decide() ONCE with the screen description, then re-dispatch. Reuse the
-      // pre-store recall (re-recalling here would self-match this turn's just-stored transcript).
-      let next: Decision;
-      try {
-        next = await decideStreaming({ transcript, memory: recalledMemory, screen });
-      } catch (err) {
-        pushEvent({
-          kind: 'run.failed',
-          runId,
-          ok: false,
-          error: `decide (post-vision) failed: ${(err as Error).message}`,
-          ts: Date.now(),
-        });
-        pushRunEnd(runId);
-        return;
-      }
-      // Honor a Stop that arrived during the vision capture / second decide before recursing.
-      if (preemptedTurns.has(runId)) {
-        pushStopped(runId);
-        return;
-      }
-      await actOnDecision(runId, input, next, /* screenAlreadyCaptured */ true, recalledMemory);
-      return;
-    }
-
-    case 'run_agent': {
-      // Choose the repo the agent will edit — FAIL LOUD if none is set, never silently touch cwd
-      // (which is the app bundle / roro's own checkout). Surfaces as a terminal run.failed, not a crash.
-      let repo: string;
-      try {
-        repo = resolveWorkdir(process.env, process.cwd());
-      } catch (err) {
-        pushEvent({ kind: 'run.failed', runId, ok: false, error: (err as Error).message, ts: Date.now() });
-        pushRunEnd(runId);
-        return;
-      }
-      const task =
-        typeof decision.args.task === 'string'
-          ? decision.args.task
-          : transcript;
-      // Opt-in proof capture (NOOP unless RORO_TRACE=1). Only the PRIMARY (non-screen) decision is captured,
-      // so the reconstructed prompt from {transcript, recalledMemory} is byte-exact; the vision re-decide
-      // path is skipped (its prompt also carried the screen, which isn't reconstructed here).
-      if (!screenAlreadyCaptured) {
-        captureDecide(
-          sessionId,
-          command,
-          transcript,
-          recalledMemory,
-          typeof decision.args.task === 'string' ? decision.args.task : undefined,
-        );
-      }
-      const agent: AgentKind =
-        decision.args.agent === 'claude' ? 'claude' : DEFAULT_AGENT;
-
-      const readiness = await getExecutorReadiness(agent);
-      if (!readiness.ready) {
-        pushEvent({ kind: 'run.failed', runId, ok: false, error: readiness.message, ts: Date.now() });
-        pushRunEnd(runId);
-        return;
-      }
-
-      // Speak the narration once the selected coding agent is actually startable.
-      if (decision.narration) emitNarration(runId, decision.narration);
-
-      // C1 destructive-confirm gate (BEFORE dispatch). A spoken/typed word can NEVER approve —
-      // approval is only the dedicated CH.confirmResolve channel; 15s default-deny.
-      const confirm = await confirmIfDestructive(runId, task);
-      if (!confirm.ok) {
-        emitNarration(runId, `Skipping that — ${confirm.reason ?? "it was blocked"}.`);
-        pushRunEnd(runId);
-        return;
-      }
-      // Honor a Stop that arrived during decide/confirm (pre-executor preempt).
-      if (preemptedTurns.has(runId)) {
-        pushStopped(runId);
-        return;
-      }
-      // Lock-protected single-executor dispatch (fresh clean-tree check inside; resolves at DISPATCH —
-      // the action stream arrives over push channels; the AbortController registers synchronously).
-      await guardedDispatch(runId, confirm.destructive, repo, () => {
-        void dispatchExecutor(runId, sessionId, task, agent, repo, confirm.destructive, {
-          transcript,
-          narration: decision.narration,
-          task,
-        });
-      });
-      return;
-    }
-
-    default: {
-      // Exhaustiveness guard: adding a Command must be handled above. The never-assignment fails the
-      // build until it is; if that is ever bypassed at runtime, END the run (a missing case used to
-      // fall through to a silent return — a hung run that never pushes run-end).
-      const _exhaustive: never = command;
-      pushEvent({ kind: 'run.failed', runId, ok: false, error: `unhandled command: ${String(_exhaustive)}`, ts: Date.now() });
-      pushRunEnd(runId);
-      return;
-    }
-  }
-}
+/** The decision router's effect sinks (src/main/run/decisionRouter.ts owns the bounded two-pass
+ *  routing; this facade injects the vision/brain loads and the push/persist effects). */
+const ROUTER_DEPS: RouterDeps = {
+  rememberNarration,
+  emitNarration,
+  pushStatus: (runId, text) => {
+    pushEvent({ kind: 'status', runId, text, ts: Date.now() });
+  },
+  failRun,
+  pushStopped,
+  runFactExtraction,
+  captureDecide,
+  decide: decideStreaming,
+  ground: async (transcript) => {
+    const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
+    const img = await vision.captureScreen();
+    return brain.groundTarget(img, transcript);
+  },
+  caption: async (transcript) => {
+    const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
+    return vision.askScreen(transcript, (img) => brain.describeScreen(img));
+  },
+  showGroundedPoint,
+  delay,
+  runAgentGates: (ctx) => runGates(RUN_AGENT_GATES, STAGES, ctx),
+};
 
 async function rememberNarration(sessionId: string, text: string): Promise<void> {
   if (!text) return;
@@ -851,61 +582,43 @@ async function runFactExtraction(sessionId: string, input: FactExtractInput): Pr
  */
 export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId: string }> {
   const runId = newRunId();
-  lastTurnId = runId;
-  inFlightTurns.add(runId);
+  const turn = getRunRegistry().mint(runId);
   // runTask bypasses the brain, so the destructive gate MUST run here too (or a renderer caller
-  // could `rm -rf` unconfirmed). Gate then dispatch off the critical path; return {runId} now.
+  // could `rm -rf` unconfirmed) — RUN_TASK_GATES keeps workdir (fail-loud repo) + destructive
+  // confirm + stopCheckpoint + dispatch, and skips the run_agent-only readiness/narration.
+  // Gate then dispatch off the critical path; return {runId} now.
   void (async () => {
-    // Same fail-loud repo selection as the run_agent path — runTask bypasses the brain but still edits files.
-    let repo: string;
-    try {
-      repo = resolveWorkdir(process.env, process.cwd());
-    } catch (err) {
-      pushEvent({ kind: 'run.failed', runId, ok: false, error: (err as Error).message, ts: Date.now() });
-      pushRunEnd(runId);
-      return;
-    }
-    const confirm = await confirmIfDestructive(runId, prompt);
-    if (!confirm.ok) {
-      emitNarration(runId, `Skipping that — ${confirm.reason ?? "it was blocked"}.`);
-      pushRunEnd(runId);
-      return;
-    }
-    if (preemptedTurns.has(runId)) {
-      pushStopped(runId);
-      return;
-    }
-    await guardedDispatch(runId, confirm.destructive, repo, () => {
-      void dispatchExecutor(runId, `task_${runId}`, prompt, agent, repo, confirm.destructive);
+    turn.to({ kind: 'gating' });
+    await runGates(RUN_TASK_GATES, STAGES, {
+      turn,
+      sessionId: `task_${runId}`,
+      task: prompt,
+      agent,
     });
   })();
   return { runId };
 }
 
 /**
- * Stop / preempt a turn (CH.cancelTask). Marks the turn preempted (honored at the decide/confirm
- * boundary if no executor is registered yet) AND aborts the executor if it's running (which arms the
- * Stop watchdog). If runId is omitted, targets the most recent run.
+ * Stop / preempt a turn (CH.cancelTask). Delegates to the registry's total requestStop.
+ * If runId is omitted, targets the most recent run.
  */
 export function cancelTask(runId?: string): void {
-  // Stop one turn: mark it preempted (honored at the decide/confirm boundary), DENY any pending
-  // destructive-confirm immediately (so the turn ends promptly instead of hanging until the 15s
-  // timeout), and abort its executor if running (arming the watchdog).
-  const stop = (id: string): void => {
-    if (!inFlightTurns.has(id)) return; // ignore stale/unknown ids -> bounds preemptedTurns
-    preemptedTurns.add(id);
-    resolveConfirm(id, false);
-    activeRuns.get(id)?.abort();
-  };
+  // requestStop is total: pre-dispatch phases flip to 'stopping' (honored at the next
+  // stopCheckpoint) with any pending destructive-confirm DENIED immediately (so the turn ends
+  // promptly instead of hanging until the 15s timeout); a running turn has its pump's controller
+  // aborted (arming the watchdog); stale/unknown ids are ignored.
+  const registry = getRunRegistry();
   if (runId) {
-    stop(runId);
+    registry.requestStop(runId);
     return;
   }
   // No id: stop the most recent turn (it may still be in decide/confirm) AND abort the latest
   // running executor if that's a different turn — a no-id Stop shouldn't leave either running.
-  if (lastTurnId) stop(lastTurnId);
-  const latest = [...activeRuns.keys()].pop();
-  if (latest && latest !== lastTurnId) activeRuns.get(latest)?.abort();
+  const last = registry.lastTurnId;
+  if (last) registry.requestStop(last);
+  const holder = registry.slotHolder();
+  if (holder && holder !== last) registry.abortPump(holder);
 }
 
 /** Resolve a destructive-confirm from the renderer's dedicated CH.confirmResolve. */
@@ -913,6 +626,5 @@ export { resolveConfirm as resolveDestructiveConfirm } from './confirmGate';
 
 /** Abort every active run (called on app quit). */
 export function cancelAllRuns(): void {
-  for (const c of activeRuns.values()) c.abort();
-  activeRuns.clear();
+  getRunRegistry().cancelAll();
 }
