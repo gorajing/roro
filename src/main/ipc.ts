@@ -30,7 +30,7 @@ import { CH } from '../shared/ipc';
 import type { TurnInput, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg, BootstrapStatusMsg } from '../shared/ipc';
 import { guardDeferredEnv } from '../shared/releaseChannel';
 import { extractAndStoreFact } from '../core/orchestrator/factStore';
-import type { FactProposalView } from '../core/orchestrator/factProposals/types';
+import type { FactProposalView } from '../shared/factProposals';
 import { pullModel } from '../core/brain/ollama';
 import { DEFAULT_MODEL_SPECS } from '../core/orchestrator/bootstrapPlan';
 import { isAllowedExternalUrl } from './openExternalGuard';

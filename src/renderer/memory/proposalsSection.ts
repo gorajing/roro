@@ -7,7 +7,7 @@
 // runs the same supersede-not-overwrite fact lifecycle as every other fact. textContent ONLY (the
 // panel's XSS invariant); failure is recoverable in place ("Couldn't save. Retry.").
 
-import type { FactProposalView } from '../../core/orchestrator/factProposals/types';
+import type { FactProposalView } from '../../shared/factProposals';
 
 export interface ProposalsBridge {
   proposals(): Promise<FactProposalView[]>;

@@ -53,12 +53,5 @@ export interface PendingProposal {
   createdAt: number;
 }
 
-/** Renderer-safe view for the Memory panel's "Roro noticed" section. */
-export interface FactProposalView {
-  id: string;
-  key: string;
-  value: string;
-  evidence: string;
-  agent: AgentKind;
-  createdAt: number;
-}
+// FactProposalView (the renderer-safe view) lives in src/shared/factProposals.ts — it crosses the IPC
+// boundary, so the renderer imports it from shared, not from the core.

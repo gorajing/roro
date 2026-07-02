@@ -14,6 +14,19 @@
     "plugin:import/typescript"
   ],
   "parser": "@typescript-eslint/parser",
+  "rules": {
+    "import/no-restricted-paths": [
+      "error",
+      {
+        "zones": [
+          { "target": "./src/core", "from": "./src/main", "message": "The core is Electron-free — it must not import the shell (src/main). Use a platform port (src/core/ports) or src/shared." },
+          { "target": "./src/core", "from": "./src/renderer", "message": "The core must not import the renderer. Share types via src/shared; reach behavior over IPC." },
+          { "target": "./src/core", "from": "./src/preload.ts", "message": "The core must not import the preload bridge. Use src/shared or a port." },
+          { "target": "./src/renderer", "from": "./src/core", "message": "The renderer must not import the core directly — share types via src/shared and reach behavior over IPC." }
+        ]
+      }
+    ]
+  },
   "overrides": [
     {
       "files": ["**/*.test.ts"],
@@ -22,14 +35,7 @@
       }
     },
     {
-      "files": [
-        "src/core/**/*.ts",
-        "src/executor/**/*.ts",
-        "src/brain/**/*.ts",
-        "src/memory2/**/*.ts",
-        "src/vision/**/*.ts",
-        "src/ambient/**/*.ts"
-      ],
+      "files": ["src/core/**/*.ts"],
       "rules": {
         "no-restricted-imports": [
           "error",
