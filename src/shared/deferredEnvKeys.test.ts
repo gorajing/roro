@@ -21,3 +21,11 @@ it('RORO_EXECUTOR_FACTS is in the deferred list — the executor-facts pilot shi
   // from the list must fail a test, not just a spec.
   expect(V0_DEFERRED_ENV_KEYS).toContain('RORO_EXECUTOR_FACTS');
 });
+
+it('RORO_SDK_EXECUTOR is in the deferred list — the Agent-SDK executor ships dark BECAUSE of this line', () => {
+  // getExecutor selects ClaudeSdkExecutor only when guardDeferredEnv(env).RORO_SDK_EXECUTOR === '1'.
+  // On the release channel guardDeferredEnv strips this key, so a shipped build can never select the
+  // SDK executor from a launch-time env — the CLI adapter stays the default. Removing it from the
+  // list must fail a test, not just a spec.
+  expect(V0_DEFERRED_ENV_KEYS).toContain('RORO_SDK_EXECUTOR');
+});

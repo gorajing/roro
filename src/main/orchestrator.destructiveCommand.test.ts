@@ -107,6 +107,40 @@ describe('orchestrator destructive command tripwire', () => {
     else process.env.RORO_CODEX_BIN = savedCodexBin;
   });
 
+  it('injects a DestructiveGate into executor.run for every coding run (the SDK gate seam; CLI adapters ignore it)', async () => {
+    const first = await runTurn({ transcript: 'inspect files', sessionId: 's' });
+    await waitUntil(() => runEndsFor(first.runId).length === 1);
+    expect(h.run).toHaveBeenCalledTimes(1);
+    const opts = h.run.mock.calls[0][0] as { gate?: { classify: unknown; ask: unknown; onCleared: unknown; preApprovedReason?: unknown }; signal?: AbortSignal };
+    expect(opts.gate).toBeDefined();
+    expect(typeof opts.gate?.classify).toBe('function');
+    expect(typeof opts.gate?.ask).toBe('function');
+    expect(typeof opts.gate?.onCleared).toBe('function');
+    // The task ('inspect files') is non-destructive → nothing pre-approved.
+    expect(opts.gate?.preApprovedReason).toBeUndefined();
+    // classify is bound to the repo — a destructive command classifies positive.
+    const verdict = (opts.gate as { classify: (c: string) => { destructive: boolean } }).classify('rm -rf build');
+    expect(verdict.destructive).toBe(true);
+  });
+
+  it('threads the pre-dispatch approval reason into the gate as preApprovedReason', async () => {
+    h.brain.decide.mockResolvedValueOnce({
+      narration: 'on it',
+      command: 'run_agent',
+      args: { task: 'Remove the generated build directory with rm -rf build.' },
+    });
+    const turn = runTurn({ transcript: 'remove build', sessionId: 's' });
+    await waitUntil(() => sent.some((item) => item.ch === CH.confirmRequest));
+    const runId = sent.find((item) => item.ch === CH.confirmRequest)?.payload.runId;
+    if (!runId) throw new Error('confirm request missing runId');
+    resolveConfirm(runId, true);
+    const result = await turn;
+    await waitUntil(() => runEndsFor(result.runId).length === 1);
+    const opts = h.run.mock.calls[0][0] as { gate?: { preApprovedReason?: string } };
+    // The classifier reason for `rm -rf` — seeded so the identical mid-run command isn't re-asked.
+    expect(opts.gate?.preApprovedReason).toBe('recursive file deletion (rm -r)');
+  });
+
   it('aborts an unapproved destructive command event and retains the executor slot until the stream drains', async () => {
     const aborted = deferred();
     const drain = deferred();

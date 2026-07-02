@@ -26,6 +26,10 @@ export interface GateContext {
   readonly factCtx?: { transcript: string; narration: string; task: string };
   repo?: string;
   destructive?: boolean;
+  /** Set by destructiveConfirm when a destructive task was APPROVED pre-dispatch: the classifier
+   *  reason class. The SDK gate seeds it as preApprovedReason so the identical mid-run command never
+   *  re-asks. Undefined when the task was non-destructive (nothing pre-approved). */
+  destructiveReason?: string;
 }
 
 export type GateName = 'workdir' | 'readiness' | 'destructiveConfirm' | 'stopCheckpoint' | 'dispatch';
@@ -115,6 +119,9 @@ export function buildStages(deps: StageDeps): StageLibrary {
         return false;
       }
       ctx.destructive = confirm.destructive;
+      // Carry the approved reason class forward so the SDK gate waives the identical mid-run ask
+      // (preApprovedReason). Only populated when the task was destructive AND approved.
+      if (confirm.destructive) ctx.destructiveReason = confirm.reason;
       return true;
     },
 
