@@ -208,11 +208,12 @@ try {
   await evalJs(`window.__roroFloatingAskSmoke.startTask('answer without an executor')`);
   await sleep(100);
   check('#floating-stop arms for accepted answer/clarify turn', await evalJs(`document.getElementById('floating-stop').classList.contains('armed')`));
+  check('#floating-error shows a live "thinking…" progress line while tasked', await evalJs(`document.getElementById('floating-error').textContent === 'thinking…' && document.getElementById('floating-error').classList.contains('progress') && !document.getElementById('floating-error').hidden`));
   await evalJs(`window.__roroFloatingAskSmoke.runEnd()`);
   await sleep(100);
   check('#floating-ask collapses on successful runEnd without run.started', await evalJs(`document.getElementById('floating-ask').classList.contains('collapsed')`));
   check('#floating-stop hides after successful runEnd without run.started', !(await isVisible('#floating-stop')));
-  check('#floating-error stays HIDDEN after successful runEnd (success shows no banner)', await evalJs(`document.getElementById('floating-error').hidden === true && !document.getElementById('floating-error').classList.contains('success')`));
+  check('#floating-error shows a brief "done" nod after successful runEnd', await evalJs(`document.getElementById('floating-error').textContent === 'done' && document.getElementById('floating-error').classList.contains('success') && !document.getElementById('floating-error').hidden`));
 
   console.log('[smoke] asserting executor Stop targets run id after run.started…');
   await evalJs(`document.getElementById('ask-pill').click()`);
