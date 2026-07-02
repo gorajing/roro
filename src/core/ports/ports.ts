@@ -10,6 +10,7 @@
 // Access is fail-LOUD: reading a port before it is registered THROWS, naming the port — so a missing
 // boot wiring surfaces immediately instead of degrading into a silent no-op.
 import type { NormalizedBox } from '../../shared/pointing';
+import type { SafeStorageLike } from '../../memory2/safeStorageWrapper';
 
 /** Push a guarded MAIN->renderer message to the pet window. Impl: safeSend.sendToPetWindow (registry-
  *  targeted — never getAllWindows()[0], which the pointer overlay would hijack). */
@@ -30,11 +31,19 @@ export interface PointerOverlayPort {
   showPointForBox(box: NormalizedBox, confidence: number): Promise<void>;
 }
 
+/** Supply the raw OS-keychain object (Electron safeStorage) that wraps the memory DEK at rest. The core
+ *  owns the KeyWrapper POLICY on top of it (buildSafeStorageWrapper + its Linux-backend/forced-failure
+ *  rules stay in memory2); the shell hands over only the raw object. */
+export interface KeyWrapperPort {
+  getSafeStorage(): SafeStorageLike;
+}
+
 /** The full set the shell installs at boot. */
 export interface PlatformPorts {
   rendererPush: RendererPushPort;
   notification: NotificationPort;
   pointerOverlay: PointerOverlayPort;
+  keyWrapper: KeyWrapperPort;
 }
 
 let registered: PlatformPorts | null = null;
@@ -56,6 +65,7 @@ const accessor: PlatformPorts = {
   get rendererPush() { return get('rendererPush'); },
   get notification() { return get('notification'); },
   get pointerOverlay() { return get('pointerOverlay'); },
+  get keyWrapper() { return get('keyWrapper'); },
 };
 
 /** The core's typed accessor for the platform ports. Fail-loud per-port when boot wiring is missing. */

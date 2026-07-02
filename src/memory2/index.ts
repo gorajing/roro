@@ -16,7 +16,8 @@ import { factSource as factSourceOf, fixFact as fixFactOf, profileFacts as profi
 import { importanceFor } from './importance';
 import { repoId } from './repoId';
 import { loadOrCreateCipher } from './keyManager';
-import { buildSafeStorageWrapper, type SafeStorageLike } from './safeStorageWrapper';
+import { buildSafeStorageWrapper } from './safeStorageWrapper';
+import { ports } from '../core/ports/ports';
 import { resolveTracer, type Tracer, type TraceEvent } from './tracer';
 import { resolveOllamaEmbedDim } from '../brain/ollama';
 import type { Cipher } from './cipher';
@@ -229,12 +230,12 @@ async function embedText(text: string): Promise<number[]> {
   return assertEmbedding(await (await loadBrainEmbed())(text));
 }
 
-/** Load the at-rest cipher (encrypt-by-default): wrap the per-store DEK with Electron safeStorage. The
- *  electron import is DYNAMIC so non-Electron contexts (vite-node smoke) don't force-load it; in the real
- *  app this runs in the main process. Fails loud if the OS keychain is unavailable (keyManager). */
+/** Load the at-rest cipher (encrypt-by-default): wrap the per-store DEK with the OS keychain. The raw
+ *  safeStorage object comes through the KeyWrapperPort (the shell supplies Electron's; core never imports
+ *  electron), so a non-Electron context that reaches here fails loud "port not registered". The wrapper
+ *  POLICY stays here. Fails loud if the OS keychain is unavailable (keyManager). */
 async function loadCipher(dir: string): Promise<Cipher> {
-  const { safeStorage } = (await import('electron')) as unknown as { safeStorage: SafeStorageLike };
-  const wrapper = buildSafeStorageWrapper(safeStorage, process.platform);
+  const wrapper = buildSafeStorageWrapper(ports().keyWrapper.getSafeStorage(), process.platform);
   return loadOrCreateCipher({ dir, wrapper });
 }
 

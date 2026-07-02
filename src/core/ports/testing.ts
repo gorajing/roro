@@ -26,11 +26,15 @@ export function installTestPorts(overrides: Partial<PlatformPorts> = {}): TestPo
     rendererPush: { send: (channel, ...args) => { pushes.push({ channel, args }); return true; } },
     notification: { isSupported: () => true, show: (n) => { notifications.push(n); } },
     pointerOverlay: { showPointForBox: async (box, confidence) => { points.push({ box, confidence }); } },
+    // Fail-loud: no unit test should reach the real memory2 cipher singleton (they inject ciphers via
+    // createMemoryFacade/createMemoryStore). A test that genuinely needs it must override keyWrapper.
+    keyWrapper: { getSafeStorage: () => { throw new Error('[ports] keyWrapper.getSafeStorage() not configured — override it in installTestPorts if a test exercises the memory cipher singleton'); } },
   };
   setPlatformPorts({
     rendererPush: overrides.rendererPush ?? defaults.rendererPush,
     notification: overrides.notification ?? defaults.notification,
     pointerOverlay: overrides.pointerOverlay ?? defaults.pointerOverlay,
+    keyWrapper: overrides.keyWrapper ?? defaults.keyWrapper,
   });
   return { pushes, notifications, points };
 }

@@ -1,6 +1,5 @@
 // src/main/identity.ts — the device-stable owner_id (the un-retrofittable memory spine).
 // MAIN-process only. The renderer never sees or supplies this; the orchestrator injects it.
-import { app } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -59,9 +58,9 @@ async function atomicWriteJson(path: string, value: unknown): Promise<void> {
 
 let cached: string | null = null;
 
-/** Boot wrapper (call once in main.ts whenReady). Last-resort LOUD re-mint on corruption. */
-export async function initOwnerId(): Promise<string> {
-  const dir = app.getPath('userData');
+/** Boot wrapper (call once in main.ts whenReady, passing app.getPath('userData')). Last-resort LOUD
+ *  re-mint on corruption. */
+export async function initOwnerId(dir: string): Promise<string> {
   try {
     const { id, minted } = await loadOrMintOwnerId(dir);
     if (minted) console.log('[identity] minted new owner_id');

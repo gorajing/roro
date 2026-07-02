@@ -104,7 +104,7 @@ export function registerIpcHandlers(): void {
   );
 
   // ---- Packaged-app config / onboarding ----
-  ipcMain.handle(CH.configGet, (): Promise<WorkdirConfigMsg> => hydrateWorkdirConfig());
+  ipcMain.handle(CH.configGet, (): Promise<WorkdirConfigMsg> => hydrateWorkdirConfig(app.getPath('userData')));
   ipcMain.handle(CH.configChooseWorkdir, async (event): Promise<WorkdirConfigMsg> => {
     const options: OpenDialogOptions = {
       title: 'Choose the project Roro should work on',
@@ -117,7 +117,7 @@ export function registerIpcHandlers(): void {
       : await dialog.showOpenDialog(options);
 
     if (result.canceled || result.filePaths.length === 0) {
-      return hydrateWorkdirConfig();
+      return hydrateWorkdirConfig(app.getPath('userData'));
     }
 
     return persistWorkdirChoice(app.getPath('userData'), result.filePaths[0], process.env);

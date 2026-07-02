@@ -75,8 +75,8 @@ app.whenReady().then(async () => {
   //    memory2 store (files + derived index) lives beside owner.json in userData (single-writer,
   //    owned by main only).
   process.env.RORO_DB_DIR ||= join(app.getPath('userData'), 'memory');
-  await hydrateWorkdirConfig();
-  const ownerId = await initOwnerId();
+  await hydrateWorkdirConfig(app.getPath('userData'));
+  const ownerId = await initOwnerId(app.getPath('userData'));
 
   // 1. Secure window + summon shortcut.
   // Tear the pointing overlay down whenever the main window closes, so the transparent, click-through

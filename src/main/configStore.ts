@@ -3,7 +3,6 @@
 // Packaged apps do not read the developer's .env, so user choices that must survive relaunch
 // live under app.getPath('userData')/config.json. Environment variables still win when set:
 // they are the explicit dev/operator override.
-import { app } from 'electron';
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { WorkdirConfigMsg } from '../shared/ipc';
@@ -97,8 +96,8 @@ export async function persistWorkdirChoice(
   return { workdir: chosen, source: 'config' };
 }
 
-export async function hydrateWorkdirConfig(env: NodeJS.ProcessEnv = process.env): Promise<WorkdirHydrationResult> {
-  const result = await hydrateWorkdirConfigFromStore(app.getPath('userData'), env);
+export async function hydrateWorkdirConfig(dir: string, env: NodeJS.ProcessEnv = process.env): Promise<WorkdirHydrationResult> {
+  const result = await hydrateWorkdirConfigFromStore(dir, env);
   if (result.source === 'config') {
     console.log('[config] loaded persisted workdir from userData/config.json');
   }

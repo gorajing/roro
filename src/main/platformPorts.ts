@@ -4,8 +4,9 @@
 // implementations. main.ts calls registerPlatformPorts() at module scope (before registerIpcHandlers),
 // so every port is live before the first turn. windowRegistry/safeSend stay shell: the core's knowledge
 // of "the pet window" reduces to a push function here.
-import { Notification } from 'electron';
+import { Notification, safeStorage } from 'electron';
 import { setPlatformPorts } from '../core/ports/ports';
+import type { SafeStorageLike } from '../memory2/safeStorageWrapper';
 import { sendToPetWindow } from './safeSend';
 
 /** Bind the core platform ports to their Electron implementations. Call once at boot. */
@@ -28,6 +29,12 @@ export function registerPlatformPorts(): void {
         const { showPointForBox } = await import('./pointerOverlay');
         await showPointForBox(box, confidence);
       },
+    },
+    // Raw OS keychain object. memory2's loadCipher builds the KeyWrapper policy over it. The cast via
+    // unknown matches memory2's original `(await import('electron')) as ...` — Electron's SafeStorage
+    // type omits the async surface SafeStorageLike relies on.
+    keyWrapper: {
+      getSafeStorage: () => safeStorage as unknown as SafeStorageLike,
     },
   });
 }
