@@ -22,6 +22,7 @@ import { createMemoryWriter, type NewEntry } from './store';
 import { createMemIndex } from './memIndex';
 import { openVectorCache, type VectorCache } from './vectorCache';
 import { readManifest } from './manifest';
+import { compactManifest, shouldCompactManifest } from './manifestCompact';
 import { readEpisodes } from './episodeLog';
 import { readEntryFile, writeEntryFile, entryPath } from './entryFile';
 import { blendCandidates, DEFAULT_WEIGHTS, type BlendWeights, type ScoredEntry } from './memoryScore';
@@ -506,5 +507,16 @@ export async function createMemoryStore(opts: {
   // Self-maintaining corpus bound: prune old/excess episodes once on open (a bounded batch, all owners).
   // Awaited so it can't race teardown; a no-op on a fresh/small corpus (the generous defaults match none).
   await api.pruneEpisodes({});
+  // Bounded journal: full-manifest replay is the normal open path, so when the op log far exceeds the
+  // live corpus (prune/forget pairs, overwrite chains), rewrite it seq-preservingly. Inside the
+  // serialize chain (after the open prune's tombstones land) so no write can interleave the rewrite.
+  await serialize(async () => {
+    const opCount = (await readManifest(dir)).length;
+    const liveCount = await index.count();
+    if (shouldCompactManifest(opCount, liveCount)) {
+      const { before, after } = await compactManifest(dir);
+      console.warn(`[memory2] compacted the manifest: ${before} -> ${after} ops (${liveCount} live rows)`);
+    }
+  });
   return api;
 }
