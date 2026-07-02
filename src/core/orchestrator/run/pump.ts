@@ -1,4 +1,4 @@
-// src/main/run/pump.ts — the per-dispatch PUMP machine (docs/plans/run-state-machine.md).
+// src/core/orchestrator/run/pump.ts — the per-dispatch PUMP machine (docs/plans/run-state-machine.md).
 //
 // pumpRun owns ONE executor dispatch: it pumps the source's ActionEvent stream into injected
 // sinks and owns the Stop watchdog, the runId re-stamp, the mid-run destructive guard, and the

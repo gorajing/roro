@@ -1,4 +1,4 @@
-// src/main/run/gates.ts — the pre-dispatch gate pipeline (docs/plans/run-state-machine.md).
+// src/core/orchestrator/run/gates.ts — the pre-dispatch gate pipeline (docs/plans/run-state-machine.md).
 //
 // ONE stage library, TWO literal compositions (pinned in gates.test.ts):
 //   RUN_AGENT_GATES = [workdir, readiness, destructiveConfirm, stopCheckpoint, dispatch]

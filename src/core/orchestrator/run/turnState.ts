@@ -1,4 +1,4 @@
-// src/main/run/turnState.ts — the per-turn TURN machine (docs/plans/run-state-machine.md).
+// src/core/orchestrator/run/turnState.ts — the per-turn TURN machine (docs/plans/run-state-machine.md).
 //
 // A Turn tracks ONE turn (voice turn or direct task) from mint to runEnd. Its phase is UI truth:
 // "ended" means runEnd has been pushed. Process truth (has the executor child's stream drained?)
