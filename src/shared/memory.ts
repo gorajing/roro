@@ -70,6 +70,13 @@ export interface MemoryMatch extends MemoryRow {
 export interface FactSource {
   session_id: string;
   turn_ts: number;
+  /** Executor-facts pilot provenance (absent = the 3B extraction / manual path). */
+  channel?: 'executor';
+  /** Which executor's model claimed the fact (e.g. 'codex') — shown in the panel's Source detail. */
+  claimed_by?: string;
+  /** The ≤140-char verbatim quote the user saw when confirming. Bounded by admission; stored so the
+   *  Source detail can honestly answer "why does roro think this?". */
+  evidence?: string;
 }
 
 /** The structured payload stored on a `kind:'fact'` row. */

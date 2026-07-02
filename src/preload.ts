@@ -13,6 +13,7 @@ import type { TurnInput, BootstrapStatusMsg, ModelPullProgressMsg, WorkdirConfig
 import type { ActionEvent } from './shared/events';
 import type { Decision, DecideInput } from './shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch, ProfileFactSourceView, ProfileFactView } from './shared/memory';
+import type { FactProposalView } from './main/factProposals/types';
 
 type AgentKindArg = 'codex' | 'claude';
 
@@ -141,6 +142,12 @@ const memory = {
   factSource: (id: string): Promise<ProfileFactSourceView> =>
     ipcRenderer.invoke(CH.memoryFactSource, id),
   forget: (id: string): Promise<void> => ipcRenderer.invoke(CH.memoryForget, id),
+  // Executor-facts pilot: these channels exist ONLY when RORO_EXECUTOR_FACTS is on (handlers are
+  // unregistered otherwise — the invoke rejects and the panel section stays empty).
+  proposals: (): Promise<FactProposalView[]> => ipcRenderer.invoke(CH.factProposalsGet),
+  resolveProposal: (id: string, accept: boolean): Promise<{ ok: boolean; gone?: boolean }> =>
+    ipcRenderer.invoke(CH.factProposalResolve, { id, accept }),
+  onProposals: (cb: (msg: { count: number }) => void): (() => void) => subscribe(CH.factProposalsPush, cb),
 } as {
   remember?: (input: Omit<RememberInput, 'owner_id'>) => Promise<MemoryRow>;
   recall?: (input: { query: string; k?: number; sessionId?: string }) => Promise<MemoryMatch[]>;
@@ -149,6 +156,9 @@ const memory = {
   verifyFact: (id: string) => Promise<ProfileFactView>;
   factSource: (id: string) => Promise<ProfileFactSourceView>;
   forget: (id: string) => Promise<void>;
+  proposals: () => Promise<FactProposalView[]>;
+  resolveProposal: (id: string, accept: boolean) => Promise<{ ok: boolean; gone?: boolean }>;
+  onProposals: (cb: (msg: { count: number }) => void) => () => void;
 };
 
 if (debugBridge) {

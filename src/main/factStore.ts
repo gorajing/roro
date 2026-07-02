@@ -1,6 +1,7 @@
 // src/main/factStore.ts — write a thin profile fact with supersede-not-overwrite.
 // Pure of the LLM (the caller passes a FactCandidate); trivially testable with fakes.
-import type { MemoryRow, ReplaceFactInput, FactPayload } from '../shared/memory';
+import type {
+  FactSource, MemoryRow, ReplaceFactInput, FactPayload } from '../shared/memory';
 import type { FactCandidate } from '../brain/extractFact';
 
 export interface FactStoreDeps {
@@ -38,10 +39,18 @@ let writeChain: Promise<void> = Promise.resolve();
  *  corroborated in place), or 'stored' (new fact / value change superseded + inserted). */
 export type FactWriteOutcome = 'stored' | 'reinforced' | 'noop';
 
+export interface FactWriteCtx {
+  ownerId: string;
+  sessionId: string;
+  turnTs: number;
+  /** Executor-facts pilot: extra provenance folded into payload.source (absent = 3B/manual path). */
+  provenance?: Pick<FactSource, 'channel' | 'claimed_by' | 'evidence'>;
+}
+
 export function extractAndStoreFact(
   deps: FactStoreDeps,
   candidate: FactCandidate | null,
-  ctx: { ownerId: string; sessionId: string; turnTs: number },
+  ctx: FactWriteCtx,
 ): Promise<FactWriteOutcome> {
   if (!candidate) return Promise.resolve('noop');
   const run = writeChain.then(() => storeFact(deps, candidate, ctx));
@@ -53,7 +62,7 @@ export function extractAndStoreFact(
 async function storeFact(
   deps: FactStoreDeps,
   candidate: FactCandidate,
-  ctx: { ownerId: string; sessionId: string; turnTs: number },
+  ctx: FactWriteCtx,
 ): Promise<FactWriteOutcome> {
   const activeForKey = (await deps.getProfile(ctx.ownerId)).filter((r) => factKeyOf(r) === candidate.key);
   // Corroboration: the key already has EXACTLY one active row carrying this value (steady state). Don't
@@ -68,7 +77,7 @@ async function storeFact(
   const payload: FactPayload = {
     key: candidate.key,
     value: candidate.value,
-    source: { session_id: ctx.sessionId, turn_ts: ctx.turnTs },
+    source: { session_id: ctx.sessionId, turn_ts: ctx.turnTs, ...(ctx.provenance ?? {}) },
   };
   // replaceFact supersedes EVERY prior active row for the key and inserts the replacement in ONE
   // transaction (embedding done first, outside the txn). All-or-nothing: an embed/DB failure leaves
