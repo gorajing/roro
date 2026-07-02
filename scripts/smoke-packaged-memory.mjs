@@ -788,7 +788,7 @@ try {
       }
 
       const input = {
-        session_id: sessionA,
+        sessionId: sessionA,
         kind: 'observation',
         text,
         payload: { smoke: 'packaged-memory', token },
@@ -825,8 +825,8 @@ try {
   const writeValue = first.write?.ok ? first.write.value : null;
   const rowId = typeof writeValue?.id === 'string' ? writeValue.id : '';
   check('remember returned the smoke text', writeValue?.text === text);
-  check('remember returned observation kind', writeValue?.kind === 'observation');
-  check('remember returned the write session', writeValue?.session_id === sessionA);
+  check('remember returned observation kind', writeValue?.episodeKind === 'observation');
+  check('remember returned the write session', writeValue?.sessionId === sessionA);
 
   const ownerPath = join(userDataDir, 'owner.json');
   const memoryRoot = join(userDataDir, 'memory', 'memory2');
@@ -841,7 +841,7 @@ try {
   const memoryLogs = first.logs.join('\n');
 
   check('owner.json exists under userData', Boolean(owner?.owner_id));
-  check('owner_id is stable for the memory row', owner?.owner_id === writeValue?.owner_id);
+  check('owner_id is stable for the memory row', owner?.owner_id === writeValue?.ownerId);
   check('remember returned a durable row id', rowId.length > 0);
   check('memory root exists under userData/memory/memory2', await exists(memoryRoot));
   check('cwd fallback .roro-memory2 was not created', !(await exists(fallbackMemoryRoot)));
@@ -955,16 +955,16 @@ try {
 
   console.log('[smoke] asserting packaged recall after full relaunch...');
   const recalled = Array.isArray(second.recall?.value) ? second.recall.value : [];
-  const hit = recalled.find((row) => row.text === text);
+  const hit = recalled.find((row) => row.entry?.text === text);
   const ownerAfterRelaunch = await readJson(ownerPath).catch(() => null);
   check('memory recall bridge resolved after relaunch', second.recall?.ok, second.recall?.message);
   check('recall returned at least one row', recalled.length > 0);
   check('recall returned the smoke token text', Boolean(hit));
-  check('recall returned the same durable row id', rowId.length > 0 && hit?.id === rowId);
-  check('recalled row has the original session', hit?.session_id === sessionA);
+  check('recall returned the same durable row id', rowId.length > 0 && hit?.entry?.id === rowId);
+  check('recalled row has the original session', hit?.entry?.sessionId === sessionA);
   check('recalled row has numeric similarity', typeof hit?.similarity === 'number' && Number.isFinite(hit.similarity));
   check('owner_id survived relaunch', ownerAfterRelaunch?.owner_id === owner?.owner_id);
-  check('recalled row owner matches owner.json', hit?.owner_id === owner?.owner_id);
+  check('recalled row owner matches owner.json', hit?.entry?.ownerId === owner?.owner_id);
   check('relaunch logs have no memory keychain failure', !/OS keychain unavailable|memory store is locked|cannot encrypt memory/i.test(second.logs.join('\n')));
 
   if (NEEDS_LIVE_OLLAMA) {
