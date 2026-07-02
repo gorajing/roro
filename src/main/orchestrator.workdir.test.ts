@@ -11,25 +11,11 @@ const h = vi.hoisted(() => ({
   run: vi.fn(),
 }));
 
-vi.mock('electron', () => ({
-  BrowserWindow: { getAllWindows: (): unknown[] => [] },
-  Notification: class { static isSupported() { return false; } show(): void { /* no-op */ } },
-}));
 vi.mock('./siblings', () => ({ loadBrain: async () => h.brain, loadMemory: async () => h.memory, loadVision: async () => h.vision }));
 vi.mock('./identity', () => ({ getOwnerId: () => 'owner-test' }));
 vi.mock('../executor', () => ({ getExecutor: () => ({ run: h.run }) }));
 
-// safeSend now routes pushes through the window registry (never getAllWindows()[0], which the
-// pointer overlay would hijack) — point the registry at the same single fake window this file's
-// electron mock exposes.
-vi.mock('./windowRegistry', async (importOriginal) => {
-  const electron = await import('electron');
-  return {
-    ...(await importOriginal<typeof import('./windowRegistry')>()),
-    getPetWindow: () => (electron.BrowserWindow as unknown as { getAllWindows(): unknown[] }).getAllWindows()[0] ?? null,
-  };
-});
-
+import { installTestPorts, resetTestPorts } from '../core/ports/testing';
 import { runTurn } from './orchestrator';
 
 const flush = (): Promise<void> => new Promise((r) => setImmediate(r));
@@ -41,6 +27,7 @@ describe('orchestrator: run_agent fails loud when no repo is chosen', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    installTestPorts();
     savedWorkdir = process.env.RORO_WORKDIR;
     savedAllowCwd = process.env.RORO_ALLOW_CWD;
     savedCodexBin = process.env.RORO_CODEX_BIN;
@@ -53,6 +40,7 @@ describe('orchestrator: run_agent fails loud when no repo is chosen', () => {
     h.run.mockImplementation(async function* () { yield { kind: 'run.completed', runId: 'r', ok: true, finalText: 'done', ts: 0 }; });
   });
   afterEach(() => {
+    resetTestPorts();
     const restore = (k: string, v: string | undefined): void => { if (v === undefined) delete process.env[k]; else process.env[k] = v; };
     restore('RORO_WORKDIR', savedWorkdir);
     restore('RORO_ALLOW_CWD', savedAllowCwd);

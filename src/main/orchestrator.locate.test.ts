@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CH } from '../shared/ipc';
 
 // The fast locate path (args.locate): ONE vision call — ground + point + a short answer — with fail-loud
@@ -12,40 +12,16 @@ const h = vi.hoisted(() => ({
   vision: { captureScreen: vi.fn(), askScreen: vi.fn() },
 }));
 
-vi.mock('electron', () => ({
-  BrowserWindow: {
-    getAllWindows: () => [{
-      isDestroyed: () => false,
-      webContents: {
-        isDestroyed: () => false,
-        mainFrame: {
-          isDestroyed: () => false,
-          detached: false,
-          send: (ch: unknown, payload: Record<string, unknown>) => { sent.push({ ch, payload }); },
-        },
-      },
-    }],
-  },
-  Notification: class { static isSupported() { return false; } show(): void { /* no-op */ } },
-}));
 vi.mock('./siblings', () => ({ loadBrain: async () => h.brain, loadMemory: async () => h.memory, loadVision: async () => h.vision }));
 vi.mock('./identity', () => ({ getOwnerId: () => 'owner-test' }));
-// pointerOverlay imports electron; mock it so showPointForBox is an observable no-op in the node env.
-vi.mock('./pointerOverlay', () => ({ showPointForBox: vi.fn(async () => undefined) }));
 
-// safeSend now routes pushes through the window registry (never getAllWindows()[0], which the
-// pointer overlay would hijack) — point the registry at the same single fake window this file's
-// electron mock exposes.
-vi.mock('./windowRegistry', async (importOriginal) => {
-  const electron = await import('electron');
-  return {
-    ...(await importOriginal<typeof import('./windowRegistry')>()),
-    getPetWindow: () => (electron.BrowserWindow as unknown as { getAllWindows(): unknown[] }).getAllWindows()[0] ?? null,
-  };
-});
-
+import { installTestPorts, resetTestPorts } from '../core/ports/testing';
 import { runTurn, cancelTask } from './orchestrator';
-import { showPointForBox } from './pointerOverlay';
+
+// The paw is drawn through the PointerOverlayPort; this observable no-op stands in for the shell's
+// showPointForBox (installed as the pointerOverlay port in beforeEach) so the locate tests can assert
+// the paw was (or wasn't) drawn.
+const showPointForBox = vi.fn(async () => undefined);
 
 const flush = (): Promise<void> => new Promise((r) => setImmediate(r));
 const messages = (): unknown[] =>
@@ -57,6 +33,10 @@ describe('orchestrator fast locate path (args.locate)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sent.length = 0;
+    installTestPorts({
+      rendererPush: { send: (ch, ...args) => { sent.push({ ch, payload: args[0] as Record<string, unknown> }); return true; } },
+      pointerOverlay: { showPointForBox },
+    });
     h.memory.recall.mockResolvedValue([]);
     h.memory.getProfile.mockResolvedValue([]);
     h.memory.remember.mockImplementation(async (i: Record<string, unknown>) => ({ id: 'x', ...i, superseded: false, created_at: 't' }));
@@ -64,6 +44,10 @@ describe('orchestrator fast locate path (args.locate)', () => {
     h.vision.captureScreen.mockResolvedValue({ b64: 'zzz', mime: 'image/jpeg', width: 1000, height: 800 });
     // The locate gate would produce this; here we mock decide() to return it directly.
     h.brain.decide.mockResolvedValue({ narration: 'Let me look at your screen.', command: 'capture_screen', args: { locate: true } });
+  });
+
+  afterEach(() => {
+    resetTestPorts();
   });
 
   it('grounds with ONE vision call, shows a paw, and answers "There it is."', async () => {

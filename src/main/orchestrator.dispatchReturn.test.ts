@@ -16,10 +16,6 @@ const h = vi.hoisted(() => ({
   run: vi.fn(),
 }));
 
-vi.mock('electron', () => ({
-  BrowserWindow: { getAllWindows: (): unknown[] => [] },
-  Notification: class { static isSupported() { return false; } show(): void { /* no-op mock */ } },
-}));
 vi.mock('./siblings', () => ({
   loadBrain: async () => h.brain,
   loadMemory: async () => h.memory,
@@ -28,17 +24,7 @@ vi.mock('./siblings', () => ({
 vi.mock('./identity', () => ({ getOwnerId: () => 'owner-test' }));
 vi.mock('../executor', () => ({ getExecutor: () => ({ run: h.run }) }));
 
-// safeSend now routes pushes through the window registry (never getAllWindows()[0], which the
-// pointer overlay would hijack) — point the registry at the same single fake window this file's
-// electron mock exposes.
-vi.mock('./windowRegistry', async (importOriginal) => {
-  const electron = await import('electron');
-  return {
-    ...(await importOriginal<typeof import('./windowRegistry')>()),
-    getPetWindow: () => (electron.BrowserWindow as unknown as { getAllWindows(): unknown[] }).getAllWindows()[0] ?? null,
-  };
-});
-
+import { installTestPorts, resetTestPorts } from '../core/ports/testing';
 import { runTurn } from './orchestrator';
 
 describe('orchestrator dispatch-return: turnRun resolves at dispatch', () => {
@@ -46,6 +32,7 @@ describe('orchestrator dispatch-return: turnRun resolves at dispatch', () => {
   let savedCodexBin: string | undefined;
   beforeEach(() => {
     vi.clearAllMocks();
+    installTestPorts();
     // Make dispatch deterministic regardless of .env / CI: this turn must reach the executor, so opt into
     // cwd as the repo (the run_agent path now fails loud without a chosen repo — see orchestrator.workdir.test).
     savedAllowCwd = process.env.RORO_ALLOW_CWD;
@@ -59,6 +46,7 @@ describe('orchestrator dispatch-return: turnRun resolves at dispatch', () => {
     h.brain.decide.mockResolvedValue({ narration: 'on it', command: 'run_agent', args: { task: 'do the thing' } });
   });
   afterEach(() => {
+    resetTestPorts();
     if (savedAllowCwd === undefined) delete process.env.RORO_ALLOW_CWD;
     else process.env.RORO_ALLOW_CWD = savedAllowCwd;
     if (savedCodexBin === undefined) delete process.env.RORO_CODEX_BIN;

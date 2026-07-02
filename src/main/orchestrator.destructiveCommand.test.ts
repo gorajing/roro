@@ -13,38 +13,12 @@ const h = vi.hoisted(() => ({
   isCleanTree: vi.fn(),
 }));
 
-vi.mock('electron', () => ({
-  BrowserWindow: {
-    getAllWindows: () => [{
-      isDestroyed: () => false,
-      webContents: {
-        isDestroyed: () => false,
-        mainFrame: {
-          isDestroyed: () => false,
-          detached: false,
-          send: (ch: string, payload: Sent['payload']) => sent.push({ ch, payload }),
-        },
-      },
-    }],
-  },
-  Notification: class { static isSupported() { return false; } show(): void { /* no-op */ } },
-}));
 vi.mock('./siblings', () => ({ loadBrain: async () => h.brain, loadMemory: async () => h.memory, loadVision: async () => h.vision }));
 vi.mock('./identity', () => ({ getOwnerId: () => 'owner-test' }));
 vi.mock('./gitTree', () => ({ isCleanTree: h.isCleanTree }));
 vi.mock('../executor', () => ({ getExecutor: () => ({ run: h.run }) }));
 
-// safeSend now routes pushes through the window registry (never getAllWindows()[0], which the
-// pointer overlay would hijack) — point the registry at the same single fake window this file's
-// electron mock exposes.
-vi.mock('./windowRegistry', async (importOriginal) => {
-  const electron = await import('electron');
-  return {
-    ...(await importOriginal<typeof import('./windowRegistry')>()),
-    getPetWindow: () => (electron.BrowserWindow as unknown as { getAllWindows(): unknown[] }).getAllWindows()[0] ?? null,
-  };
-});
-
+import { installTestPorts, resetTestPorts } from '../core/ports/testing';
 import { runTurn } from './orchestrator';
 
 function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
@@ -82,6 +56,7 @@ describe('orchestrator destructive command tripwire', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sent.length = 0;
+    installTestPorts({ rendererPush: { send: (ch, ...args) => { sent.push({ ch, payload: args[0] as Sent['payload'] }); return true; } } });
     savedAllowCwd = process.env.RORO_ALLOW_CWD;
     savedCodexBin = process.env.RORO_CODEX_BIN;
     process.env.RORO_ALLOW_CWD = '1';
@@ -101,6 +76,7 @@ describe('orchestrator destructive command tripwire', () => {
   });
 
   afterEach(() => {
+    resetTestPorts();
     if (savedAllowCwd === undefined) delete process.env.RORO_ALLOW_CWD;
     else process.env.RORO_ALLOW_CWD = savedAllowCwd;
     if (savedCodexBin === undefined) delete process.env.RORO_CODEX_BIN;

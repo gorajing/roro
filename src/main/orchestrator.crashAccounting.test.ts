@@ -13,37 +13,11 @@ const h = vi.hoisted(() => ({
   run: vi.fn(),
 }));
 
-vi.mock('electron', () => ({
-  BrowserWindow: {
-    getAllWindows: () => [{
-      isDestroyed: () => false,
-      webContents: {
-        isDestroyed: () => false,
-        mainFrame: {
-          isDestroyed: () => false,
-          detached: false,
-          send: (ch: unknown, ev: { kind?: string }) => sent.push({ ch, ev }),
-        },
-      },
-    }],
-  },
-  Notification: class { static isSupported() { return false; } show(): void { /* no-op */ } },
-}));
 vi.mock('./siblings', () => ({ loadBrain: async () => h.brain, loadMemory: async () => h.memory, loadVision: async () => h.vision }));
 vi.mock('./identity', () => ({ getOwnerId: () => 'owner-test' }));
 vi.mock('../executor', () => ({ getExecutor: () => ({ run: h.run }) }));
 
-// safeSend now routes pushes through the window registry (never getAllWindows()[0], which the
-// pointer overlay would hijack) — point the registry at the same single fake window this file's
-// electron mock exposes.
-vi.mock('./windowRegistry', async (importOriginal) => {
-  const electron = await import('electron');
-  return {
-    ...(await importOriginal<typeof import('./windowRegistry')>()),
-    getPetWindow: () => (electron.BrowserWindow as unknown as { getAllWindows(): unknown[] }).getAllWindows()[0] ?? null,
-  };
-});
-
+import { installTestPorts, resetTestPorts } from '../core/ports/testing';
 import { runTurn } from './orchestrator';
 
 const flush = (): Promise<void> => new Promise((r) => setImmediate(r));
@@ -54,6 +28,7 @@ describe('orchestrator: a no-verdict stream fails loud (no false run.completed)'
   beforeEach(() => {
     vi.clearAllMocks();
     sent.length = 0;
+    installTestPorts({ rendererPush: { send: (ch, ...args) => { sent.push({ ch, ev: args[0] as { kind?: string } }); return true; } } });
     savedAllowCwd = process.env.RORO_ALLOW_CWD;
     savedCodexBin = process.env.RORO_CODEX_BIN;
     process.env.RORO_ALLOW_CWD = '1';
@@ -65,6 +40,7 @@ describe('orchestrator: a no-verdict stream fails loud (no false run.completed)'
     h.brain.decide.mockResolvedValue({ narration: 'on it', command: 'run_agent', args: { task: 'edit a file' } });
   });
   afterEach(() => {
+    resetTestPorts();
     if (savedAllowCwd === undefined) delete process.env.RORO_ALLOW_CWD;
     else process.env.RORO_ALLOW_CWD = savedAllowCwd;
     if (savedCodexBin === undefined) delete process.env.RORO_CODEX_BIN;

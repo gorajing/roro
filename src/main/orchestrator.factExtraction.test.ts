@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Observability: the orchestrator's single extraction seam (runFactExtraction) must record WHY a turn
 // did/didn't produce a fact — gated (no marker), noop (model returned null), stored, reinforced, failed —
@@ -13,26 +13,12 @@ const h = vi.hoisted(() => ({
   vision: { captureScreen: vi.fn(), askScreen: vi.fn() },
 }));
 
-vi.mock('electron', () => ({
-  BrowserWindow: { getAllWindows: (): unknown[] => [] }, // no window -> pushEvent no-ops
-  Notification: class { static isSupported() { return false; } show(): void { /* no-op */ } },
-}));
 vi.mock('./siblings', () => ({
   loadBrain: async () => h.brain, loadMemory: async () => h.memory, loadVision: async () => h.vision,
 }));
 vi.mock('./identity', () => ({ getOwnerId: () => 'owner-test' }));
 
-// safeSend now routes pushes through the window registry (never getAllWindows()[0], which the
-// pointer overlay would hijack) — point the registry at the same single fake window this file's
-// electron mock exposes.
-vi.mock('./windowRegistry', async (importOriginal) => {
-  const electron = await import('electron');
-  return {
-    ...(await importOriginal<typeof import('./windowRegistry')>()),
-    getPetWindow: () => (electron.BrowserWindow as unknown as { getAllWindows(): unknown[] }).getAllWindows()[0] ?? null,
-  };
-});
-
+import { installTestPorts, resetTestPorts } from '../core/ports/testing';
 import { runTurn } from './orchestrator';
 
 function rowFor(i: { owner_id: string; session_id: string; kind?: string; text: string; payload?: unknown }) {
@@ -42,6 +28,7 @@ function rowFor(i: { owner_id: string; session_id: string; kind?: string; text: 
 describe('orchestrator fact-extraction trace (observability)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    installTestPorts();
     h.memory.recall.mockResolvedValue([]);
     h.memory.getProfile.mockResolvedValue([]); // no existing fact for the key -> a write inserts
     h.memory.remember.mockImplementation(async (i) => rowFor(i));
@@ -49,6 +36,10 @@ describe('orchestrator fact-extraction trace (observability)', () => {
     h.memory.reinforceFact.mockResolvedValue(null);
     // A plain answer turn -> runFactExtraction(outcome:'answered').
     h.brain.decide.mockResolvedValue({ narration: 'sure', command: 'answer', args: {} });
+  });
+
+  afterEach(() => {
+    resetTestPorts();
   });
 
   it("traces stage 'gated' AND skips the model when the transcript has no preference marker", async () => {

@@ -10,39 +10,12 @@ const h = vi.hoisted(() => ({
   getExecutorReadiness: vi.fn(),
 }));
 
-vi.mock('electron', () => ({
-  BrowserWindow: {
-    getAllWindows: () => [{
-      isDestroyed: () => false,
-      webContents: {
-        isDestroyed: () => false,
-        mainFrame: {
-          isDestroyed: () => false,
-          detached: false,
-          send: (ch: string, payload: { kind?: string; runId?: string; text?: string; error?: string; agent?: string }) =>
-            sent.push({ ch, payload }),
-        },
-      },
-    }],
-  },
-  Notification: class { static isSupported() { return false; } show(): void { /* no-op */ } },
-}));
 vi.mock('./siblings', () => ({ loadBrain: async () => h.brain, loadMemory: async () => h.memory, loadVision: async () => h.vision }));
 vi.mock('./identity', () => ({ getOwnerId: () => 'owner-test' }));
 vi.mock('../executor', () => ({ getExecutor: () => ({ run: h.run }) }));
 vi.mock('./executorReadiness', () => ({ getExecutorReadiness: h.getExecutorReadiness }));
 
-// safeSend now routes pushes through the window registry (never getAllWindows()[0], which the
-// pointer overlay would hijack) — point the registry at the same single fake window this file's
-// electron mock exposes.
-vi.mock('./windowRegistry', async (importOriginal) => {
-  const electron = await import('electron');
-  return {
-    ...(await importOriginal<typeof import('./windowRegistry')>()),
-    getPetWindow: () => (electron.BrowserWindow as unknown as { getAllWindows(): unknown[] }).getAllWindows()[0] ?? null,
-  };
-});
-
+import { installTestPorts, resetTestPorts } from '../core/ports/testing';
 import { runTurn } from './orchestrator';
 
 const flush = (): Promise<void> => new Promise((r) => setImmediate(r));
@@ -62,6 +35,7 @@ describe('orchestrator executor readiness boundary', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     sent.length = 0;
+    installTestPorts({ rendererPush: { send: (ch, ...args) => { sent.push({ ch, payload: args[0] as { kind?: string; runId?: string; text?: string; error?: string; agent?: string } }); return true; } } });
     savedAllowCwd = process.env.RORO_ALLOW_CWD;
     savedWorkdir = process.env.RORO_WORKDIR;
     process.env.RORO_ALLOW_CWD = '1';
@@ -87,6 +61,7 @@ describe('orchestrator executor readiness boundary', () => {
   });
 
   afterEach(() => {
+    resetTestPorts();
     if (savedAllowCwd === undefined) delete process.env.RORO_ALLOW_CWD;
     else process.env.RORO_ALLOW_CWD = savedAllowCwd;
     if (savedWorkdir === undefined) delete process.env.RORO_WORKDIR;

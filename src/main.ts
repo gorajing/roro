@@ -11,6 +11,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
 
 import { guardDeferredEnv } from './shared/releaseChannel';
+import { registerPlatformPorts } from './main/platformPorts';
 import { registerIpcHandlers } from './main/ipc';
 import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorTracking } from './main/window';
 import { cancelAllRuns } from './main/orchestrator';
@@ -61,6 +62,9 @@ if (process.env.RORO_DEBUG_PORT) {
   app.commandLine.appendSwitch('remote-debugging-port', process.env.RORO_DEBUG_PORT);
 }
 
+// Bind the core's platform ports to their Electron implementations BEFORE anything that can reach the
+// core (IPC handlers, turns). Fail-loud if a core path runs before this: an unregistered port throws.
+registerPlatformPorts();
 // IPC handlers are stateless and safe to register before windows exist.
 registerIpcHandlers();
 // Serve the last bootstrap status on demand (M7b) so a renderer that subscribed late can recover it.

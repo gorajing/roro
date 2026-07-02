@@ -9,8 +9,8 @@
 //   activeRuns     -> #slot (occupancy = a committed pump; freed only when its stream drains)
 
 import { CH } from '../../shared/ipc';
+import { ports } from '../../core/ports/ports';
 import { resolveConfirm } from '../confirmGate';
-import { sendToPetWindow } from '../safeSend';
 import { Turn } from './turnState';
 
 export interface RunRegistryDeps {
@@ -143,7 +143,7 @@ export class RunRegistry {
 function createDefaultRegistry(): RunRegistry {
   return new RunRegistry({
     pushRunEnd: (runId) => {
-      sendToPetWindow(CH.runEnd, { runId });
+      ports().rendererPush.send(CH.runEnd, { runId });
     },
     denyConfirm: (runId) => {
       resolveConfirm(runId, false);

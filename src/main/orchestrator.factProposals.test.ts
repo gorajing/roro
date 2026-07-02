@@ -17,18 +17,6 @@ const h = vi.hoisted(() => ({
   maybeProposeFacts: vi.fn(async () => undefined),
 }));
 
-vi.mock('electron', () => ({
-  BrowserWindow: {
-    getAllWindows: () => [{
-      isDestroyed: () => false,
-      webContents: {
-        isDestroyed: () => false,
-        mainFrame: { isDestroyed: () => false, detached: false, send: (): void => undefined },
-      },
-    }],
-  },
-  Notification: class { static isSupported() { return false; } show(): void { /* no-op */ } },
-}));
 vi.mock('./siblings', () => ({ loadBrain: async () => h.brain, loadMemory: async () => h.memory, loadVision: async () => h.vision }));
 vi.mock('./identity', () => ({ getOwnerId: () => 'owner-test' }));
 vi.mock('./workdir', () => ({ resolveWorkdir: () => '/tmp/fake-repo', tryResolveWorkdir: () => '/tmp/fake-repo' }));
@@ -37,14 +25,8 @@ vi.mock('./factProposals', () => ({
   maybeProposeFacts: h.maybeProposeFacts,
   executorProposalSource: vi.fn(() => ({ propose: vi.fn() })),
 }));
-vi.mock('./windowRegistry', async (importOriginal) => {
-  const electron = await import('electron');
-  return {
-    ...(await importOriginal<typeof import('./windowRegistry')>()),
-    getPetWindow: () => (electron.BrowserWindow as unknown as { getAllWindows(): unknown[] }).getAllWindows()[0] ?? null,
-  };
-});
 
+import { installTestPorts, resetTestPorts } from '../core/ports/testing';
 import { runTask } from './orchestrator';
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 20));
@@ -65,12 +47,14 @@ const COMPLETED_STREAM: Partial<ActionEvent>[] = [
 describe('orchestrator wiring — executor-facts pilot', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    installTestPorts();
     h.memory.recall.mockResolvedValue([]);
     h.memory.getProfile.mockResolvedValue([]);
     h.memory.remember.mockImplementation(async (i: Record<string, unknown>) => ({ id: 'x', ...i, superseded: false, created_at: 't' }));
     process.env.RORO_EXECUTOR_FACTS = '1';
   });
   afterEach(() => {
+    resetTestPorts();
     delete process.env.RORO_EXECUTOR_FACTS;
   });
 

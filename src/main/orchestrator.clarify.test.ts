@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { CH } from '../shared/ipc';
 
 const sent: Array<{ ch: unknown; payload: { kind?: string; text?: string; runId?: string } }> = [];
@@ -9,37 +9,11 @@ const h = vi.hoisted(() => ({
   run: vi.fn(),
 }));
 
-vi.mock('electron', () => ({
-  BrowserWindow: {
-    getAllWindows: () => [{
-      isDestroyed: () => false,
-      webContents: {
-        isDestroyed: () => false,
-        mainFrame: {
-          isDestroyed: () => false,
-          detached: false,
-          send: (ch: unknown, payload: { kind?: string; text?: string; runId?: string }) => sent.push({ ch, payload }),
-        },
-      },
-    }],
-  },
-  Notification: class { static isSupported() { return false; } show(): void { /* no-op */ } },
-}));
 vi.mock('./siblings', () => ({ loadBrain: async () => h.brain, loadMemory: async () => h.memory, loadVision: async () => h.vision }));
 vi.mock('./identity', () => ({ getOwnerId: () => 'owner-test' }));
 vi.mock('../executor', () => ({ getExecutor: () => ({ run: h.run }) }));
 
-// safeSend now routes pushes through the window registry (never getAllWindows()[0], which the
-// pointer overlay would hijack) — point the registry at the same single fake window this file's
-// electron mock exposes.
-vi.mock('./windowRegistry', async (importOriginal) => {
-  const electron = await import('electron');
-  return {
-    ...(await importOriginal<typeof import('./windowRegistry')>()),
-    getPetWindow: () => (electron.BrowserWindow as unknown as { getAllWindows(): unknown[] }).getAllWindows()[0] ?? null,
-  };
-});
-
+import { installTestPorts, resetTestPorts } from '../core/ports/testing';
 import { runTurn } from './orchestrator';
 
 const flush = (): Promise<void> => new Promise((r) => setImmediate(r));
@@ -48,6 +22,7 @@ describe('orchestrator clarify turns', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sent.length = 0;
+    installTestPorts({ rendererPush: { send: (ch, ...args) => { sent.push({ ch, payload: args[0] as { kind?: string; text?: string; runId?: string } }); return true; } } });
     h.memory.recall.mockResolvedValue([]);
     h.memory.getProfile.mockResolvedValue([]);
     h.memory.remember.mockResolvedValue({ id: 'x', owner_id: 'O', session_id: 's', kind: 'observation', text: '', payload: null, superseded: false, created_at: 't' });
@@ -57,6 +32,10 @@ describe('orchestrator clarify turns', () => {
       command: 'clarify',
       args: { question: 'What should I fix, and where should I look?' },
     });
+  });
+
+  afterEach(() => {
+    resetTestPorts();
   });
 
   it('asks one question, ends the run, and does not call executor or vision', async () => {

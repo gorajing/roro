@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CH } from '../shared/ipc';
 import { SCREEN_CAPTURE_STATUS_TEXT } from '../shared/events';
 
@@ -13,27 +13,6 @@ const h = vi.hoisted(() => ({
   vision: { captureScreen: vi.fn(), askScreen: vi.fn() },
 }));
 
-vi.mock('electron', () => ({
-  BrowserWindow: {
-    getAllWindows: () => [{
-      isDestroyed: () => false,
-      webContents: {
-        isDestroyed: () => false,
-        mainFrame: {
-          isDestroyed: () => false,
-          detached: false,
-          send: (ch: unknown, payload: Record<string, unknown>) => {
-            sent.push({ ch, payload });
-            if (ch === CH.actionEvent && payload.kind === 'status' && payload.text === SCREEN_CAPTURE_STATUS_TEXT) {
-              order.push('tell');
-            }
-          },
-        },
-      },
-    }],
-  },
-  Notification: class { static isSupported() { return false; } show(): void { /* no-op mock */ } },
-}));
 vi.mock('./siblings', () => ({
   loadBrain: async () => h.brain,
   loadMemory: async () => h.memory,
@@ -41,17 +20,7 @@ vi.mock('./siblings', () => ({
 }));
 vi.mock('./identity', () => ({ getOwnerId: () => 'owner-test' }));
 
-// safeSend now routes pushes through the window registry (never getAllWindows()[0], which the
-// pointer overlay would hijack) — point the registry at the same single fake window this file's
-// electron mock exposes.
-vi.mock('./windowRegistry', async (importOriginal) => {
-  const electron = await import('electron');
-  return {
-    ...(await importOriginal<typeof import('./windowRegistry')>()),
-    getPetWindow: () => (electron.BrowserWindow as unknown as { getAllWindows(): unknown[] }).getAllWindows()[0] ?? null,
-  };
-});
-
+import { installTestPorts, resetTestPorts } from '../core/ports/testing';
 import { runTurn } from './orchestrator';
 
 const flush = (): Promise<void> => new Promise((r) => setImmediate(r));
@@ -63,6 +32,14 @@ describe('orchestrator capture_screen recall (no current-transcript self-match)'
     vi.clearAllMocks();
     sent.length = 0;
     order.length = 0;
+    installTestPorts({ rendererPush: { send: (ch, ...args) => {
+      const payload = args[0] as Record<string, unknown>;
+      sent.push({ ch, payload });
+      if (ch === CH.actionEvent && payload.kind === 'status' && payload.text === SCREEN_CAPTURE_STATUS_TEXT) {
+        order.push('tell');
+      }
+      return true;
+    } } });
     h.memory.recall.mockResolvedValue([]);
     h.memory.getProfile.mockResolvedValue([]);
     h.memory.remember.mockImplementation(async (i: { owner_id: string; session_id: string; kind: string; text: string; payload?: unknown }) => ({
@@ -80,6 +57,10 @@ describe('orchestrator capture_screen recall (no current-transcript self-match)'
         ? { narration: 'let me look at your screen', command: 'capture_screen', args: {} }
         : { narration: 'I see the error', command: 'answer', args: {} };
     });
+  });
+
+  afterEach(() => {
+    resetTestPorts();
   });
 
   it('recalls memory exactly once — the post-vision decide reuses the pre-store recall', async () => {

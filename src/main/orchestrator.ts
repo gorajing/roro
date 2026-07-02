@@ -34,7 +34,7 @@
 // streams go over guarded MAIN->renderer push channels (CH.actionEvent, CH.runEnd, CH.brainReasoning,
 // CH.brainContent). The invoke promise resolves only with the final {runId}. This facade owns the
 // IPC push sinks + the memory/fact side-effects it injects into the machine as deps.
-import { Notification } from 'electron';
+import { ports } from '../core/ports/ports';
 import { CH } from '../shared/ipc';
 import type { TurnInput } from '../shared/ipc';
 import { formatMemoryStatus, type ActionEvent, type AgentKind } from '../shared/events';
@@ -58,7 +58,6 @@ import { resolveWorkdir, tryResolveWorkdir } from './workdir';
 import { repoId as deriveRepoId } from '../memory2/repoId';
 import { isPlausiblePreference, type FactExtractInput } from '../brain/extractFact';
 import { buildDecisionPrompt } from '../brain/decisionPrompt';
-import { sendToPetWindow } from './safeSend';
 import { guardDeferredEnv } from '../shared/releaseChannel';
 import { createDigestAccumulator } from './factProposals/digest';
 import type { RunDigest } from './factProposals/types';
@@ -76,12 +75,12 @@ const RECALL_MIN_SIMILARITY = 0;
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 function pushEvent(e: ActionEvent): void {
-  sendToPetWindow(CH.actionEvent, e);
+  ports().rendererPush.send(CH.actionEvent, e);
 }
 
 /** Push the destructive-confirm request to the renderer (it shows a confirm chip). */
 function pushConfirmRequest(req: { runId: string; summary: string }): void {
-  sendToPetWindow(CH.confirmRequest, req);
+  ports().rendererPush.send(CH.confirmRequest, req);
 }
 
 /** Emit a synthetic terminal failure (preempt / stop) + end the turn — the stopCheckpoint's
@@ -111,11 +110,11 @@ async function confirmIfDestructive(
 }
 
 function pushReasoning(delta: string): void {
-  sendToPetWindow(CH.brainReasoning, delta);
+  ports().rendererPush.send(CH.brainReasoning, delta);
 }
 
 function pushContent(delta: string): void {
-  sendToPetWindow(CH.brainContent, delta);
+  ports().rendererPush.send(CH.brainContent, delta);
 }
 
 /**
@@ -125,14 +124,14 @@ function pushContent(delta: string): void {
  */
 function notifyJobDone(ok: boolean, detail?: string): void {
   try {
-    if (!Notification.isSupported()) return;
+    if (!ports().notification.isSupported()) return;
     const body =
       (detail ?? '').replace(/\s+/g, ' ').trim().slice(0, 180) ||
       (ok ? 'The coding agent finished.' : 'The coding agent stopped with an error.');
-    new Notification({
+    ports().notification.show({
       title: ok ? '✓ Roro — job complete' : '✗ Roro — job failed',
       body,
-    }).show();
+    });
   } catch (err) {
     console.error('[orchestrator] notification failed:', (err as Error).message);
   }
@@ -435,12 +434,11 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
 }
 
 /** Draw the paw for a grounded box. BEST-EFFORT: never throws — the paw is a courtesy on top of the answer,
- *  and showing it is secondary to the grounding itself. The pointerOverlay (which imports electron) is loaded
- *  dynamically so the orchestrator's node unit tests don't statically pull in electron. */
+ *  and showing it is secondary to the grounding itself. Routed through the PointerOverlayPort so the core
+ *  never imports electron (the shell adapter keeps the lazy import — see src/main/platformPorts.ts). */
 async function showGroundedPoint(box: { x: number; y: number; w: number; h: number }, confidence: number): Promise<void> {
   try {
-    const { showPointForBox } = await import('./pointerOverlay');
-    await showPointForBox(box, confidence);
+    await ports().pointerOverlay.showPointForBox(box, confidence);
   } catch (err) {
     console.warn('[paw] show failed:', (err as Error).message);
   }
@@ -559,7 +557,7 @@ async function proposeFactsFromRun(digest: RunDigest): Promise<void> {
           return null; // dedupe is best-effort; the user's confirm is the real gate
         }
       },
-      notify: (count) => { sendToPetWindow(CH.factProposalsPush, { count }); },
+      notify: (count) => { ports().rendererPush.send(CH.factProposalsPush, { count }); },
       trace: (e) => memory?.traceExtraction({ kind: 'propose', ownerId, sessionId: digest.sessionId, ...e }),
     });
   } catch (err) {
