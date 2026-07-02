@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mountProposalsSection, type ProposalsBridge } from './proposalsSection';
-import type { FactProposalView } from '../../main/factProposals/types';
+import type { FactProposalView } from '../../shared/factProposals';
 
 const ROW: FactProposalView = {
   id: 'prop_1', key: 'tests_location', value: 'keeps tests beside features',

@@ -11,22 +11,23 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
 
 import { guardDeferredEnv } from './shared/releaseChannel';
+import { registerPlatformPorts } from './main/platformPorts';
 import { registerIpcHandlers } from './main/ipc';
 import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorTracking } from './main/window';
-import { cancelAllRuns } from './main/orchestrator';
-import { cancelAllProposers } from './main/factProposals/runner';
+import { cancelAllRuns } from './core/orchestrator/orchestrator';
+import { cancelAllProposers } from './core/orchestrator/factProposals/runner';
 import { destroyPointerOverlay } from './main/pointerOverlay';
 import { getPetWindow } from './main/windowRegistry';
-import { initOwnerId } from './main/identity';
-import { hydrateWorkdirConfig } from './main/configStore';
-import { loadMemory } from './main/siblings';
+import { initOwnerId } from './core/orchestrator/identity';
+import { hydrateWorkdirConfig } from './core/orchestrator/configStore';
+import { loadMemory } from './core/orchestrator/siblings';
 import type { BootstrapStatusMsg } from './shared/ipc';
 import { CH } from './shared/ipc';
 import { sendToWindow } from './main/safeSend';
-import { getBootstrapStatus } from './main/bootstrapStatusStore';
-import { refreshBootstrapStatus } from './main/bootstrapRefresh';
-import { warmMemoryHealthAtStartup } from './main/memoryHealthStartup';
-import { memoryWarmupDisabled } from './main/memoryWarmupFlag';
+import { getBootstrapStatus } from './core/orchestrator/bootstrapStatusStore';
+import { refreshBootstrapStatus } from './core/orchestrator/bootstrapRefresh';
+import { warmMemoryHealthAtStartup } from './core/orchestrator/memoryHealthStartup';
+import { memoryWarmupDisabled } from './core/orchestrator/memoryWarmupFlag';
 
 const STARTUP_MEMORY_WARMUP_DELAY_MS = 3000;
 
@@ -61,6 +62,9 @@ if (process.env.RORO_DEBUG_PORT) {
   app.commandLine.appendSwitch('remote-debugging-port', process.env.RORO_DEBUG_PORT);
 }
 
+// Bind the core's platform ports to their Electron implementations BEFORE anything that can reach the
+// core (IPC handlers, turns). Fail-loud if a core path runs before this: an unregistered port throws.
+registerPlatformPorts();
 // IPC handlers are stateless and safe to register before windows exist.
 registerIpcHandlers();
 // Serve the last bootstrap status on demand (M7b) so a renderer that subscribed late can recover it.
@@ -71,8 +75,8 @@ app.whenReady().then(async () => {
   //    memory2 store (files + derived index) lives beside owner.json in userData (single-writer,
   //    owned by main only).
   process.env.RORO_DB_DIR ||= join(app.getPath('userData'), 'memory');
-  await hydrateWorkdirConfig();
-  const ownerId = await initOwnerId();
+  await hydrateWorkdirConfig(app.getPath('userData'));
+  const ownerId = await initOwnerId(app.getPath('userData'));
 
   // 1. Secure window + summon shortcut.
   // Tear the pointing overlay down whenever the main window closes, so the transparent, click-through

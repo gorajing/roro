@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MemoryModule } from './siblings';
+import type { MemoryModule } from '../core/orchestrator/siblings';
 
 const h = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
@@ -20,28 +20,28 @@ vi.mock('electron', () => ({
   shell: { openExternal: h.openExternal },
 }));
 
-vi.mock('./orchestrator', () => ({
+vi.mock('../core/orchestrator/orchestrator', () => ({
   runTurn: vi.fn(),
   runTask: vi.fn(),
   cancelTask: vi.fn(),
   resolveDestructiveConfirm: vi.fn(),
 }));
-vi.mock('./siblings', () => ({
+vi.mock('../core/orchestrator/siblings', () => ({
   loadBrain: h.loadBrain,
   loadMemory: h.loadMemory,
   loadVision: h.loadVision,
 }));
-vi.mock('./identity', () => ({
+vi.mock('../core/orchestrator/identity', () => ({
   getOwnerId: () => 'owner-test',
 }));
-vi.mock('../brain/ollama', () => ({
+vi.mock('../core/brain/ollama', () => ({
   ollamaTags: vi.fn(),
   pullModel: vi.fn(),
 }));
 
 import { CH } from '../shared/ipc';
 import { registerIpcHandlers } from './ipc';
-import { setMemoryHealthStatus } from './memoryHealthStatusStore';
+import { setMemoryHealthStatus } from '../core/orchestrator/memoryHealthStatusStore';
 
 function handler<T extends (...args: never[]) => unknown>(channel: string): T {
   const fn = h.handlers.get(channel);

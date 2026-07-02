@@ -29,23 +29,23 @@ import type { OpenDialogOptions } from 'electron';
 import { CH } from '../shared/ipc';
 import type { TurnInput, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg, BootstrapStatusMsg } from '../shared/ipc';
 import { guardDeferredEnv } from '../shared/releaseChannel';
-import { extractAndStoreFact } from './factStore';
-import type { FactProposalView } from './factProposals/types';
-import { pullModel } from '../brain/ollama';
-import { DEFAULT_MODEL_SPECS } from './bootstrapPlan';
+import { extractAndStoreFact } from '../core/orchestrator/factStore';
+import type { FactProposalView } from '../shared/factProposals';
+import { pullModel } from '../core/brain/ollama';
+import { DEFAULT_MODEL_SPECS } from '../core/orchestrator/bootstrapPlan';
 import { isAllowedExternalUrl } from './openExternalGuard';
-import { getMemoryHealthStatus } from './memoryHealthStatusStore';
+import { getMemoryHealthStatus } from '../core/orchestrator/memoryHealthStatusStore';
 import type { Decision, DecideInput } from '../shared/brain';
 import type { RememberEpisodeInput, Entry, MemoryMatch, ProfileFactSourceView, ProfileFactView } from '../shared/memory';
 import { assertRendererEpisodeKind } from '../shared/memory';
 import type { AgentKind } from '../shared/events';
-import { runTurn, runTask, cancelTask, resolveDestructiveConfirm } from './orchestrator';
-import { loadBrain, loadMemory, loadVision } from './siblings';
-import { getOwnerId } from './identity';
-import { hydrateWorkdirConfig, persistWorkdirChoice } from './configStore';
+import { runTurn, runTask, cancelTask, resolveDestructiveConfirm } from '../core/orchestrator/orchestrator';
+import { loadBrain, loadMemory, loadVision } from '../core/orchestrator/siblings';
+import { getOwnerId } from '../core/orchestrator/identity';
+import { hydrateWorkdirConfig, persistWorkdirChoice } from '../core/orchestrator/configStore';
 import { sendToWebContents } from './safeSend';
-import { getExecutorReadiness } from './executorReadiness';
-import { refreshBootstrapStatus } from './bootstrapRefresh';
+import { getExecutorReadiness } from '../core/orchestrator/executorReadiness';
+import { refreshBootstrapStatus } from '../core/orchestrator/bootstrapRefresh';
 
 /** Coerce a renderer-supplied agent arg to a valid AgentKind (default codex). */
 function asAgentKind(v: unknown): AgentKind {
@@ -104,7 +104,7 @@ export function registerIpcHandlers(): void {
   );
 
   // ---- Packaged-app config / onboarding ----
-  ipcMain.handle(CH.configGet, (): Promise<WorkdirConfigMsg> => hydrateWorkdirConfig());
+  ipcMain.handle(CH.configGet, (): Promise<WorkdirConfigMsg> => hydrateWorkdirConfig(app.getPath('userData')));
   ipcMain.handle(CH.configChooseWorkdir, async (event): Promise<WorkdirConfigMsg> => {
     const options: OpenDialogOptions = {
       title: 'Choose the project Roro should work on',
@@ -117,7 +117,7 @@ export function registerIpcHandlers(): void {
       : await dialog.showOpenDialog(options);
 
     if (result.canceled || result.filePaths.length === 0) {
-      return hydrateWorkdirConfig();
+      return hydrateWorkdirConfig(app.getPath('userData'));
     }
 
     return persistWorkdirChoice(app.getPath('userData'), result.filePaths[0], process.env);
@@ -220,7 +220,7 @@ export function registerIpcHandlers(): void {
   const resolvingProposals = new Set<string>();
   if (guardDeferredEnv(process.env).RORO_EXECUTOR_FACTS === '1') {
     ipcMain.handle(CH.factProposalsGet, async (): Promise<FactProposalView[]> => {
-      const { pendingProposals } = await import('./factProposals/runner');
+      const { pendingProposals } = await import('../core/orchestrator/factProposals/runner');
       return pendingProposals.list().map((p) => ({
         id: p.id, key: p.key, value: p.value, evidence: p.evidence, agent: p.agent, createdAt: p.createdAt,
       }));
@@ -231,7 +231,7 @@ export function registerIpcHandlers(): void {
         if (typeof input?.id !== 'string' || typeof input?.accept !== 'boolean') {
           throw new Error('factProposalResolve: expected { id: string, accept: boolean }');
         }
-        const { pendingProposals } = await import('./factProposals/runner');
+        const { pendingProposals } = await import('../core/orchestrator/factProposals/runner');
         // Double-resolve guard: two rapid clicks (or a click racing the push-refresh) must count as
         // ONE corroboration and ONE store. The second concurrent resolve for an id reports gone.
         if (resolvingProposals.has(input.id)) return { ok: true, gone: true };
