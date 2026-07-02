@@ -1,30 +1,32 @@
 import { describe, it, expect, vi } from 'vitest';
 import { extractAndStoreFact, type FactStoreDeps } from './factStore';
-import type { MemoryRow, ReplaceFactInput, FactPayload } from '../shared/memory';
+import type { Entry, FactPayload } from '../shared/memory';
 
-function factRow(id: string, key: string, value: string): MemoryRow {
+type ReplaceFactCall = Parameters<FactStoreDeps['replaceFact']>[0];
+
+function factEntry(id: string, key: string, value: string): Entry {
   const payload: FactPayload = { key, value, source: { session_id: 'old', turn_ts: 0 } };
-  return { id, owner_id: 'O', session_id: 'old', kind: 'fact', text: value, payload, superseded: false, created_at: '2026-06-21T00:00:00Z' };
+  return { id, schemaVersion: 1, tier: 'fact', ownerId: 'O', sessionId: 'old', factKey: key, text: value, payload, superseded: false, createdAt: '2026-06-21T00:00:00Z' };
 }
 
-const factKeyOf = (r: MemoryRow): string | undefined => (r.payload as FactPayload | null)?.key;
+const factKeyOf = (e: Entry): string | undefined => (e.payload as FactPayload | null)?.key;
 
 // Seed-only fake: replaceFact records its input and supersedes any matching seed row (the store's
 // atomic supersede-all-for-key), so tests can assert on `replaced` and `superseded` directly.
-function fakeDeps(seed: MemoryRow[]) {
-  const replaced: ReplaceFactInput[] = [];
+function fakeDeps(seed: Entry[]) {
+  const replaced: ReplaceFactCall[] = [];
   const superseded: string[] = [];
-  const reinforced: Array<{ owner_id: string; key: string }> = [];
+  const reinforced: Array<{ ownerId: string; factKey: string }> = [];
   const deps: FactStoreDeps = {
-    getProfile: async () => seed.filter((r) => !superseded.includes(r.id)),
+    getProfile: async () => seed.filter((e) => !superseded.includes(e.id)),
     replaceFact: async (input) => {
       replaced.push(input);
-      for (const r of seed) if (factKeyOf(r) === input.key && !superseded.includes(r.id)) superseded.push(r.id);
-      return { ...factRow('new', input.key, input.text), owner_id: input.owner_id, session_id: input.session_id, payload: input.payload ?? null };
+      for (const e of seed) if (factKeyOf(e) === input.factKey && !superseded.includes(e.id)) superseded.push(e.id);
+      return { ...factEntry('new', input.factKey, input.text), ownerId: input.ownerId, sessionId: input.sessionId, payload: input.payload ?? null };
     },
     reinforceFact: async (input) => {
       reinforced.push(input);
-      return seed.find((r) => factKeyOf(r) === input.key && !superseded.includes(r.id)) ?? null;
+      return seed.find((e) => factKeyOf(e) === input.factKey && !superseded.includes(e.id)) ?? null;
     },
   };
   return { deps, replaced, superseded, reinforced };
@@ -33,23 +35,23 @@ function fakeDeps(seed: MemoryRow[]) {
 // A faithful store fake where replaceFact() mutates a shared row set (atomic supersede-all-for-key +
 // insert), so getProfile() sees its effect — letting a read/write race actually manifest if it could.
 function liveDeps() {
-  const rows: MemoryRow[] = [];
+  const entries: Entry[] = [];
   let n = 0;
   const deps: FactStoreDeps = {
-    getProfile: async (ownerId) => rows.filter((r) => r.owner_id === ownerId && r.kind === 'fact' && !r.superseded),
+    getProfile: async (ownerId) => entries.filter((e) => e.ownerId === ownerId && e.tier === 'fact' && !e.superseded),
     replaceFact: async (input) => {
       // Atomic: supersede every prior active row for (owner, key), then insert the replacement.
-      for (const r of rows) {
-        if (r.owner_id === input.owner_id && r.kind === 'fact' && factKeyOf(r) === input.key && !r.superseded) r.superseded = true;
+      for (const e of entries) {
+        if (e.ownerId === input.ownerId && e.tier === 'fact' && factKeyOf(e) === input.factKey && !e.superseded) e.superseded = true;
       }
-      const row: MemoryRow = { id: `r${n++}`, owner_id: input.owner_id, session_id: input.session_id, kind: 'fact', text: input.text, payload: input.payload ?? null, superseded: false, created_at: new Date(n).toISOString() };
-      rows.push(row);
-      return row;
+      const entry: Entry = { id: `r${n++}`, schemaVersion: 1, tier: 'fact', ownerId: input.ownerId, sessionId: input.sessionId, factKey: input.factKey, text: input.text, payload: input.payload ?? null, superseded: false, createdAt: new Date(n).toISOString() };
+      entries.push(entry);
+      return entry;
     },
     reinforceFact: async (input) =>
-      rows.find((r) => r.owner_id === input.owner_id && r.kind === 'fact' && factKeyOf(r) === input.key && !r.superseded) ?? null,
+      entries.find((e) => e.ownerId === input.ownerId && e.tier === 'fact' && factKeyOf(e) === input.factKey && !e.superseded) ?? null,
   };
-  return { rows, deps };
+  return { entries, deps };
 }
 
 const CTX = { ownerId: 'O', sessionId: 'sess-B', turnTs: 1718900000000 };
@@ -66,12 +68,13 @@ describe('extractAndStoreFact', () => {
     await extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses pnpm' }, CTX);
     expect(superseded).toHaveLength(0);
     expect(replaced).toHaveLength(1);
-    expect(replaced[0]).toMatchObject({ owner_id: 'O', session_id: 'sess-B', text: 'uses pnpm', key: 'pkg_manager' });
+    expect(replaced[0]).toMatchObject({ ownerId: 'O', sessionId: 'sess-B', text: 'uses pnpm', factKey: 'pkg_manager' });
+    // The STORED payload shape is FROZEN (snake_case source) — the Memory panel reads it back.
     expect(replaced[0].payload).toEqual({ key: 'pkg_manager', value: 'uses pnpm', source: { session_id: 'sess-B', turn_ts: CTX.turnTs } });
   });
 
   it('replaces (supersedes old + inserts) when the value changes', async () => {
-    const { deps, replaced, superseded } = fakeDeps([factRow('r-old', 'pkg_manager', 'uses npm')]);
+    const { deps, replaced, superseded } = fakeDeps([factEntry('r-old', 'pkg_manager', 'uses npm')]);
     await extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses pnpm' }, CTX);
     expect(superseded).toEqual(['r-old']);
     expect(replaced).toHaveLength(1);
@@ -79,11 +82,11 @@ describe('extractAndStoreFact', () => {
   });
 
   it('corroborates (reinforces, no churn) when the same key already has the same value', async () => {
-    const { deps, replaced, superseded, reinforced } = fakeDeps([factRow('r-old', 'pkg_manager', 'uses pnpm')]);
+    const { deps, replaced, superseded, reinforced } = fakeDeps([factEntry('r-old', 'pkg_manager', 'uses pnpm')]);
     await extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses pnpm' }, CTX);
     expect(superseded).toHaveLength(0); // no supersede
     expect(replaced).toHaveLength(0); // no durable rewrite
-    expect(reinforced).toEqual([{ owner_id: 'O', key: 'pkg_manager' }]); // confidence strengthened in place
+    expect(reinforced).toEqual([{ ownerId: 'O', factKey: 'pkg_manager' }]); // confidence strengthened in place
   });
 
   it('repeated corrections for a key keep exactly one active fact (supersede-not-overwrite)', async () => {
@@ -92,20 +95,20 @@ describe('extractAndStoreFact', () => {
     await extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses yarn' }, CTX);
     await extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses pnpm' }, CTX);
     const active = await deps.getProfile('O');
-    expect(active.map((r) => r.text)).toEqual(['uses pnpm']); // collapses to exactly one active row
+    expect(active.map((e) => e.text)).toEqual(['uses pnpm']); // collapses to exactly one active row
   });
 
   it('keeps the prior fact active when the replacement fails (no data loss)', async () => {
     const { deps } = liveDeps();
     await extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses npm' }, CTX); // one active fact
-    // The atomic replace fails (embedding/network/DB error) — all-or-nothing, so nothing is mutated.
+    // The atomic replace fails (embedding/network/store error) — all-or-nothing, so nothing is mutated.
     deps.replaceFact = vi.fn().mockRejectedValueOnce(new Error('embed failed')) as FactStoreDeps['replaceFact'];
 
     await expect(extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses pnpm' }, CTX)).rejects.toThrow('embed failed');
 
     // The old fact must STILL be active — the replace is atomic and it failed.
     const active = await deps.getProfile('O');
-    expect(active.map((r) => r.text)).toEqual(['uses npm']);
+    expect(active.map((e) => e.text)).toEqual(['uses npm']);
   });
 
   it('serializes concurrent same-key writes so only ONE active fact survives (no race)', async () => {
@@ -117,7 +120,7 @@ describe('extractAndStoreFact', () => {
       extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses pnpm' }, { ownerId: 'O', sessionId: 's2', turnTs: 2 }),
     ]);
     const active = await deps.getProfile('O');
-    expect(active.filter((r) => factKeyOf(r) === 'pkg_manager')).toHaveLength(1);
+    expect(active.filter((e) => factKeyOf(e) === 'pkg_manager')).toHaveLength(1);
     expect(active[0].text).toBe('uses pnpm'); // the later writer wins; the earlier is superseded
   });
 
@@ -133,11 +136,11 @@ describe('extractAndStoreFact', () => {
       expect(await extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses pnpm' }, CTX)).toBe('stored');
     });
     it("returns 'stored' when the value changes (supersede + insert)", async () => {
-      const { deps } = fakeDeps([factRow('r-old', 'pkg_manager', 'uses npm')]);
+      const { deps } = fakeDeps([factEntry('r-old', 'pkg_manager', 'uses npm')]);
       expect(await extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses pnpm' }, CTX)).toBe('stored');
     });
     it("returns 'reinforced' when the same key already has the same value (no churn)", async () => {
-      const { deps } = fakeDeps([factRow('r-old', 'pkg_manager', 'uses pnpm')]);
+      const { deps } = fakeDeps([factEntry('r-old', 'pkg_manager', 'uses pnpm')]);
       expect(await extractAndStoreFact(deps, { key: 'pkg_manager', value: 'uses pnpm' }, CTX)).toBe('reinforced');
     });
   });

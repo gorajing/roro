@@ -9,7 +9,7 @@ const e = (over: Partial<Entry>): Entry => ({
 describe('blendCandidates — recency + cosine + importance blend (the recall-quality fix)', () => {
   it('preserves the RAW cosine on each scored entry (undefined for recency-only)', () => {
     // The adapter projects this raw cosine back to the old MemoryMatch.similarity contract — so it must
-    // be the unnormalized pgvector cosine, NOT the blended rank or the min-max relevance part.
+    // be the unnormalized index cosine, NOT the blended rank or the min-max relevance part.
     const ranked = blendCandidates([
       { entry: e({ id: 'hit', seq: 2 }), cosine: 0.42 },
       { entry: e({ id: 'recent-only', seq: 1 }) },

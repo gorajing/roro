@@ -15,14 +15,15 @@ const embed = async (t: string): Promise<number[]> => {
   return v;
 };
 
-describe('memoryStore — unified API + cursor-based reconciliation', () => {
+describe('memoryStore — unified API + full-replay reconciliation', () => {
   let dir: string;
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'mem2store-')); });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
   it('creates its data dir (and the index dir) when the path does not yet exist', async () => {
     // The production singleton points at <RORO_DB_DIR>/memory2 — a nested path that may not exist. The
-    // store (not just the file-write helpers) must create it before PGlite opens the index subdir.
+    // store (not just the file-write helpers) must create it before the index subdir (the vector
+    // cache's home) is created.
     const nested = join(dir, 'does', 'not', 'exist', 'yet');
     const store = await createMemoryStore({ dir: nested, embed, dim: DIM });
     try {
@@ -46,12 +47,25 @@ describe('memoryStore — unified API + cursor-based reconciliation', () => {
   it('persists importance through remember -> recall (the M5 ranking-nudge channel)', async () => {
     const store = await createMemoryStore({ dir, embed, dim: DIM });
     try {
-      // The adapter stamps importanceFor(kind); here we prove the store carries it end-to-end so the blend
+      // The facade stamps importanceFor(kind); here we prove the store carries it end-to-end so the blend
       // (memoryScore weights importance) can actually use it — a missing channel would silently drop the nudge.
       await store.remember({ tier: 'episode', ownerId: 'o1', text: 'added a logout route', importance: 6 });
       const hits = await store.recall({ query: 'added a logout route', ownerId: 'o1', k: 5 });
       expect(hits.find((h) => h.entry.text === 'added a logout route')?.entry.importance).toBe(6);
     } finally { await store.close(); }
+  });
+
+  it('persists episodeKind through remember -> reopen (W5: the kind survives storage, not just the tier)', async () => {
+    const a = await createMemoryStore({ dir, embed, dim: DIM });
+    await a.remember({ tier: 'episode', ownerId: 'o1', text: 'the user said something', episodeKind: 'observation' });
+    await a.remember({ tier: 'episode', ownerId: 'o1', text: 'the agent did something', episodeKind: 'action' });
+    await a.close();
+    const b = await createMemoryStore({ dir, embed, dim: DIM }); // full replay must carry the field
+    try {
+      const byText = new Map((await b.recent({ ownerId: 'o1', k: 5 })).map((e) => [e.text, e.episodeKind]));
+      expect(byText.get('the user said something')).toBe('observation');
+      expect(byText.get('the agent did something')).toBe('action');
+    } finally { await b.close(); }
   });
 
   it('forget hard-deletes a fact that STAYS gone across reindex (the Forget durability invariant)', async () => {
@@ -103,7 +117,7 @@ describe('memoryStore — unified API + cursor-based reconciliation', () => {
     } finally { await store.close(); }
   });
 
-  it('persists across reopen and reconcile is a no-op (cursor up to date)', async () => {
+  it('persists across reopen (the full-manifest replay rebuilds the index, cache-served)', async () => {
     const a = await createMemoryStore({ dir, embed, dim: DIM });
     await a.remember({ tier: 'episode', ownerId: 'o1', text: 'persist me' });
     await a.close();
@@ -113,15 +127,30 @@ describe('memoryStore — unified API + cursor-based reconciliation', () => {
     } finally { await b.close(); }
   });
 
-  it('delete cursor survives a tombstone (put+delete -> empty, and stays empty on reopen, no replay)', async () => {
+  it('a tombstone stays applied across reopens (put+delete -> empty, and stays empty on every replay)', async () => {
     const writer = createMemoryWriter({ dir });
     await writer.putEntry({ id: 'e1', schemaVersion: 1, tier: 'episode', ownerId: 'o1', text: 'gone', createdAt: '2026-06-22T00:00:00.000Z' });
     await writer.deleteEntry({ tier: 'episode', id: 'e1', ownerId: 'o1' });
     const a = await createMemoryStore({ dir, embed, dim: DIM });
     expect(await a.recent({ ownerId: 'o1', k: 5 })).toEqual([]);
     await a.close();
-    const b = await createMemoryStore({ dir, embed, dim: DIM }); // cursor advanced past the delete — no error/replay
+    const b = await createMemoryStore({ dir, embed, dim: DIM }); // the full replay applies the delete op again — no resurrection
     try { expect(await b.recent({ ownerId: 'o1', k: 5 })).toEqual([]); } finally { await b.close(); }
+  });
+
+  it('a hard-forgotten fact leaves NO file behind after a reopen (full replay must not resurrect it)', async () => {
+    // The forget path unlinks the fact file + records a delete op. Because every open replays the FULL
+    // manifest, the replace_fact op would re-materialize the file from its WAL payload — reconcile must
+    // re-apply the delete to the FILE too, or every relaunch resurrects hard-forgotten content on disk.
+    const a = await createMemoryStore({ dir, embed, dim: DIM });
+    const f = await a.replaceFact({ ownerId: 'o1', factKey: 'editor', text: 'prefers vim' });
+    await a.forget({ tier: 'fact', id: f.id, ownerId: 'o1' });
+    await a.close();
+    const b = await createMemoryStore({ dir, embed, dim: DIM }); // replay: replace_fact (materialize) then delete (unlink)
+    try {
+      expect(await b.getProfile('o1')).toEqual([]);
+    } finally { await b.close(); }
+    await expect(readEntryFile(entryPath(dir, { tier: 'fact', id: f.id } as Parameters<typeof entryPath>[1]))).rejects.toThrow(); // the file stays deleted
   });
 
   it('degrades gracefully when the embedder fails — the row is indexed (recent) but un-recallable (no vector)', async () => {

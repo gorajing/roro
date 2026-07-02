@@ -40,7 +40,7 @@ import type { TurnInput } from '../shared/ipc';
 import { formatMemoryStatus, type ActionEvent, type AgentKind } from '../shared/events';
 import { newRunId } from '../shared/events';
 import type { Command, Decision, DecideInput } from '../shared/brain';
-import type { MemoryKind } from '../shared/memory';
+import type { EpisodeKind } from '../shared/memory';
 import { getExecutor } from '../executor';
 import { loadBrain, loadMemory, loadVision, type MemoryModule } from './siblings';
 import { getOwnerId } from './identity';
@@ -142,8 +142,8 @@ function unapprovedDestructiveCommandReason(e: ActionEvent, destructiveApproved:
   return verdict.destructive ? verdict.reason ?? 'destructive command' : null;
 }
 
-/** Map a canonical event to the memory kind we persist it under. */
-function memoryKind(e: ActionEvent): MemoryKind {
+/** Map a canonical event to the episode kind we persist it under. */
+function memoryKind(e: ActionEvent): EpisodeKind {
   switch (e.kind) {
     case 'message':
     case 'message.delta':
@@ -190,8 +190,8 @@ async function rememberEvent(sessionId: string, e: ActionEvent): Promise<void> {
   try {
     const memory = await loadMemory();
     await memory.remember({
-      owner_id: getOwnerId(),
-      session_id: sessionId,
+      ownerId: getOwnerId(),
+      sessionId,
       kind: memoryKind(e),
       text: summarizeEvent(e),
       payload: e,
@@ -215,7 +215,7 @@ async function recallContext(
 ): Promise<string | undefined> {
   try {
     const memory = await loadMemory();
-    // Owner-scoped recall: durable profile facts (getProfile) + episodic pgvector matches,
+    // Owner-scoped recall: durable profile facts (getProfile) + episodic vector matches,
     // composed into a single LABELED memory string. Facts come first so they survive truncation.
     // currentRepoId (M5b) boosts same-project episodes — "remembers you HERE" — without filtering out
     // cross-repo memories (a global preference still recalls everywhere, just unboosted elsewhere).
@@ -449,8 +449,8 @@ async function rememberNarration(sessionId: string, text: string): Promise<void>
   try {
     const memory = await loadMemory();
     await memory.remember({
-      owner_id: getOwnerId(),
-      session_id: sessionId,
+      ownerId: getOwnerId(),
+      sessionId,
       kind: 'narration',
       text,
     });
@@ -466,11 +466,11 @@ async function rememberUserSaid(sessionId: string, transcript: string, repoPath?
   try {
     const memory = await loadMemory();
     await memory.remember({
-      owner_id: getOwnerId(),
-      session_id: sessionId,
+      ownerId: getOwnerId(),
+      sessionId,
       kind: 'observation',
       text: transcript,
-      repo_path: repoPath,
+      repoPath,
     });
   } catch (err) {
     console.error('[orchestrator] remember user transcript failed:', (err as Error).message);

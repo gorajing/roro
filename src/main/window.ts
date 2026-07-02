@@ -113,7 +113,7 @@ export function createWindow(): BrowserWindow {
 
   // NOTE: the COOP/COEP cross-origin-isolation headers existed ONLY for the on-device voice WASM
   // (SharedArrayBuffer + threaded SIMD). Voice moved to packages/voice; nothing left in the renderer
-  // needs crossOriginIsolated (PGlite's WASM runs in MAIN). Re-enable per packages/voice/README.md.
+  // needs crossOriginIsolated (the memory index runs in-process in MAIN). Re-enable per packages/voice/README.md.
 
   // Keep the template's MAIN_WINDOW_VITE_* loading logic (dev server vs packaged file).
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {

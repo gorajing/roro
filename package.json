@@ -65,8 +65,6 @@
     "vitest": "^2.1.9"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.5.3",
-    "@electric-sql/pglite-pgvector": "^0.0.4",
     "@pixi/unsafe-eval": "^7.4.3",
     "dotenv": "^17.4.2",
     "pixi.js": "^7.4.3",

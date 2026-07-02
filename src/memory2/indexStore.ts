@@ -2,8 +2,10 @@
 //
 // Files are the source of truth; the IndexStore is a DERIVED, rebuildable cache that serves the fast
 // read paths (vector KNN, recency, active facts). Keeping it behind this interface is what makes the
-// engine choice reversible: the benchmark picked PGlite+pgvector HNSW (flat ~1.5ms KNN to 100k vs
-// sqlite-vec's linear brute force), but a future swap is just another impl + a reindex from files.
+// engine choice reversible: v1 shipped PGlite+pgvector HNSW; the corpus is self-capped (~5k/owner,
+// single local user), so the current engine is a pure in-memory scan (memIndex.ts) rebuilt from the
+// manifest every open, with embeddings persisted by the vectorCache sidecar. A future swap is just
+// another impl + a reindex from files (indexStoreConformance.ts is the contract).
 
 import type { Entry, Tier } from './types';
 
