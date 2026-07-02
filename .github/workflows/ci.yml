@@ -67,3 +67,38 @@ jobs:
         run: |
           npm run verify:release-artifact
           npm run verify:release-artifact:dmg
+
+  # Guards the memory spine end-to-end on the REAL packaged .app: this is the smoke whose 8 assertions
+  # silently rotted when W5 reshaped the debug bridge (see scripts/lib/packagedHarness.mjs). Isolated in
+  # its own job so a macOS-runner hiccup can't redden the pure-Node checks or the release artifact.
+  packaged-memory-smoke:
+    name: packaged memory smoke (encrypted persist + relaunch)
+    runs-on: macos-latest # drives the real .app over CDP; macOS-only (Electron safeStorage keychain + the .app bundle)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 22, not 20: the CDP harness (scripts/lib/packagedHarness.mjs) uses the global WebSocket,
+          # which is only a stable global from Node 22 — Node 20 fails with "WebSocket is not defined".
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Build the unpacked .app (lighter than `make` — no DMG). The smoke launches
+      # out/Roro-darwin-<arch>/Roro.app twice over the Chrome DevTools Protocol.
+      - name: Package the app
+        run: npm run package
+
+      # Deterministic, headless-capable subset ONLY: this mode forces local Ollama offline (a dead port
+      # with a 250ms timeout), so it needs no models and no network. It proves encrypted memory writes,
+      # stays sealed on disk (no plaintext token in any file), and recalls the SAME durable row after a
+      # full relaunch — the CI guard against the debug-bridge shape drift that this PR fixes.
+      #
+      # NOT wired here (manual-only): verify:packaged-live-memory-turn and verify:packaged-natural-memory-turn
+      # need a local Ollama + pulled models, and their narrated answer is LLM-nondeterministic (the codename
+      # echo flakes run-to-run) — they would make CI flaky, so they stay a local/manual gate.
+      - name: Verify packaged encrypted memory (offline, no Ollama)
+        run: npm run verify:packaged-memory
