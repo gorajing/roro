@@ -22,18 +22,18 @@ vi.mock('electron', () => ({
   ipcMain: { handle: (channel: string, fn: (...args: unknown[]) => unknown): void => { h.handlers.set(channel, fn); } },
   shell: { openExternal: vi.fn() },
 }));
-vi.mock('./orchestrator', () => ({
+vi.mock('../core/orchestrator/orchestrator', () => ({
   runTurn: vi.fn(), runTask: vi.fn(), cancelTask: vi.fn(), resolveDestructiveConfirm: vi.fn(),
 }));
-vi.mock('./siblings', () => ({ loadBrain: vi.fn(), loadMemory: async () => h.memory, loadVision: vi.fn() }));
-vi.mock('./identity', () => ({ getOwnerId: () => 'owner-test' }));
-vi.mock('../brain/ollama', () => ({ pullModel: vi.fn() }));
-vi.mock('./bootstrapRefresh', () => ({ refreshBootstrapStatus: vi.fn() }));
+vi.mock('../core/orchestrator/siblings', () => ({ loadBrain: vi.fn(), loadMemory: async () => h.memory, loadVision: vi.fn() }));
+vi.mock('../core/orchestrator/identity', () => ({ getOwnerId: () => 'owner-test' }));
+vi.mock('../core/brain/ollama', () => ({ pullModel: vi.fn() }));
+vi.mock('../core/orchestrator/bootstrapRefresh', () => ({ refreshBootstrapStatus: vi.fn() }));
 vi.mock('./safeSend', () => ({ sendToWebContents: vi.fn(), sendToPetWindow: vi.fn() }));
 
 import { CH } from '../shared/ipc';
 import { registerIpcHandlers } from './ipc';
-import { pendingProposals } from './factProposals/runner';
+import { pendingProposals } from '../core/orchestrator/factProposals/runner';
 
 const PROPOSAL = { sessionId: 's1', agent: 'codex' as const, key: 'tests_location', value: 'keeps tests beside features', evidence: 'keeps tests beside features' };
 

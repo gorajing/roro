@@ -298,7 +298,7 @@ try {
     return { events: Array.isArray(done.events) ? done.events : [], confirms: Array.isArray(done.confirms) ? done.confirms : [] };
   };
 
-  // The EXACT `rm -r` classifier regex from src/main/destructive.ts — a destructive Bash the gate
+  // The EXACT `rm -r` classifier regex from src/core/orchestrator/destructive.ts — a destructive Bash the gate
   // MUST catch. Kept in sync manually; it matches `rm -rf`/`rm -r` but NOT `rm <file>` (which the
   // classifier deliberately does not flag — the documented false-negative).
   const CLASSIFIED_DESTRUCTIVE_RM = /\brm(?:\s+['"]?-\S+)*\s+['"]?-\S*r/i;

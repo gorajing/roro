@@ -6,7 +6,7 @@
 // of "the pet window" reduces to a push function here.
 import { Notification, safeStorage } from 'electron';
 import { setPlatformPorts } from '../core/ports/ports';
-import type { SafeStorageLike } from '../memory2/safeStorageWrapper';
+import type { SafeStorageLike } from '../core/memory2/safeStorageWrapper';
 import { sendToPetWindow } from './safeSend';
 
 /** Bind the core platform ports to their Electron implementations. Call once at boot. */

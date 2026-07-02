@@ -13,7 +13,7 @@ import type { TurnInput, BootstrapStatusMsg, ModelPullProgressMsg, WorkdirConfig
 import type { ActionEvent } from './shared/events';
 import type { Decision, DecideInput } from './shared/brain';
 import type { RememberEpisodeInput, Entry, MemoryMatch, ProfileFactSourceView, ProfileFactView } from './shared/memory';
-import type { FactProposalView } from './main/factProposals/types';
+import type { FactProposalView } from './core/orchestrator/factProposals/types';
 
 type AgentKindArg = 'codex' | 'claude';
 

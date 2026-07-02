@@ -10,7 +10,7 @@
 // Access is fail-LOUD: reading a port before it is registered THROWS, naming the port — so a missing
 // boot wiring surfaces immediately instead of degrading into a silent no-op.
 import type { NormalizedBox } from '../../shared/pointing';
-import type { SafeStorageLike } from '../../memory2/safeStorageWrapper';
+import type { SafeStorageLike } from '../memory2/safeStorageWrapper';
 
 /** Push a guarded MAIN->renderer message to the pet window. Impl: safeSend.sendToPetWindow (registry-
  *  targeted — never getAllWindows()[0], which the pointer overlay would hijack). */

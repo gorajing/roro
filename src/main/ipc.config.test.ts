@@ -22,24 +22,24 @@ vi.mock('electron', () => ({
   shell: { openExternal: h.openExternal },
 }));
 
-vi.mock('./orchestrator', () => ({
+vi.mock('../core/orchestrator/orchestrator', () => ({
   runTurn: vi.fn(),
   runTask: vi.fn(),
   cancelTask: vi.fn(),
   resolveDestructiveConfirm: vi.fn(),
 }));
-vi.mock('./siblings', () => ({
+vi.mock('../core/orchestrator/siblings', () => ({
   loadBrain: vi.fn(),
   loadMemory: vi.fn(),
   loadVision: vi.fn(),
 }));
-vi.mock('./identity', () => ({
+vi.mock('../core/orchestrator/identity', () => ({
   getOwnerId: () => 'owner-test',
 }));
-vi.mock('../brain/ollama', () => ({
+vi.mock('../core/brain/ollama', () => ({
   pullModel: h.pullModel,
 }));
-vi.mock('./bootstrapRefresh', () => ({
+vi.mock('../core/orchestrator/bootstrapRefresh', () => ({
   refreshBootstrapStatus: h.refreshBootstrapStatus,
 }));
 vi.mock('./safeSend', () => ({
@@ -48,7 +48,7 @@ vi.mock('./safeSend', () => ({
 
 import { CH, type BootstrapStatusMsg } from '../shared/ipc';
 import { registerIpcHandlers } from './ipc';
-import { setPersistedWorkdir, tryResolveWorkdir } from './workdir';
+import { setPersistedWorkdir, tryResolveWorkdir } from '../core/orchestrator/workdir';
 
 function handler<T extends (...args: never[]) => unknown>(channel: string): T {
   const fn = h.handlers.get(channel);
