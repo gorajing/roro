@@ -106,3 +106,90 @@ locate-gate lesson applies). C6 packaged smoke (smoke-packaged-sdk-executor: fla
 spawn of the real CLI in a disposable repo, one gated destructive ask auto-denied by timeout,
 run completes) + docs. LIVE FOUNDER SMOKE at the end: real coding turn, real chip approval,
 observed pre-execution deny — recorded in the PR body.
+
+---
+
+## Build record (W6, feat/sdk-executor)
+
+Implemented C0–C6, one commit each. Every commit gated: full `npx vitest run` (parallel) → `npx tsc
+--noEmit` → eslint 0 errors (worktree scope: `--no-eslintrc -c .eslintrc.json --resolve-plugins-
+relative-to . src scripts *.ts`; verified parity with the main checkout — 0 errors, warnings only).
+Final suite: 1004+ passed, 11 skipped (live probe suites gated off by default).
+
+### C1 probe results (SDK 0.3.198 ⇄ the founder's REAL installed CLI, which auto-updated to the
+SDK-paired 2.1.198 before C1 — the ground-truth-era 2.1.177 skew resolved itself):
+
+| Probe | Result | Note |
+|-------|--------|------|
+| P1 PreToolUse hook observes an auto-approved `echo` | PASS | hook fired, 0 canUseTool calls |
+| P2 canUseTool deny prevents execution (`permissionMode:'default'`) | PASS (amended) | acceptEdits auto-approves workspace Bash → probed the backstop under 'default' |
+| P2b PreToolUse hook DENY blocks a destructive Bash under acceptEdits | PASS (added) | THE hard-gate invariant for coding runs |
+| P3 abort → AbortError, no result first | PASS | `instanceof AbortError` but `.name==='Error'` (minified) — discriminate by instanceof, not name |
+| P4 `settingSources:['project']` keeps the user's global config out | PASS | init mode 'default' (not the user's 'auto'); `git commit` reached canUseTool (local allow rule did not leak) |
+| P5 plan + `allowedTools:['Read']` cannot write | PASS | asked-for file never landed |
+
+BINARY-STRATEGY DECISION: keep `pathToClaudeCodeExecutable` = the user's installed CLI
+(`resolveBin`). P1/P2b passed on it; NO flip to the SDK's 229MB bundled binary. The
+acceptEdits-auto-approves-workspace-`rm -rf` behavior is IDENTICAL on the bundled binary, so it is a
+semantic property of CLI 2.1.198, not pairing skew — the PreToolUse hook is the load-bearing
+pre-execution gate; canUseTool is the backstop.
+
+### Deviations from the spec (kept every test green + meaningful)
+
+1. **P2 shape.** As literally specced (canUseTool sees the destructive Bash) is FALSE under
+   acceptEdits on 2.1.198 (auto-approved first). Amended to `permissionMode:'default'` + added P2b for
+   the coding shape.
+2. **AbortError discrimination.** Spec said `err.name === 'AbortError'`; the real (minified) class has
+   `.name === 'Error'`. The adapter discriminates by `instanceof AbortError`.
+3. **Gate-bypass tripwire.** The spec's "a Bash tool_result whose id never traversed the hook" is
+   unfalsifiable given the adapter adjudicates every Bash `command`/started. Implemented as the
+   STRONGER, operative invariant: a gate-DENIED command whose tool_result comes back `is_error:false`
+   (it executed anyway) fails the run loud.
+
+## FOUNDER FLAG — auth policy (pre-registered v2 gate)
+
+The SDK path uses NO API key: the spawned CLI's default credential chain — the founder's own
+`claude login` (macOS Keychain OAuth, `apiKeySource: 'none'`, billed to the subscription). Verified
+live in C1 and in the packaged C6 smoke.
+
+Anthropic's distribution policy (quoted verbatim from the Agent SDK overview,
+code.claude.com/docs/en/agent-sdk/overview):
+
+> "Unless previously approved, Anthropic does not allow third party developers to offer claude.ai
+> login or rate limits for their products, including agents built on the Claude Agent SDK. Please use
+> the API key authentication methods described in this document instead."
+
+Interpretation for roro: technically the founder's `claude login` works today with zero API-key
+config, so the flag-on **dogfooding** path runs. For any **distributed** build this is a compliance
+gate — a distributed roro that ships the SDK executor on-by-default would need either Anthropic
+approval or a switch to API-key auth. This is a PRE-REGISTERED v2 gate: it must be resolved before the
+default flips from the CLI adapter to the SDK executor for shipped builds.
+
+### v2 default-flip criteria (pre-registered)
+
+Flip `RORO_SDK_EXECUTOR` from dark to default only when ALL hold: probes green across ≥2 SDK bumps; a
+founder-month of flag-on dogfooding with ZERO gate bypasses (the tripwire never fires); the packaged
+SDK smoke wired into CI; AND the auth-policy gate above resolved for the target distribution.
+
+## C6 packaged smoke + the LIVE FOUNDER SMOKE
+
+`npm run verify:packaged-sdk-executor` (scripts/smoke-packaged-sdk-executor.mjs) launches the REAL
+packaged .app with `RORO_SDK_EXECUTOR=1` and drives a coding turn whose task text is non-destructive
+(pre-dispatch confirm passes) but induces a mid-run `rm -rf` — auto-denied by the 15s confirm timeout,
+proving the deny is PRE-EXECUTION (the target folder survives) and the run continues to completion. It
+uses the founder's REAL installed claude CLI (no `RORO_CLAUDE_BIN`) with the founder's real login
+keychain (do NOT swap the keychain — that hides claude's OAuth token → "Not logged in"). Opt-in
+(spends real tokens); not a CI gate.
+
+LIVE FOUNDER SMOKE (the interactive chip-APPROVAL path the timeout smoke can't cover — run by the
+founder):
+1. `npm run package`
+2. Launch: `RORO_SDK_EXECUTOR=1 RORO_DEBUG_BRIDGE=1` (dev channel) with a real project workdir + a
+   real logged-in `claude`.
+3. Ask a coding task that legitimately needs a destructive step (e.g. "remove the stale build dir and
+   rebuild").
+4. Observe the confirm chip appear BEFORE the command runs; click Approve.
+5. Confirm the command then executes (approved-destructive), the run completes, and re-running the
+   same class mid-turn does not re-ask (reason-class memoization).
+6. Separately, let a confirm TIME OUT (or Stop mid-confirm) and observe the pre-execution deny +
+   "Skipped a destructive command" status beat + the run continuing.

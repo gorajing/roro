@@ -31,6 +31,7 @@
     "verify:packaged-onboarding": "node scripts/smoke-packaged-onboarding.mjs",
     "verify:packaged-first-task": "node scripts/smoke-packaged-first-task.mjs",
     "verify:packaged-real-codex": "RORO_PACKAGED_FIRST_TASK_REAL_CODEX=1 node scripts/smoke-packaged-first-task.mjs",
+    "verify:packaged-sdk-executor": "node scripts/smoke-packaged-sdk-executor.mjs",
     "verify:packaged-model-setup": "node scripts/smoke-packaged-model-setup.mjs",
     "verify:memory-steered": "node scripts/smoke-memory-steered.mjs",
     "verify:release-artifact": "node scripts/verify-release-artifact.mjs --mode default",
