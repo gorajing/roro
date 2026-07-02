@@ -1,28 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import { extractAndStoreFact, type FactStoreDeps } from './factStore';
 import { buildRecallContext, type RecallDeps } from './memoryContext';
-import type { MemoryRow, MemoryMatch, ReplaceFactInput, FactPayload } from '../shared/memory';
+import type { Entry, MemoryMatch, FactPayload } from '../shared/memory';
 
-const factKeyOf = (r: MemoryRow): string | undefined => (r.payload as FactPayload | null)?.key;
+const factKeyOf = (e: Entry): string | undefined => (e.payload as FactPayload | null)?.key;
 
-// One in-memory store implementing the SAME owner-scoped, superseded-aware contract the live SQL must.
+// One in-memory store implementing the SAME owner-scoped, superseded-aware contract the live store must.
 function makeStore() {
-  const rows: MemoryRow[] = [];
+  const entries: Entry[] = [];
   let n = 0;
-  // Atomic supersede-all-for-key + insert — the same contract the real PGlite replaceFact upholds.
-  const replaceFact = async (input: ReplaceFactInput): Promise<MemoryRow> => {
-    for (const r of rows) {
-      if (r.owner_id === input.owner_id && r.kind === 'fact' && factKeyOf(r) === input.key && !r.superseded) r.superseded = true;
+  // Atomic supersede-all-for-key + insert — the same contract the real memory2 replaceFact upholds.
+  const replaceFact: FactStoreDeps['replaceFact'] = async (input) => {
+    for (const e of entries) {
+      if (e.ownerId === input.ownerId && e.tier === 'fact' && factKeyOf(e) === input.factKey && !e.superseded) e.superseded = true;
     }
-    const row: MemoryRow = { id: `id-${n++}`, owner_id: input.owner_id, session_id: input.session_id, kind: 'fact', text: input.text, payload: input.payload ?? null, superseded: false, created_at: new Date(n).toISOString() };
-    rows.push(row);
-    return row;
+    const entry: Entry = { id: `id-${n++}`, schemaVersion: 1, tier: 'fact', ownerId: input.ownerId, sessionId: input.sessionId, factKey: input.factKey, text: input.text, payload: input.payload ?? null, superseded: false, createdAt: new Date(n).toISOString() };
+    entries.push(entry);
+    return entry;
   };
-  const getProfile = async (ownerId: string) => rows.filter((r) => r.owner_id === ownerId && r.kind === 'fact' && !r.superseded);
-  // recall: naive substring match scoped to owner (stands in for pgvector cosine + owner filter).
+  const reinforceFact: FactStoreDeps['reinforceFact'] = async (input) =>
+    entries.find((e) => e.ownerId === input.ownerId && e.tier === 'fact' && factKeyOf(e) === input.factKey && !e.superseded) ?? null;
+  const getProfile = async (ownerId: string): Promise<Entry[]> =>
+    entries.filter((e) => e.ownerId === ownerId && e.tier === 'fact' && !e.superseded);
+  // recall: naive substring match scoped to owner (stands in for the cosine channel + owner filter).
   const recall = async ({ query, ownerId }: { query: string; ownerId: string; k?: number; sessionId?: string }): Promise<MemoryMatch[]> =>
-    rows.filter((r) => r.owner_id === ownerId && r.kind !== 'fact' && query.split(' ').some((w) => r.text.includes(w))).map((r) => ({ ...r, similarity: 0.9, guaranteed: false }));
-  return { rows, deps: { getProfile, replaceFact, recall } as FactStoreDeps & RecallDeps };
+    entries
+      .filter((e) => e.ownerId === ownerId && e.tier !== 'fact' && query.split(' ').some((w) => e.text.includes(w)))
+      .map((entry) => ({ entry, similarity: 0.9, guaranteed: false }));
+  return { entries, deps: { getProfile, replaceFact, reinforceFact, recall } as FactStoreDeps & RecallDeps };
 }
 
 const OWNER = 'owner-A';
@@ -40,8 +45,8 @@ describe('MEMORY SPINE — cross-launch teach→recall (the magic moment, headle
     expect(out.context).toContain('KNOWN ABOUT THIS USER:');
     expect(out.context).toContain('writes a test alongside each feature');
 
-    // The taught fact carries provenance.
-    const fact = store.rows.find((r) => r.kind === 'fact')!;
+    // The taught fact carries provenance (the FROZEN snake_case source shape).
+    const fact = store.entries.find((e) => e.tier === 'fact')!;
     expect((fact.payload as FactPayload).source).toEqual({ session_id: 'launch-A', turn_ts: 1 });
   });
 

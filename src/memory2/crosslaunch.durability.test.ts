@@ -23,7 +23,8 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, appendFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createMemory2Adapter, type Memory2Adapter } from './adapter';
+import { createMemoryFacade, type MemoryFacade } from './index';
+import { createMemoryStore } from './memoryStore';
 import { createAesGcmCipher } from './cipher';
 import { buildRecallContext } from '../main/memoryContext';
 
@@ -50,40 +51,40 @@ const cachePath = (dir: string): string => join(dir, 'index', 'vectors.jsonl');
 
 /** Launch A: teach a durable fact + an episode, then CLOSE (seal everything to the encrypted files). */
 async function teachThenClose(dir: string, cipher: ReturnType<typeof createAesGcmCipher>): Promise<void> {
-  const a = await createMemory2Adapter({ dir, embed, dim: DIM, embedModel: MODEL, cipher });
+  const a = createMemoryFacade(await createMemoryStore({ dir, embed, dim: DIM, embedModel: MODEL, cipher }));
   try {
     await a.replaceFact({
-      owner_id: OWNER,
-      session_id: 'launch-A',
-      key: 'tests_with_features',
+      ownerId: OWNER,
+      sessionId: 'launch-A',
+      factKey: 'tests_with_features',
       text: FACT,
       payload: { key: 'tests_with_features', value: FACT },
     });
-    await a.remember({ owner_id: OWNER, session_id: 'launch-A', kind: 'observation', text: EPISODE });
+    await a.remember({ ownerId: OWNER, sessionId: 'launch-A', kind: 'observation', text: EPISODE });
   } finally {
     await a.close();
   }
 }
 
-function reopen(dir: string, cipher: ReturnType<typeof createAesGcmCipher>, embedFn = countingEmbed): Promise<Memory2Adapter> {
-  return createMemory2Adapter({ dir, embed: embedFn, dim: DIM, embedModel: MODEL, cipher });
+async function reopen(dir: string, cipher: ReturnType<typeof createAesGcmCipher>, embedFn = countingEmbed): Promise<MemoryFacade> {
+  return createMemoryFacade(await createMemoryStore({ dir, embed: embedFn, dim: DIM, embedModel: MODEL, cipher }));
 }
 
 /** The launch-B assertions: the fact + episode + owner-isolation all survive into the reopened store. */
-async function assertSurvives(b: Memory2Adapter): Promise<void> {
+async function assertSurvives(b: MemoryFacade): Promise<void> {
   // (A) the fact survives, and its payload round-trips through encrypt → close → reopen → decrypt
   const profile = await b.getProfile(OWNER);
   expect(profile.map((r) => r.text)).toEqual([FACT]);
-  expect(profile[0].kind).toBe('fact');
-  expect(profile[0].owner_id).toBe(OWNER);
+  expect(profile[0].tier).toBe('fact');
+  expect(profile[0].ownerId).toBe(OWNER);
   expect(profile[0].payload).toMatchObject({ key: 'tests_with_features', value: FACT });
 
   // (B) the episode is recalled BY COSINE (similarity ~1 proves a real vector served the match —
   // whether from the warm cache or a rebuild), and facts don't leak into the episodic channel
   const hits = await b.recall({ query: EPISODE, ownerId: OWNER, k: 5 });
-  expect(hits.map((hh) => hh.text)).toContain(EPISODE);
-  expect(hits.find((hh) => hh.text === EPISODE)?.similarity).toBeCloseTo(1, 5);
-  expect(hits.every((hh) => hh.kind !== 'fact')).toBe(true);
+  expect(hits.map((hh) => hh.entry.text)).toContain(EPISODE);
+  expect(hits.find((hh) => hh.entry.text === EPISODE)?.similarity).toBeCloseTo(1, 5);
+  expect(hits.every((hh) => hh.entry.tier !== 'fact')).toBe(true);
 
   // (C) the ACTUAL orchestrator-facing read path composes BOTH — the magic moment.
   // minSimilarity:0 because memory2's recency-guaranteed rows carry cosine 0 (a >0 floor drops them).
@@ -158,7 +159,7 @@ describe('memory2 cross-launch durability (the recalled-memory magic moment)', (
     try {
       expect((await b.getProfile(OWNER)).map((r) => r.text)).toEqual([FACT]); // the knows-you layer is up
       const hits = await b.recall({ query: 'what did we just do?', ownerId: OWNER, k: 5 });
-      expect(hits.map((h) => h.text)).toContain(EPISODE); // recency fallback — degraded, never down
+      expect(hits.map((h) => h.entry.text)).toContain(EPISODE); // recency fallback — degraded, never down
     } finally {
       await b.close();
     }
@@ -248,9 +249,9 @@ describe('memory2 vector-cache sabotage at the store seam (self-heal vs refusal)
     const cipher = createAesGcmCipher(Buffer.alloc(32, 7));
     await teachThenClose(dir, cipher);
 
-    await expect(createMemory2Adapter({ dir, embed, dim: 32, embedModel: MODEL, cipher })).rejects.toThrow(/dimension/i);
-    await expect(createMemory2Adapter({ dir, embed, dim: 32, embedModel: MODEL, cipher })).rejects.toThrow(/not mixable/);
-    await expect(createMemory2Adapter({ dir, embed, dim: DIM, embedModel: 'mxbai-embed-large', cipher })).rejects.toThrow(/model/i);
+    await expect(createMemoryStore({ dir, embed, dim: 32, embedModel: MODEL, cipher })).rejects.toThrow(/dimension/i);
+    await expect(createMemoryStore({ dir, embed, dim: 32, embedModel: MODEL, cipher })).rejects.toThrow(/not mixable/);
+    await expect(createMemoryStore({ dir, embed, dim: DIM, embedModel: 'mxbai-embed-large', cipher })).rejects.toThrow(/model/i);
 
     const same = await reopen(dir, cipher); // the matching identity still opens fine
     try {

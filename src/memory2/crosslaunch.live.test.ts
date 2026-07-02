@@ -10,7 +10,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as brain from '../brain/index';
-import { createMemory2Adapter } from './adapter';
+import { createMemoryFacade } from './index';
+import { createMemoryStore } from './memoryStore';
 import { createAesGcmCipher } from './cipher';
 import { buildRecallContext } from '../main/memoryContext';
 
@@ -40,12 +41,12 @@ describe.runIf(process.env.OLLAMA_AVAILABLE === '1')('LIVE magic moment (real qw
     const dim = (await brain.embed('dimension probe')).length;
     console.log('[3 EMBED] real embedding dim=%d', dim);
     try {
-      const a = await createMemory2Adapter({ dir, embed: realEmbed, dim, cipher });
-      await a.replaceFact({ owner_id: 'me', session_id: 'A', key: fact.key, text: fact.value, payload: { key: fact.key, value: fact.value } });
-      await a.remember({ owner_id: 'me', session_id: 'A', kind: 'observation', text: 'added a logout route' });
+      const a = createMemoryFacade(await createMemoryStore({ dir, embed: realEmbed, dim, cipher }));
+      await a.replaceFact({ ownerId: 'me', sessionId: 'A', factKey: fact.key, text: fact.value, payload: { key: fact.key, value: fact.value } });
+      await a.remember({ ownerId: 'me', sessionId: 'A', kind: 'observation', text: 'added a logout route' });
       await a.close();
 
-      const b = await createMemory2Adapter({ dir, embed: realEmbed, dim, cipher });
+      const b = createMemoryFacade(await createMemoryStore({ dir, embed: realEmbed, dim, cipher }));
       try {
         const ctx = await buildRecallContext(b, { ownerId: 'me', sessionId: 'B', query: 'add a signup route too', minSimilarity: 0 });
         console.log('\n[4 RECALL across restart] factCount=%d episodeCount=%d\n--- memory fed to the brain ---\n%s\n-------------------------------', ctx.factCount, ctx.episodeCount, ctx.context);

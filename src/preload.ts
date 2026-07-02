@@ -12,7 +12,7 @@ import { CH } from './shared/ipc';
 import type { TurnInput, BootstrapStatusMsg, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg } from './shared/ipc';
 import type { ActionEvent } from './shared/events';
 import type { Decision, DecideInput } from './shared/brain';
-import type { RememberInput, MemoryRow, MemoryMatch, ProfileFactSourceView, ProfileFactView } from './shared/memory';
+import type { RememberEpisodeInput, Entry, MemoryMatch, ProfileFactSourceView, ProfileFactView } from './shared/memory';
 import type { FactProposalView } from './main/factProposals/types';
 
 type AgentKindArg = 'codex' | 'claude';
@@ -149,7 +149,7 @@ const memory = {
     ipcRenderer.invoke(CH.factProposalResolve, { id, accept }),
   onProposals: (cb: (msg: { count: number }) => void): (() => void) => subscribe(CH.factProposalsPush, cb),
 } as {
-  remember?: (input: Omit<RememberInput, 'owner_id'>) => Promise<MemoryRow>;
+  remember?: (input: Omit<RememberEpisodeInput, 'ownerId'>) => Promise<Entry>;
   recall?: (input: { query: string; k?: number; sessionId?: string }) => Promise<MemoryMatch[]>;
   profile: () => Promise<ProfileFactView[]>;
   fixFact: (id: string, value: string) => Promise<ProfileFactView>;
@@ -163,7 +163,7 @@ const memory = {
 
 if (debugBridge) {
   // Test harness/debug-only: product recall and writes go through MAIN/orchestrator, not renderer APIs.
-  memory.remember = (input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow> =>
+  memory.remember = (input: Omit<RememberEpisodeInput, 'ownerId'>): Promise<Entry> =>
     ipcRenderer.invoke(CH.memoryRemember, input);
   memory.recall = (input: {
     query: string;

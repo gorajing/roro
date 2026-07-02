@@ -74,8 +74,12 @@ describe('memory-format contract round-trip (composer <-> inspector)', () => {
     // This round-trip pins the WHOLE format (header + bullet lines), not just the header token.
     const { composeMemoryContext } = await import('../main/memoryContext');
     const episode = {
-      id: 'e', owner_id: 'o', session_id: 's', kind: 'observation', text: 'we added a logout route',
-      payload: {}, superseded: false, created_at: '2026-07-01T00:00:00Z', similarity: 0.9, guaranteed: false,
+      entry: {
+        id: 'e', schemaVersion: 1, tier: 'episode' as const, ownerId: 'o', sessionId: 's',
+        episodeKind: 'observation' as const, text: 'we added a logout route',
+        payload: {}, superseded: false, createdAt: '2026-07-01T00:00:00Z',
+      },
+      similarity: 0.9, guaranteed: false,
     };
     const composed = composeMemoryContext([], [episode]);
     expect(__test.hasRelatedPastContext(composed)).toBe(true);

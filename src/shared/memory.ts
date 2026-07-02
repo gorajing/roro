@@ -92,6 +92,58 @@ export interface Entry {
   encryptionVersion?: number;
 }
 
+/** Input to the episodic write path (the facade stamps tier:'episode', episodeKind, importance, and
+ *  the derived repoId — callers never hand-assemble those). Facts are NOT writable here: kind is
+ *  EpisodeKind, so a fact write is unrepresentable (facts go through replaceFact's atomic supersede). */
+export interface RememberEpisodeInput {
+  ownerId: string;
+  sessionId: string;
+  kind: EpisodeKind;
+  text: string;
+  payload?: unknown;
+  /** Absolute path of the repo this memory belongs to (M5). A stable repoId is derived from it for
+   *  project-scoped recall; absent (answer/clarify or no-workdir turns) → an unscoped global memory. */
+  repoPath?: string;
+}
+
+/**
+ * Episodic recall query (owner-scoped). `repoId` (M5b) boosts same-project memories — optional, so an
+ * unscoped recall is unchanged. Shared by the recall deps / module / facade so this field set can
+ * never drift across copies (the bug that left the facade unaware of repoId until it was unified here).
+ */
+export interface RecallInput {
+  query: string;
+  k?: number;
+  ownerId: string;
+  sessionId?: string;
+  repoId?: string;
+}
+
+/** One episodic recall hit: the full Entry plus how it earned its place. */
+export interface MemoryMatch {
+  entry: Entry;
+  /** RAW cosine for vector-channel rows; recency-guaranteed rows carry 0 (they were never scored). */
+  similarity: number;
+  /** memory2's recency guarantee: the store PROMISES this row surfaces regardless of cosine. Callers
+   *  must exempt guaranteed rows from any similarity floor — dropping one silently kills temporal
+   *  recall ("what did we just do?"). Typed here so the invariant can't be lost in a refactor. */
+  guaranteed: boolean;
+}
+
+/**
+ * Runtime guard for the renderer-facing remember bridge (typed inputs are compile-time only — IPC
+ * payloads are untrusted). Facts are DERIVED internally (the brain extractor + factStore's serialized
+ * supersede-not-overwrite path) — a direct renderer write of a fact would bypass that discipline.
+ */
+export function assertRendererEpisodeKind(kind: unknown): asserts kind is EpisodeKind {
+  if (kind === 'fact') {
+    throw new Error("memory.remember from the renderer cannot write kind:'fact' (facts are derived internally)");
+  }
+  if (kind !== 'observation' && kind !== 'narration' && kind !== 'action') {
+    throw new Error(`memory.remember: unknown episode kind ${JSON.stringify(kind)}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Renderer-facing views — FROZEN byte-for-byte (snake_case; the Memory panel + packaged smokes pin
 // these shapes and the IPC channel names)
@@ -147,19 +199,6 @@ export interface ReplaceFactInput {
   payload?: unknown;
 }
 
-/**
- * Episodic recall query (owner-scoped). `repoId` (M5b) boosts same-project memories — optional, so an
- * unscoped recall is unchanged. Shared by the recall deps / adapter / module / facade so this field set can
- * never drift across copies (the bug that left the facade unaware of repoId until it was unified here).
- */
-export interface RecallInput {
-  query: string;
-  k?: number;
-  ownerId: string;
-  sessionId?: string;
-  repoId?: string;
-}
-
 export interface MemoryRow {
   id: string;
   owner_id: string;
@@ -176,19 +215,9 @@ export interface MemoryRow {
   created_at: string;
 }
 
-export interface MemoryMatch extends MemoryRow {
-  /** RAW cosine for vector-channel rows; recency-guaranteed rows carry 0 (they were never scored). */
-  similarity: number;
-  /** memory2's recency guarantee: the store PROMISES this row surfaces regardless of cosine. Callers
-   *  must exempt guaranteed rows from any similarity floor — dropping one silently kills temporal
-   *  recall ("what did we just do?"). Typed here so the invariant can't be lost in a refactor. */
-  guaranteed: boolean;
-}
-
 /**
- * Guard for the renderer-facing remember bridge. Facts are DERIVED internally (the brain extractor
- * + factStore's serialized supersede-not-overwrite path) — a direct renderer write of kind:'fact'
- * would bypass that discipline and could create duplicate active facts for a key.
+ * Guard for the legacy renderer remember bridge (superseded by assertRendererEpisodeKind; dies with
+ * the adapter).
  */
 export function assertRendererMemoryKind(kind: MemoryKind): void {
   if (kind === 'fact') {

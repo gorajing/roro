@@ -36,8 +36,8 @@ import { DEFAULT_MODEL_SPECS } from './bootstrapPlan';
 import { isAllowedExternalUrl } from './openExternalGuard';
 import { getMemoryHealthStatus } from './memoryHealthStatusStore';
 import type { Decision, DecideInput } from '../shared/brain';
-import type { RememberInput, MemoryRow, MemoryMatch, ProfileFactSourceView, ProfileFactView } from '../shared/memory';
-import { assertRendererMemoryKind } from '../shared/memory';
+import type { RememberEpisodeInput, Entry, MemoryMatch, ProfileFactSourceView, ProfileFactView } from '../shared/memory';
+import { assertRendererEpisodeKind } from '../shared/memory';
 import type { AgentKind } from '../shared/events';
 import { runTurn, runTask, cancelTask, resolveDestructiveConfirm } from './orchestrator';
 import { loadBrain, loadMemory, loadVision } from './siblings';
@@ -165,10 +165,10 @@ export function registerIpcHandlers(): void {
   if (debugBridge) {
     ipcMain.handle(
       CH.memoryRemember,
-      async (_e, input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow> => {
-        assertRendererMemoryKind(input.kind); // facts are derived internally; the renderer can't write them
+      async (_e, input: Omit<RememberEpisodeInput, 'ownerId'>): Promise<Entry> => {
+        assertRendererEpisodeKind(input.kind); // runtime guard: facts are derived internally; the renderer can't write them
         const memory = await loadMemory();
-        return memory.remember({ ...input, owner_id: getOwnerId() });
+        return memory.remember({ ...input, ownerId: getOwnerId() });
       },
     );
     ipcMain.handle(
@@ -257,7 +257,7 @@ export function registerIpcHandlers(): void {
         });
         if (outcome === 'stored') {
           // The user's click is one corroboration — the same verb the panel's "Looks right" uses.
-          await memory.reinforceFact({ owner_id: ownerId, key: p.key }).catch(() => null);
+          await memory.reinforceFact({ ownerId, factKey: p.key }).catch(() => null);
         }
         pendingProposals.take(input.id); // only leaves the queue after a successful store
         trace('confirmed', p);

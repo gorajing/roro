@@ -15,8 +15,8 @@ import type {
 } from '../shared/ipc';
 import type { Decision, DecideInput } from '../shared/brain';
 import type {
-  RememberInput,
-  MemoryRow,
+  RememberEpisodeInput,
+  Entry,
   MemoryMatch,
   ProfileFactSourceView,
   ProfileFactView,
@@ -85,8 +85,8 @@ export interface BrainBridge {
 }
 
 export interface MemoryBridge {
-  /** Debug bridge only: owner_id is injected MAIN-side from the device identity. */
-  remember?(input: Omit<RememberInput, 'owner_id'>): Promise<MemoryRow>;
+  /** Debug bridge only: ownerId is injected MAIN-side from the device identity. */
+  remember?(input: Omit<RememberEpisodeInput, 'ownerId'>): Promise<Entry>;
   /** Debug bridge only: direct semantic recall. Product recall is orchestrator-owned. */
   recall?(input: { query: string; k?: number; sessionId?: string }): Promise<MemoryMatch[]>;
   /** Renderer-safe transparency view: active owner-scoped facts only. */

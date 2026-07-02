@@ -24,11 +24,17 @@ import type {
   RememberInput,
   ReplaceFactInput,
   MemoryRow,
-  MemoryMatch,
   RecallInput,
   ProfileFactSourceView,
   ProfileFactView,
 } from '../shared/memory';
+
+/** The old contract's recall hit (a flat row + similarity). Lives HERE now — shared/memory.ts's
+ *  MemoryMatch is the Entry wrapper since the W5 unification; this alias dies with this file. */
+export interface LegacyMemoryMatch extends MemoryRow {
+  similarity: number;
+  guaranteed: boolean;
+}
 import { factSource, fixFact, profileFacts, verifyFact } from './profileFacts';
 
 const KIND_TO_TIER: Record<Exclude<MemoryKind, 'fact'>, Tier> = {
@@ -70,7 +76,7 @@ export interface Memory2Adapter {
   remember(input: RememberInput): Promise<MemoryRow>;
   replaceFact(input: ReplaceFactInput): Promise<MemoryRow>;
   reinforceFact(input: { owner_id: string; key: string }): Promise<MemoryRow | null>;
-  recall(input: RecallInput): Promise<MemoryMatch[]>;
+  recall(input: RecallInput): Promise<LegacyMemoryMatch[]>;
   getProfile(ownerId: string): Promise<MemoryRow[]>;
   /** Renderer-safe active facts for the Memory panel. */
   profileFacts(ownerId: string): Promise<ProfileFactView[]>;
@@ -158,7 +164,7 @@ export async function createMemory2Adapter(opts: Memory2AdapterOpts): Promise<Me
       return deps.reinforceFact(input);
     },
 
-    async recall(input): Promise<MemoryMatch[]> {
+    async recall(input): Promise<LegacyMemoryMatch[]> {
       requireText(input.query, 'recall query');
       requireText(input.ownerId, 'recall ownerId');
       const k = normalizeK(input.k);

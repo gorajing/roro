@@ -1,18 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { composeMemoryContext, buildRecallContext, type RecallDeps } from './memoryContext';
-import type { MemoryRow, MemoryMatch } from '../shared/memory';
+import type { Entry, MemoryMatch } from '../shared/memory';
 
 const OWNER = 'owner-A';
-function factRow(text: string, over: Partial<MemoryRow> = {}): MemoryRow {
-  return { id: 'f', owner_id: OWNER, session_id: 's', kind: 'fact', text, payload: {}, superseded: false, created_at: '2026-06-21T00:00:00Z', ...over };
+function factEntry(text: string, over: Partial<Entry> = {}): Entry {
+  return { id: 'f', schemaVersion: 1, tier: 'fact', ownerId: OWNER, sessionId: 's', factKey: 'k', text, payload: {}, superseded: false, createdAt: '2026-06-21T00:00:00Z', ...over };
 }
 function match(text: string, similarity: number, guaranteed = false): MemoryMatch {
-  return { ...factRow(text), kind: 'observation', similarity, guaranteed };
+  return { entry: factEntry(text, { tier: 'episode', factKey: undefined, episodeKind: 'observation' }), similarity, guaranteed };
 }
 
 describe('composeMemoryContext', () => {
   it('labels facts separately from episodes', () => {
-    const ctx = composeMemoryContext([factRow('writes a test alongside each feature')], [match('user asked to add a login route', 0.7)]);
+    const ctx = composeMemoryContext([factEntry('writes a test alongside each feature')], [match('user asked to add a login route', 0.7)]);
     expect(ctx).toContain('KNOWN ABOUT THIS USER:');
     expect(ctx).toContain('- writes a test alongside each feature');
     expect(ctx).toContain('RELATED PAST CONTEXT:');
@@ -24,24 +24,24 @@ describe('composeMemoryContext', () => {
     expect(composeMemoryContext([], [])).toBeUndefined();
   });
   it('emits only the facts section when there are no episodes', () => {
-    const ctx = composeMemoryContext([factRow('prefers Zustand')], []);
+    const ctx = composeMemoryContext([factEntry('prefers Zustand')], []);
     expect(ctx).toContain('KNOWN ABOUT THIS USER:');
     expect(ctx).not.toContain('RELATED PAST CONTEXT:');
   });
 });
 
 describe('buildRecallContext (cross-launch: facts survive a session change)', () => {
-  // An in-memory fake honoring owner-scoping + the similarity floor — the contract the live SQL implements.
-  function fakeDeps(store: { profile: MemoryRow[]; matches: MemoryMatch[] }): RecallDeps {
+  // An in-memory fake honoring owner-scoping + the similarity floor — the contract the live store implements.
+  function fakeDeps(store: { profile: Entry[]; matches: MemoryMatch[] }): RecallDeps {
     return {
-      getProfile: async (ownerId) => store.profile.filter((r) => r.owner_id === ownerId && r.kind === 'fact' && !r.superseded),
-      recall: async ({ ownerId }) => store.matches.filter((m) => m.owner_id === ownerId),
+      getProfile: async (ownerId) => store.profile.filter((e) => e.ownerId === ownerId && e.tier === 'fact' && !e.superseded),
+      recall: async ({ ownerId }) => store.matches.filter((m) => m.entry.ownerId === ownerId),
     };
   }
 
   it('surfaces a prior-session fact in a NEW session', async () => {
     const deps = fakeDeps({
-      profile: [factRow('writes a test alongside each feature', { session_id: 'launch-A' })],
+      profile: [factEntry('writes a test alongside each feature', { sessionId: 'launch-A' })],
       matches: [match('add a logout route', 0.6)],
     });
     const out = await buildRecallContext(deps, { ownerId: OWNER, sessionId: 'launch-B', query: 'add a logout route', minSimilarity: 0.3 });
@@ -71,7 +71,7 @@ describe('buildRecallContext (cross-launch: facts survive a session change)', ()
 
   it('drops episodes below the similarity floor but keeps facts', async () => {
     const deps = fakeDeps({
-      profile: [factRow('prefers Zustand', { session_id: 'launch-A' })],
+      profile: [factEntry('prefers Zustand', { sessionId: 'launch-A' })],
       matches: [match('irrelevant', 0.1)],
     });
     const out = await buildRecallContext(deps, { ownerId: OWNER, sessionId: 'launch-B', query: 'state mgmt', minSimilarity: 0.3 });
@@ -82,8 +82,8 @@ describe('buildRecallContext (cross-launch: facts survive a session change)', ()
   it('uses the corrected active fact and drops the superseded old value', async () => {
     const deps = fakeDeps({
       profile: [
-        factRow('prefers vim', { id: 'old', superseded: true }),
-        factRow('prefers zed', { id: 'new' }),
+        factEntry('prefers vim', { id: 'old', superseded: true }),
+        factEntry('prefers zed', { id: 'new' }),
       ],
       matches: [],
     });
@@ -95,7 +95,7 @@ describe('buildRecallContext (cross-launch: facts survive a session change)', ()
 
   it('does NOT leak another owner\'s facts', async () => {
     const deps = fakeDeps({
-      profile: [factRow('secret', { owner_id: 'someone-else', session_id: 'x' })],
+      profile: [factEntry('secret', { ownerId: 'someone-else', sessionId: 'x' })],
       matches: [],
     });
     const out = await buildRecallContext(deps, { ownerId: OWNER, sessionId: 'launch-B', query: 'anything' });
@@ -105,7 +105,7 @@ describe('buildRecallContext (cross-launch: facts survive a session change)', ()
 
   it('keeps the durable facts when episodic recall fails (independent degradation)', async () => {
     const deps: RecallDeps = {
-      getProfile: async () => [factRow('writes a test alongside each feature')],
+      getProfile: async () => [factEntry('writes a test alongside each feature')],
       recall: async () => { throw new Error('embedding service down'); },
     };
     const out = await buildRecallContext(deps, { ownerId: OWNER, sessionId: 'launch-B', query: 'add a logout route', minSimilarity: 0.3 });
