@@ -73,6 +73,22 @@ describe('brain eval fixtures — well-formed golden set', () => {
     }
   });
 
+  it('POLARITY: every negation-phrased fact fixture carries a polarity guard in its contract', () => {
+    // A topic token alone is direction-blind: "force pushes to shared branches" satisfies
+    // {mustContainOneOf:['force','push']} yet states the OPPOSITE of "we never force push" — without a
+    // guard the value-quality axis scores inverted memories ok and overstates the usable-value rate.
+    // Any fact-expecting transcript phrased via negation or a disfavored alternative MUST pin direction
+    // with mustAlsoContainOneOf or mustNotContainAnyOf (scored 'inverted' when violated).
+    const NEGATION_MARKERS = ['never', "don't", ' not ', 'instead of', 'avoid', ' over ', 'switched', 'ignore what', '-free', ' only'];
+    for (const c of BEHAVIORAL_EXTRACT_CASES) {
+      if (c.expect !== 'fact') continue; // null-expecting cases carry no contract at all
+      const t = c.input.transcript.toLowerCase();
+      if (!NEGATION_MARKERS.some((m) => t.includes(m))) continue;
+      const guarded = (c.valueContract?.mustAlsoContainOneOf?.length ?? 0) > 0 || (c.valueContract?.mustNotContainAnyOf?.length ?? 0) > 0;
+      expect(guarded, `${c.id} is negation-phrased but has no polarity guard — an inverted value would score ok`).toBe(true);
+    }
+  });
+
   it('gate alignment: every case EXCEPT marker-less passes the marker gate; marker-less cases FAIL it', () => {
     // Fact cases + hard negatives must reach the model (a miss measures the MODEL, not a gate reason).
     // marker-less cases pin the gate's deliberate safe-direction miss: if the PREFERENCE_MARKERS list
