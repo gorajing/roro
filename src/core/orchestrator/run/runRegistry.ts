@@ -1,4 +1,4 @@
-// src/main/run/runRegistry.ts — the registry of live Turns + the single-executor SLOT
+// src/core/orchestrator/run/runRegistry.ts — the registry of live Turns + the single-executor SLOT
 // (docs/plans/run-state-machine.md).
 //
 // Replaces five orchestrator module mutables 1:1:

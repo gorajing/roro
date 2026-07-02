@@ -1,4 +1,4 @@
-// src/main/run/decisionRouter.ts — the bounded two-pass decide loop
+// src/core/orchestrator/run/decisionRouter.ts — the bounded two-pass decide loop
 // (docs/plans/run-state-machine.md).
 //
 // Routes a Decision onto its command path. capture_screen may loop back into decide() exactly
