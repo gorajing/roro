@@ -1,13 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { assertRendererMemoryKind } from './memory';
+import { assertRendererEpisodeKind } from './memory';
 
-describe('assertRendererMemoryKind', () => {
+describe('assertRendererEpisodeKind (runtime guard — IPC payloads are untrusted)', () => {
   it("rejects kind:'fact' — facts are derived internally and must never be written from the renderer", () => {
-    expect(() => assertRendererMemoryKind('fact')).toThrow();
+    expect(() => assertRendererEpisodeKind('fact')).toThrow(/cannot write kind:'fact'/i);
   });
-  it('allows the non-derived kinds the renderer may persist', () => {
-    expect(() => assertRendererMemoryKind('observation')).not.toThrow();
-    expect(() => assertRendererMemoryKind('narration')).not.toThrow();
-    expect(() => assertRendererMemoryKind('action')).not.toThrow();
+  it('rejects unknown kinds outright (a typo must not become a stored row)', () => {
+    expect(() => assertRendererEpisodeKind('observatoin')).toThrow(/unknown episode kind/i);
+    expect(() => assertRendererEpisodeKind(undefined)).toThrow(/unknown episode kind/i);
+    expect(() => assertRendererEpisodeKind(42)).toThrow(/unknown episode kind/i);
+  });
+  it('allows the episode kinds the renderer may persist', () => {
+    expect(() => assertRendererEpisodeKind('observation')).not.toThrow();
+    expect(() => assertRendererEpisodeKind('narration')).not.toThrow();
+    expect(() => assertRendererEpisodeKind('action')).not.toThrow();
   });
 });

@@ -60,14 +60,14 @@ const PRUNE_MAX_AGE_DAYS = 90;
 const PRUNE_KEEP_NEWEST = 200;
 const PRUNE_BATCH = 500;
 
-export type RememberInput = Omit<NewEntry, 'id' | 'schemaVersion' | 'createdAt'> & {
+export type RememberEntryInput = Omit<NewEntry, 'id' | 'schemaVersion' | 'createdAt'> & {
   id?: string;
   createdAt?: string;
 };
 
 export interface MemoryStore {
   /** Durably store a memory (episode/core/trace), then embed + index it. Facts go via replaceFact. */
-  remember(input: RememberInput): Promise<Entry>;
+  remember(input: RememberEntryInput): Promise<Entry>;
   /** Episodic HYBRID recall: blends cosine relevance + recency + importance (excludes facts), owner-scoped.
    *  The recency channel ensures temporal/meta queries ("what did we just do?") surface recent work even
    *  when cosine misses — the bug a real turn exposed. Returns ranked entries with explainable parts. */
@@ -284,7 +284,7 @@ export async function createMemoryStore(opts: {
   }
 
   const api: MemoryStore = {
-    remember(input: RememberInput): Promise<Entry> {
+    remember(input: RememberEntryInput): Promise<Entry> {
       if (input.tier === 'fact') {
         return Promise.reject(new Error('memory2: remember() does not accept facts — use replaceFact (atomic supersede)'));
       }
