@@ -118,7 +118,9 @@ export function parseFactResponse(raw: string): FactCandidate | null {
   return { key: k, value: v };
 }
 
-function normalizeKey(key: string): string {
+/** Exported for the executor-proposal channel (src/main/factProposals) — ONE normalizer, so
+ *  supersede matching can never diverge between the 3B and executor channels. */
+export function normalizeKey(key: string): string {
   return key.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
@@ -134,6 +136,7 @@ const USELESS_VALUES = new Set([
   'true', 'false', 'yes', 'no', 'y', 'n',
   'n/a', 'na', 'none', 'null', 'nil', 'undefined', '0', '1',
 ]);
-function isUselessValue(value: string): boolean {
+/** Exported for the executor-proposal channel — ONE garbage-value guard across both channels. */
+export function isUselessValue(value: string): boolean {
   return USELESS_VALUES.has(value.trim().toLowerCase());
 }
