@@ -39,8 +39,11 @@ serves the pet fantasy at the expense of the first coding turn is out of order.
 The one authoritative list (merged from HANDOFF §2 + ROADMAP §4; any plan step that requires
 breaking one is wrong by construction):
 
-1. **turnRun chokepoint** — one RECALL → DECIDE → EXECUTE/NARRATE → REMEMBER path in
-   `src/main/orchestrator.ts`. Hang things off it; never fork it.
+1. **turnRun chokepoint** — one RECALL → DECIDE → EXECUTE/NARRATE → REMEMBER path. It is now the
+   typed **Turn/Pump state machine** (`src/core/orchestrator/orchestrator.ts` facade over
+   `src/core/orchestrator/run/` — Turn machine + Pump machine + RunRegistry + gate pipeline, #146),
+   not the old module-level mutables — but the invariant is unchanged: hang things off it; never
+   fork it.
 2. **Frozen `ActionEvent` / `Command` unions** (`src/shared/events.ts`, `src/shared/brain.ts`) —
    consumed exhaustively; extend only deliberately, with the exhaustive updates.
 3. **Voice is mouth-not-brain** — a say-only `VoiceBackend` seam; committed transcripts route
@@ -55,12 +58,18 @@ breaking one is wrong by construction):
 5. **Fail-loud over silent-degrade** — `keyManager` throws if the keychain is unavailable; **never**
    stores plaintext. No `catch { return null }`.
 6. **Owner-scoped memory** — every read/write scoped to `ownerId`, identity injected MAIN-side.
-7. **Files-as-truth durability** — encrypted files on disk are truth; the PGlite-HNSW index is a
-   derived, rebuildable cache (proven by `crosslaunch.durability.test.ts`).
+7. **Files-as-truth durability** — encrypted files on disk are truth; the in-memory `memIndex` + its
+   **zero-authority** embeddings sidecar (`index/vectors.jsonl`) are a derived, rebuildable cache. The
+   cursor is **ephemeral** — every open replays the manifest from files (files-as-truth is the *normal*
+   open path, not just a fallback). PGlite/pgvector was **deleted** (#147). Proven by
+   `crosslaunch.durability.test.ts`.
 8. **Recency guarantee** — memory2 front-loads the top-2 newest episodes (typed via
    `MemoryMatch.guaranteed`; recency rows carry cosine 0 → recall uses `minSimilarity: 0`).
 9. **Point-don't-act** — approval rides a disjoint IPC pair, default-DENY; no spoken or typed word
-   approves `rm -rf`.
+   approves `rm -rf`. The dark, flag-gated Agent-SDK executor (`RORO_SDK_EXECUTOR`, #148)
+   *strengthens* this: its destructive gate is **PRE-execution** — a `confirmGate` PreToolUse hook
+   fires (and default-denies) *before* the tool runs, rather than a post-hoc scan of already-emitted
+   output.
 10. **Present ≠ watching** — explicit consent + a visible tell (the "Taking one screen snapshot."
     beat); never imply always-on monitoring.
 11. **Restraint / never-needy** — earns attention, does not demand it; no engagement dark-patterns.

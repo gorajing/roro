@@ -21,6 +21,23 @@ relief of not having to re-explain yourself.
 
 ---
 
+## 🥊 Competitive landscape (the frame is commoditized; the moat isn't)
+
+**OpenAI shipped Codex Pets (2026-07-02)** — selectable desktop-pet skins, including create-your-own and a floating pixel
+pet, on the Codex app. This is exactly what the strategy priced: **the cat is the frame, not the payload.** Cosmetics
+were never the moat, and an incumbent can clone a pixel pet in a sprint.
+
+What an incumbent is *structurally* poorly positioned to clone is the **ownership axis**: local, encrypted,
+**correctable**, and **vendor-portable** memory the user owns. Roro's fact provenance literally records
+`claimed_by: 'codex'` — the vendors are interchangeable *workers beneath* memory the user owns, whereas a vendor's own
+pet skin only deepens lock-in. **Positioning line:** *their pet makes you more theirs; roro's cat makes your agents more
+yours.* Consequences that flow into this plan: (1) **demos must lead with the recall-shapes-work moment, never the cat**;
+(2) the pet-first *contingency* bet is now near-dead (competing with a free incumbent skin) — job→memory is effectively
+the only bet (see `docs/ROADMAP.md` §8); (3) **validation urgency is UP** — the Phase-0 non-founder magic-moment session
+below should happen *before* incumbents bolt an owned-feeling memory onto their pets.
+
+---
+
 ## ⭐ The keystone (read this first)
 
 Every public-readiness assessor independently flagged the **same** #1 risk, and it has a nasty property: **it is
@@ -228,7 +245,9 @@ v0 is **one thing done well: the remembering coding companion.** Deliberately cu
 | **Bundle ID + icon** | ✅ Done: bundle ID is `com.jinchoi.roro`; Dock/Launchpad icon is the black pixel cat at `assets/roro-icon.icns`, generated from the 1024px source PNG. Keep this identity; don't design a new brand. |
 | **`RORO_WORKDIR` setup UX** | A mandatory first-launch native folder-picker (the gate between "launched" and "can code") + a Project control to change the saved repo later. |
 | **Debut channel** | A small trusted cohort first — measure attachment (does the moment land, do they reopen), not vanity downloads. Broaden only after it lands for strangers. |
-| **The go/no-go bar** | Phase 0's exit, hardened: a non-founder, clean Mac, signed `.dmg`, fact recalled across a full quit. If that one thing isn't true, **nothing ships.** |
+| **The go/no-go bar** | Phase 0's exit, hardened: a non-founder, clean Mac, signed `.dmg`, fact recalled across a full quit **that shapes the actual coding work**. If that one thing isn't true, **nothing ships.** Still the single gate — and **more urgent now** (Codex Pets; run it before incumbents add owned-feeling memory). |
+| **Executor-facts pilot (`RORO_EXECUTOR_FACTS`, dark)** | The frontier executor proposes facts post-run (evidence-grounded, user-confirmed in the Memory panel, provenance-stamped). Stays dark until a **live founder smoke** confirms the propose→confirm→persist loop end to end. Not a v0-ship blocker; a gate before any default-on. |
+| **SDK executor (`RORO_SDK_EXECUTOR`, dark)** | The Agent-SDK claude path with pre-execution destructive gating. A default flip from the CLI adapter is gated on **two founder gates: (a) an auth-policy check** — Anthropic's policy forbids third-party distribution of a claude.ai-login flow, so this path uses the *user's own* auth — **and (b) a live founder chip-approval smoke.** Both pre-registered in [`docs/plans/sdk-executor.md`](./docs/plans/sdk-executor.md); must clear before any default-flip. |
 
 ---
 

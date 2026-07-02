@@ -60,6 +60,33 @@ for *distribution + durability*, NOT for making memory work. The cosmetics-as-mo
 - **Codex review is unreliable here** (`codex exec` hung twice; orphan process — `pkill -9 -f
   "codex exec"`). We use **in-process multi-hat Workflow reviews** (parallel reviewers per dimension
   → per-finding adversarial verify) — every one caught a real bug.
+- **Never target "the first window" — target a named registry** (W0 / #135, paw-on-the-pixel). A
+  3-hat merge-gate caught a **real P0 that six Codex review rounds missed**: the paw/pointer overlay
+  is a *second* `BrowserWindow`, and `getAllWindows()[0]` orders **newest-first**, so the overlay
+  silently **hijacked every MAIN→renderer push** — every event hit the preload-less overlay, not the
+  cat. Fixed with a named window registry (`src/main/windowRegistry.ts`, `sendToFirstWindow` →
+  `sendToPetWindow`). *Generalizable law:* **`getAllWindows()[0]` orders newest-first — a second
+  BrowserWindow (an overlay) silently hijacks every main→renderer push; target windows by a named
+  registry, never "the first window."**
+- **A value-quality eval that only checks token-overlap is blind to inversion** (W3 / #145). The eval
+  panel caught a **real P1 by executing the scorer**: a polarity-inverted value scored `ok` ("never
+  force push" → "force-pushes…" = `ok`). An inverted memory is *worse* than a missed one — it
+  confidently misremembers you. Fix: `ValueContract` gained `mustAlsoContainOneOf` /
+  `mustNotContainAnyOf` → a distinct **`inverted`** scorer mode, 14 fixtures guarded, a negation-marker
+  CI assertion sabotage-verified. *Generalizable law:* **a value-quality metric that only checks
+  token-overlap scores an INVERTED memory ("never force-push" → "force-pushes") as ok — an inverted
+  memory is worse than a missed one; the metric must be able to SEE inversion (conjunctive/negation
+  contracts).**
+- **Never land a security feature on an incomplete review panel** (W6 / #148, the Agent-SDK executor).
+  The 3-hat panel came back CLEAR — but its **gate-correctness dimension DIED mid-run** on a model
+  session limit. Rather than ship on the partial green, we **re-ran that one dimension, deepened** (3
+  sub-lenses: delegate-memoization / stop-abort-teardown / bypass-tripwire) + adversarial verify, and
+  *then* landed. *Generalizable law:* **never land a security feature on a review panel where the
+  security-correctness dimension didn't complete — re-run the missing dimension.**
+- **After merging a dependency-adding PR, re-sync the shared `node_modules`** (the rebuild-program
+  env-drift lesson). *Generalizable law:* **after merging a PR that adds a dependency, the local
+  shared `node_modules` must be re-synced (`npm install`) or local `tsc`/package silently break while
+  CI (`npm ci`) stays green** — a clean CI is not evidence your working copy resolves.
 
 ## Voice
 
@@ -101,3 +128,17 @@ current code — `src/renderer/bootstrap.ts` "cursor movement must NOT keep the 
   any fallback still requires re-embedding every row. This is why every vector carries an
   `embed_model`/`embed_dim` provenance stamp, and why changing embedders means moving/deleting the
   memory dir (see `RUN.md` §2).
+- **Compaction/GC of an event-sourced log must never drop ops that carry cross-entry side effects**
+  (W5 / #147 — the program's most severe finding, **proven by execution on the PR head**). Manifest
+  compaction dropped `replace_fact` `supersedeIds` when a fact was later *reinforced* (routine
+  corroboration) → replay resurrected the superseded prior as active → a duplicate-active-fact throw
+  *inside* `reconcile` → the store **permanently BRICKED on every open** (`rm -rf index/` can't help —
+  the compacted manifest is the *durable* layer); the forget-variant resurrected replaced content back
+  into the profile. **955 tests were green** because every tested history ended birth-op-last. Fix:
+  exempt fact-tier ops from chain-collapsing (episodes dominate churn; fact history is tiny; replay
+  order restores supersede marking) + 3 mandatory red-first regression tests from the verifier's
+  executed repro. *Generalizable law:* **GC/compaction of an event-sourced log must never drop ops
+  that carry CROSS-ENTRY side effects (e.g. a fact's `supersedeIds` live on the SUCCESSOR's op);
+  dropping one bricks replay (duplicate-active-fact) or resurrects a superseded/forgotten value — green
+  suites lie unless test histories cover reinforce-after-replace and tombstone-the-successor
+  orderings.**
