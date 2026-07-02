@@ -310,9 +310,10 @@ npm run verify:release-artifact:signed
 `verify:release-artifact:dmg` reuses the default release-artifact structure checks, then requires a versioned DMG under
 `out/make`, verifies it with `hdiutil`, mounts it read-only, and confirms the mounted image contains a structurally
 complete `Roro.app`. The default release-artifact checks intentionally fail if deferred-feature or debug-bridge flags
-(`LIVE2D_MODEL_URL`, `RORO_FAKE_VOICE`, `RORO_*_VOICE`, `RORO_VOICE_PACK`, `RORO_WS5_STORE`,
+(`RORO_FAKE_VOICE`, `RORO_*_VOICE`, `RORO_VOICE_PACK`, `RORO_WS5_STORE`,
 `RORO_DEBUG_BRIDGE`, `RORO_FLOATING_SMOKE`, `RORO_MEMORY_PANEL_SMOKE`, `RORO_DISABLE_MEMORY_WARMUP`, and
-`RORO_MEMORY_HEALTH_SMOKE_FAIL`) are set in the release shell.
+`RORO_MEMORY_HEALTH_SMOKE_FAIL`) are set in the release shell — the canonical list is
+`src/shared/deferredEnvKeys.ts`, kept in sync with `scripts/v0-deferred-env.mjs` by test.
 
 When Developer-ID signing is enabled, Forge notarizes/staples the `.app` during package and the `postMake` hook
 notarizes/staples the DMG container after it is created.

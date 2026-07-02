@@ -165,4 +165,4 @@ npx vitest run --no-file-parallelism
 - No raw transcript source viewer in the first correction slice.
 - No renderer-authored facts.
 - No key editing unless a single atomic store operation is added first.
-- No voice, Live2D, cosmetics, or monetization changes.
+- No voice, cosmetics, or monetization changes.

@@ -1,8 +1,18 @@
 # Roro Product Plan
 
-> Status: long-term companion/pet vision, not the v0 launch plan. For current public-readiness and engineering truth,
-> trust [`../PUBLIC.md`](../PUBLIC.md) and [`../HANDOFF.md`](../HANDOFF.md). The v0 launch strategy is job-first:
-> coding work earns daily use, and the companion feeling emerges from memory and continuity.
+> Status: long-term companion/pet vision, **not** the v0 launch plan. **The resolution of record lives in
+> [`../FOUNDING.md`](../FOUNDING.md): JOB-FIRST for v0** — the coding job earns the daily open, memory is the
+> payload, and the companion feeling is emergent; the pet-first thesis below is the *contingent next bet*, taken
+> only if cohort signal kills the job thesis (`ROADMAP.md` §8's re-plan rule). For current public-readiness and
+> engineering truth, trust [`../PUBLIC.md`](../PUBLIC.md) and [`../HANDOFF.md`](../HANDOFF.md).
+>
+> This doc also carries the **souls/companion model of record** (folded from the deleted companion-architecture
+> doc, git `77b2241`, 2026-07-01): **one engine, many souls** — roro is the species *and* the product; souls are
+> selectable `{look, personality, expression-map, temperament}` packs (`src/renderer/character/souls.ts`; Miro is
+> the dog, art pending); the engine is character-agnostic and emits semantic events the soul only *expresses*;
+> souls **share one owner memory** (the moat is *you*, not the avatar — default assumption of record); inner-life
+> is a projection over memory + events (**no needs/decay/death/guilt — never needy**); and the ambient eye stays
+> **built-but-dark, consent-first, gated post-trust**, sequenced by `ROADMAP.md` §6, always through `turnRun`.
 
 ## Thesis
 

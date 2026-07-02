@@ -36,5 +36,17 @@ than parsing executor-specific output.
 - If memory is unavailable, show a keychain/memory diagnostic instead of
   silently storing plaintext.
 
-Older interaction research lives in `docs/superpowers/`. Treat it as background
-unless it has been reconciled with `HANDOFF.md`, `PUBLIC.md`, and this file.
+## Gesture Design Laws (hard-won — see `LESSONS.md` "Interaction")
+
+- Disambiguate gestures by **surface + button + state, never by timing windows**.
+  Adding a verb means adding a menu item, never another timing threshold.
+- An action's accidental-trigger probability must be **inversely proportional to
+  its cost/irreversibility**.
+- The cat body is **always pettable and never punishes**: petting is safe in
+  every state and can never trigger an expensive or destructive action.
+- Cursor gaze must **never wake the cat** — gaze follows the cursor, but only
+  real interactions (pet, talk, task) reset the activity/sleep timer.
+
+The older exploratory interaction research was deleted 2026-07-01 (git history,
+`11a40f4` `docs/superpowers/`); anything still governing was reconciled into
+`HANDOFF.md`, `LESSONS.md`, and this file.

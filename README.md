@@ -28,7 +28,8 @@ through your own local executor CLI: install and sign in to Codex or Claude
 outside Roro first, or point Roro at the binary with `RORO_CODEX_BIN` /
 `RORO_CLAUDE_BIN`.
 
-See [`PUBLIC.md`](PUBLIC.md) for the path to public readiness and
+See [`FOUNDING.md`](FOUNDING.md) for the identity, locked invariants, and strategy of
+record (read it first), [`PUBLIC.md`](PUBLIC.md) for the path to public readiness, and
 [`HANDOFF.md`](HANDOFF.md) for current engineering truth.
 
 ## Why This Exists
@@ -141,9 +142,7 @@ with a compact Ask pill for tasks and setup banners only when action is needed.
 **Tap or hold the cat to pet it; drag to move it.** When an explicit voice dev
 flag is enabled, right-click/M mute is available for the mic path. The cat's body
 carries only affection + move — talk and tasking live off the body (see the
-current interaction contract at [`docs/INTERACTION.md`](docs/INTERACTION.md).
-The older exploratory design notes remain under `docs/superpowers/` as archive
-material.
+current interaction contract at [`docs/INTERACTION.md`](docs/INTERACTION.md)).
 The floating window stays above normal windows and across macOS Spaces,
 including full-screen apps. The floating Ask pill is the compact task surface;
 set `RORO_FLOATING_WINDOW=0 npm start` for the legacy full dev window with the
