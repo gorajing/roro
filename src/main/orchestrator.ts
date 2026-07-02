@@ -26,8 +26,10 @@ import { getOwnerId } from './identity';
 import { buildRecallContext } from './memoryContext';
 import { extractAndStoreFact } from './factStore';
 import { classifyDestructive, classifyDestructiveCommand } from './destructive';
-import { requestConfirm, resolveConfirm } from './confirmGate';
+import { requestConfirm } from './confirmGate';
 import { isCleanTree } from './gitTree';
+import { getRunRegistry, type DispatchSection } from './run/runRegistry';
+import type { Turn } from './run/turnState';
 import { resolveWorkdir, tryResolveWorkdir } from './workdir';
 import { repoId as deriveRepoId } from '../memory2/repoId';
 import { isPlausiblePreference, type FactExtractInput } from '../brain/extractFact';
@@ -50,20 +52,8 @@ const STOP_WATCHDOG_MS = 1500;
 /** Gives the renderer one visible beat to show the privacy tell before an on-demand screen capture. */
 const SCREEN_CAPTURE_TELL_DWELL_MS = 500;
 
-/** Holds the active AbortController per runId so cancelTask can target a specific run. */
-const activeRuns = new Map<string, AbortController>();
-/** Turns the user preempted (Stop) before the executor registered — honored at the decide/confirm
- *  boundary and again right before dispatch, so a barge-in during decide/confirm never runs. */
-const preemptedTurns = new Set<string>();
-/** Every turn from mint to runEnd (covers decide/confirm/exec). Stop is only honored for an id in
- *  this set, which bounds preemptedTurns against stale/garbage ids from the public cancelTask IPC. */
-const inFlightTurns = new Set<string>();
-/** The most recently minted turn/task runId — the no-id Stop fallback, which must also reach a turn
- *  still in decide/confirm (when activeRuns is still empty). */
-let lastTurnId: string | null = null;
-/** Held synchronously across the clean-tree-check → dispatch critical section so that section can't
- *  interleave: it guarantees a destructive run's clean-tree result is fresh at dispatch (no TOCTOU). */
-let dispatchLock = false;
+// Lifecycle state (turns, preemption, the single-executor slot, the dispatch section) lives in
+// the typed run state machine: src/main/run/{turnState,runRegistry}.ts.
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -71,21 +61,16 @@ function pushEvent(e: ActionEvent): void {
   sendToPetWindow(CH.actionEvent, e);
 }
 
-function pushRunEnd(runId: string): void {
-  preemptedTurns.delete(runId);
-  inFlightTurns.delete(runId);
-  sendToPetWindow(CH.runEnd, { runId });
-}
-
 /** Push the destructive-confirm request to the renderer (it shows a confirm chip). */
 function pushConfirmRequest(req: { runId: string; summary: string }): void {
   sendToPetWindow(CH.confirmRequest, req);
 }
 
-/** Emit a synthetic terminal failure (preempt / stop) + runEnd for a turn. */
-function pushStopped(runId: string, error = 'stopped'): void {
-  pushEvent({ kind: 'run.failed', runId, ok: false, error, ts: Date.now() });
-  pushRunEnd(runId);
+/** Emit a synthetic terminal failure (preempt / stop) + end the turn — the stopCheckpoint's
+ *  consumer: it turns a pending `stopping` phase into ended{stopped}. */
+function pushStopped(turn: Turn, error = 'stopped'): void {
+  pushEvent({ kind: 'run.failed', runId: turn.runId, ok: false, error, ts: Date.now() });
+  turn.end({ kind: 'stopped' });
 }
 
 /**
@@ -106,32 +91,34 @@ async function confirmIfDestructive(
 }
 
 /**
- * Step 2: the lock-protected single-executor dispatch. Holds dispatchLock across the (destructive)
- * clean-tree check AND the synchronous dispatch(), so no other turn can start an executor in between
- * — the clean-tree result is therefore fresh at dispatch (closes the TOCTOU), and only one coding
- * agent ever runs on the repo at a time. Returns false (and emits a terminal) if it can't dispatch.
+ * Step 2: the section-protected single-executor dispatch. The DispatchSection stays open across
+ * the (destructive) clean-tree check AND the synchronous dispatch(), so no other turn can start an
+ * executor in between — the clean-tree result is therefore fresh at dispatch (closes the TOCTOU),
+ * and only one coding agent ever runs on the repo at a time. Returns false (and emits a terminal)
+ * if it can't dispatch.
  */
-async function guardedDispatch(runId: string, destructive: boolean, repo: string, dispatch: () => void): Promise<boolean> {
-  if (dispatchLock || activeRuns.size > 0) {
-    emitNarration(runId, "I'm already working on something — Stop that first, or wait for it to finish.");
-    pushRunEnd(runId);
+async function guardedDispatch(turn: Turn, destructive: boolean, repo: string, dispatch: (section: DispatchSection) => void): Promise<boolean> {
+  const section = getRunRegistry().tryBeginDispatch(turn);
+  if (!section) {
+    emitNarration(turn.runId, "I'm already working on something — Stop that first, or wait for it to finish.");
+    turn.end({ kind: 'refused', reason: 'busy' });
     return false;
   }
-  dispatchLock = true;
+  turn.to({ kind: 'dispatching' });
   try {
     if (destructive && !(await isCleanTree(repo))) {
-      emitNarration(runId, "Skipping that — the git tree isn't clean, so a destructive step couldn't be safely undone — commit or stash first.");
-      pushRunEnd(runId);
+      emitNarration(turn.runId, "Skipping that — the git tree isn't clean, so a destructive step couldn't be safely undone — commit or stash first.");
+      turn.end({ kind: 'refused', reason: 'dirty tree' });
       return false;
     }
-    if (preemptedTurns.has(runId)) {
-      pushStopped(runId);
+    if (turn.stopRequested) {
+      pushStopped(turn);
       return false;
     }
-    dispatch(); // registers activeRuns synchronously before releasing the lock
+    dispatch(section); // section.commit() registers the pump synchronously inside dispatch()
     return true;
   } finally {
-    dispatchLock = false;
+    section.close();
   }
 }
 
@@ -305,14 +292,16 @@ function emitNarration(runId: string, text: string): void {
  * Owns the AbortController lifecycle for `runId`. Resolves when the stream ends.
  */
 async function dispatchExecutor(
-  runId: string,
+  turn: Turn,
   sessionId: string,
   prompt: string,
   agent: AgentKind,
   repo: string,
+  section: DispatchSection,
   destructiveApproved = false,
   factCtx?: { transcript: string; narration: string; task: string },
 ): Promise<void> {
+  const runId = turn.runId;
   const controller = new AbortController();
   // Executor-facts pilot (RORO_EXECUTOR_FACTS, spec: docs/plans/executor-facts-pilot.md): accumulate
   // a bounded digest of the run's OWN events for the post-run proposal ask. Dark unless the
@@ -322,11 +311,13 @@ async function dispatchExecutor(
   let uiEnded = false;
   let slotReleased = false;
   let watchdog: ReturnType<typeof setTimeout> | null = null;
-  activeRuns.set(runId, controller);
+  section.commit(controller); // occupies the single-executor slot synchronously (turn -> running)
 
-  // UI-terminal: push the terminal failure (if forced) + runEnd exactly once. Does NOT free the
-  // executor slot — a watchdog-forced Stop is terminal to the USER while the possibly-still-alive
-  // child keeps the single-executor slot, so guardedDispatch won't start a concurrent run.
+  // UI-terminal: push the terminal failure (if forced) + end the turn (runEnd) exactly once. Does
+  // NOT free the executor slot — a watchdog-forced Stop is terminal to the USER while the possibly-
+  // still-alive child keeps the single-executor slot, so guardedDispatch won't start a concurrent
+  // run. (EndCause fidelity for stream verdicts arrives with the typed pump extraction; until then
+  // only forced ends carry a distinct cause.)
   const endUi = (forcedError?: string): void => {
     if (uiEnded) return;
     uiEnded = true;
@@ -334,7 +325,13 @@ async function dispatchExecutor(
       pushEvent({ kind: 'run.failed', runId, ok: false, error: forcedError, ts: Date.now() });
       notifyJobDone(false, forcedError);
     }
-    pushRunEnd(runId);
+    turn.end(
+      forcedError === 'stopped'
+        ? { kind: 'stopped' }
+        : forcedError
+          ? { kind: 'failed', error: forcedError }
+          : { kind: 'completed' },
+    );
   };
   // Free the executor slot ONLY when the stream has truly ended (the child is confirmed gone), so a
   // new run never starts against a repo an orphaned child may still be mutating.
@@ -345,7 +342,7 @@ async function dispatchExecutor(
       clearTimeout(watchdog);
       watchdog = null;
     }
-    activeRuns.delete(runId);
+    getRunRegistry().releasePump(runId);
   };
 
   // Stop watchdog: if the child doesn't honor abort within STOP_WATCHDOG_MS, make the run terminal to
@@ -454,8 +451,7 @@ async function dispatchExecutor(
 export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
   const { transcript, sessionId } = input;
   const runId = newRunId();
-  lastTurnId = runId;
-  inFlightTurns.add(runId);
+  const turn = getRunRegistry().mint(runId);
 
   // The project this turn belongs to (best-effort, NON-throwing — a no-workdir/answer turn still
   // recalls + remembers, just unscoped). Used to boost same-repo recall AND to stamp this turn's writes.
@@ -481,6 +477,7 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
   });
 
   let decision: Decision;
+  turn.to({ kind: 'deciding', pass: 1 });
   try {
     decision = await decideStreaming({ transcript, memory });
   } catch (err) {
@@ -492,17 +489,17 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
       error: `decide failed: ${(err as Error).message}`,
       ts: Date.now(),
     });
-    pushRunEnd(runId);
+    turn.end({ kind: 'failed', error: `decide failed: ${(err as Error).message}` });
     return { runId };
   }
 
-  // Pre-executor preempt: a Stop/barge-in that arrived during decide is honored before we act.
-  if (preemptedTurns.has(runId)) {
-    pushStopped(runId);
+  // Post-decide stopCheckpoint: a Stop/barge-in that arrived during decide is honored before we act.
+  if (turn.stopRequested) {
+    pushStopped(turn);
     return { runId };
   }
 
-  await actOnDecision(runId, input, decision, /* screenAlreadyCaptured */ false, memory);
+  await actOnDecision(turn, input, decision, /* screenAlreadyCaptured */ false, memory);
   return { runId };
 }
 
@@ -525,12 +522,13 @@ async function showGroundedPoint(box: { x: number; y: number; w: number; h: numb
 }
 
 async function actOnDecision(
-  runId: string,
+  turn: Turn,
   input: TurnInput,
   decision: Decision,
   screenAlreadyCaptured: boolean,
   recalledMemory: string | undefined,
 ): Promise<void> {
+  const runId = turn.runId;
   const { transcript, sessionId } = input;
   const command: Command = decision.command;
 
@@ -543,7 +541,7 @@ async function actOnDecision(
       // Push the narration for the renderer to speak; no executor, no run.
       emitNarration(runId, decision.narration);
       void runFactExtraction(sessionId, { transcript, narration: decision.narration, outcome: 'answered' });
-      pushRunEnd(runId);
+      turn.end({ kind: 'completed' });
       return;
     }
 
@@ -552,9 +550,10 @@ async function actOnDecision(
         // Guard against an infinite capture loop: if the brain asks again, fall back to
         // answering with whatever narration it gave.
         emitNarration(runId, decision.narration);
-        pushRunEnd(runId);
+        turn.end({ kind: 'completed' });
         return;
       }
+      turn.to({ kind: 'capturing' });
       pushEvent({
         kind: 'status',
         runId,
@@ -562,8 +561,8 @@ async function actOnDecision(
         ts: Date.now(),
       });
       await delay(SCREEN_CAPTURE_TELL_DWELL_MS);
-      if (preemptedTurns.has(runId)) {
-        pushStopped(runId);
+      if (turn.stopRequested) {
+        pushStopped(turn);
         return;
       }
 
@@ -579,17 +578,18 @@ async function actOnDecision(
           result = await brain.groundTarget(img, transcript);
         } catch (err) {
           pushEvent({ kind: 'run.failed', runId, ok: false, error: `vision failed: ${(err as Error).message}`, ts: Date.now() });
-          pushRunEnd(runId);
+          turn.end({ kind: 'failed', error: `vision failed: ${(err as Error).message}` });
           return;
         }
-        // Honor a Stop that arrived during capture/grounding, before showing the paw or speaking.
-        if (preemptedTurns.has(runId)) {
-          pushStopped(runId);
+        // Post-grounding stopCheckpoint: honor a Stop that arrived during capture/grounding,
+        // before showing the paw or speaking.
+        if (turn.stopRequested) {
+          pushStopped(turn);
           return;
         }
         if (result) await showGroundedPoint(result.box, result.confidence); // best-effort paw
         emitNarration(runId, result ? 'There it is.' : "I can't find that on your screen.");
-        pushRunEnd(runId);
+        turn.end({ kind: 'completed' });
         return;
       }
 
@@ -608,12 +608,13 @@ async function actOnDecision(
           error: `vision failed: ${(err as Error).message}`,
           ts: Date.now(),
         });
-        pushRunEnd(runId);
+        turn.end({ kind: 'failed', error: `vision failed: ${(err as Error).message}` });
         return;
       }
       // Loop back into decide() ONCE with the screen description, then re-dispatch. Reuse the
       // pre-store recall (re-recalling here would self-match this turn's just-stored transcript).
       let next: Decision;
+      turn.to({ kind: 'deciding', pass: 2 });
       try {
         next = await decideStreaming({ transcript, memory: recalledMemory, screen });
       } catch (err) {
@@ -624,19 +625,21 @@ async function actOnDecision(
           error: `decide (post-vision) failed: ${(err as Error).message}`,
           ts: Date.now(),
         });
-        pushRunEnd(runId);
+        turn.end({ kind: 'failed', error: `decide (post-vision) failed: ${(err as Error).message}` });
         return;
       }
-      // Honor a Stop that arrived during the vision capture / second decide before recursing.
-      if (preemptedTurns.has(runId)) {
-        pushStopped(runId);
+      // Post-re-decide stopCheckpoint: honor a Stop that arrived during the vision capture /
+      // second decide before recursing.
+      if (turn.stopRequested) {
+        pushStopped(turn);
         return;
       }
-      await actOnDecision(runId, input, next, /* screenAlreadyCaptured */ true, recalledMemory);
+      await actOnDecision(turn, input, next, /* screenAlreadyCaptured */ true, recalledMemory);
       return;
     }
 
     case 'run_agent': {
+      turn.to({ kind: 'gating' });
       // Choose the repo the agent will edit — FAIL LOUD if none is set, never silently touch cwd
       // (which is the app bundle / roro's own checkout). Surfaces as a terminal run.failed, not a crash.
       let repo: string;
@@ -644,7 +647,7 @@ async function actOnDecision(
         repo = resolveWorkdir(process.env, process.cwd());
       } catch (err) {
         pushEvent({ kind: 'run.failed', runId, ok: false, error: (err as Error).message, ts: Date.now() });
-        pushRunEnd(runId);
+        turn.end({ kind: 'failed', error: (err as Error).message });
         return;
       }
       const task =
@@ -669,7 +672,7 @@ async function actOnDecision(
       const readiness = await getExecutorReadiness(agent);
       if (!readiness.ready) {
         pushEvent({ kind: 'run.failed', runId, ok: false, error: readiness.message, ts: Date.now() });
-        pushRunEnd(runId);
+        turn.end({ kind: 'failed', error: readiness.message });
         return;
       }
 
@@ -678,21 +681,22 @@ async function actOnDecision(
 
       // C1 destructive-confirm gate (BEFORE dispatch). A spoken/typed word can NEVER approve —
       // approval is only the dedicated CH.confirmResolve channel; 15s default-deny.
+      turn.to({ kind: 'confirming' });
       const confirm = await confirmIfDestructive(runId, task);
       if (!confirm.ok) {
         emitNarration(runId, `Skipping that — ${confirm.reason ?? "it was blocked"}.`);
-        pushRunEnd(runId);
+        turn.end({ kind: 'refused', reason: confirm.reason ?? 'it was blocked' });
         return;
       }
-      // Honor a Stop that arrived during decide/confirm (pre-executor preempt).
-      if (preemptedTurns.has(runId)) {
-        pushStopped(runId);
+      // Post-confirm stopCheckpoint: honor a Stop that arrived during decide/confirm.
+      if (turn.stopRequested) {
+        pushStopped(turn);
         return;
       }
-      // Lock-protected single-executor dispatch (fresh clean-tree check inside; resolves at DISPATCH —
-      // the action stream arrives over push channels; the AbortController registers synchronously).
-      await guardedDispatch(runId, confirm.destructive, repo, () => {
-        void dispatchExecutor(runId, sessionId, task, agent, repo, confirm.destructive, {
+      // Section-protected single-executor dispatch (fresh clean-tree check inside; resolves at
+      // DISPATCH — the action stream arrives over push channels; the pump commits synchronously).
+      await guardedDispatch(turn, confirm.destructive, repo, (section) => {
+        void dispatchExecutor(turn, sessionId, task, agent, repo, section, confirm.destructive, {
           transcript,
           narration: decision.narration,
           task,
@@ -707,7 +711,7 @@ async function actOnDecision(
       // fall through to a silent return — a hung run that never pushes run-end).
       const _exhaustive: never = command;
       pushEvent({ kind: 'run.failed', runId, ok: false, error: `unhandled command: ${String(_exhaustive)}`, ts: Date.now() });
-      pushRunEnd(runId);
+      turn.end({ kind: 'failed', error: `unhandled command: ${String(_exhaustive)}` });
       return;
     }
   }
@@ -851,32 +855,33 @@ async function runFactExtraction(sessionId: string, input: FactExtractInput): Pr
  */
 export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId: string }> {
   const runId = newRunId();
-  lastTurnId = runId;
-  inFlightTurns.add(runId);
+  const turn = getRunRegistry().mint(runId);
   // runTask bypasses the brain, so the destructive gate MUST run here too (or a renderer caller
   // could `rm -rf` unconfirmed). Gate then dispatch off the critical path; return {runId} now.
   void (async () => {
+    turn.to({ kind: 'gating' });
     // Same fail-loud repo selection as the run_agent path — runTask bypasses the brain but still edits files.
     let repo: string;
     try {
       repo = resolveWorkdir(process.env, process.cwd());
     } catch (err) {
       pushEvent({ kind: 'run.failed', runId, ok: false, error: (err as Error).message, ts: Date.now() });
-      pushRunEnd(runId);
+      turn.end({ kind: 'failed', error: (err as Error).message });
       return;
     }
+    turn.to({ kind: 'confirming' });
     const confirm = await confirmIfDestructive(runId, prompt);
     if (!confirm.ok) {
       emitNarration(runId, `Skipping that — ${confirm.reason ?? "it was blocked"}.`);
-      pushRunEnd(runId);
+      turn.end({ kind: 'refused', reason: confirm.reason ?? 'it was blocked' });
       return;
     }
-    if (preemptedTurns.has(runId)) {
-      pushStopped(runId);
+    if (turn.stopRequested) {
+      pushStopped(turn);
       return;
     }
-    await guardedDispatch(runId, confirm.destructive, repo, () => {
-      void dispatchExecutor(runId, `task_${runId}`, prompt, agent, repo, confirm.destructive);
+    await guardedDispatch(turn, confirm.destructive, repo, (section) => {
+      void dispatchExecutor(turn, `task_${runId}`, prompt, agent, repo, section, confirm.destructive);
     });
   })();
   return { runId };
@@ -888,24 +893,21 @@ export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId
  * Stop watchdog). If runId is omitted, targets the most recent run.
  */
 export function cancelTask(runId?: string): void {
-  // Stop one turn: mark it preempted (honored at the decide/confirm boundary), DENY any pending
-  // destructive-confirm immediately (so the turn ends promptly instead of hanging until the 15s
-  // timeout), and abort its executor if running (arming the watchdog).
-  const stop = (id: string): void => {
-    if (!inFlightTurns.has(id)) return; // ignore stale/unknown ids -> bounds preemptedTurns
-    preemptedTurns.add(id);
-    resolveConfirm(id, false);
-    activeRuns.get(id)?.abort();
-  };
+  // requestStop is total: pre-dispatch phases flip to 'stopping' (honored at the next
+  // stopCheckpoint) with any pending destructive-confirm DENIED immediately (so the turn ends
+  // promptly instead of hanging until the 15s timeout); a running turn has its pump's controller
+  // aborted (arming the watchdog); stale/unknown ids are ignored.
+  const registry = getRunRegistry();
   if (runId) {
-    stop(runId);
+    registry.requestStop(runId);
     return;
   }
   // No id: stop the most recent turn (it may still be in decide/confirm) AND abort the latest
   // running executor if that's a different turn — a no-id Stop shouldn't leave either running.
-  if (lastTurnId) stop(lastTurnId);
-  const latest = [...activeRuns.keys()].pop();
-  if (latest && latest !== lastTurnId) activeRuns.get(latest)?.abort();
+  const last = registry.lastTurnId;
+  if (last) registry.requestStop(last);
+  const holder = registry.slotHolder();
+  if (holder && holder !== last) registry.abortPump(holder);
 }
 
 /** Resolve a destructive-confirm from the renderer's dedicated CH.confirmResolve. */
@@ -913,6 +915,5 @@ export { resolveConfirm as resolveDestructiveConfirm } from './confirmGate';
 
 /** Abort every active run (called on app quit). */
 export function cancelAllRuns(): void {
-  for (const c of activeRuns.values()) c.abort();
-  activeRuns.clear();
+  getRunRegistry().cancelAll();
 }
