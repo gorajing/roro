@@ -38,12 +38,23 @@
   startup (`releaseChannel.ts` / `window.ts`), opt-in DECIDE/`args.task` trace capture for memory-steered proof,
   and a **dormant, gated-off** ambient track (belief-latch + eye + trigger). What stays **off by default is
   the ambient/proactive track**, not expression.
+- **The engine got *further ahead* this session (the W0–W8 rebuild, #134–#149).** The orchestrator is
+  now a typed Turn/Pump state machine (#146), memory swapped PGlite for an in-memory index + zero-authority
+  sidecar (#147), the Agent-SDK executor added **pre-execution** destructive gating (#148, dark), and the
+  core is now Electron-free behind four platform ports (#149) — plus 5→50 eval fixtures and voice extracted
+  to `packages/voice`. All real, all merged. **None of it moved the bottleneck.**
 - **The truth underneath:** **not one non-founder has used roro.** The core thesis ("being known"
   drives retention) is **unvalidated**, and by our own bar — joy/delight, the blend of function +
   cuteness + entertainment — **we are not there yet.**
+- **Competitive event — Codex Pets (2026-07-02).** OpenAI shipped selectable desktop-pet skins on Codex.
+  The frame is now commoditized (as priced: the cat is the frame, not the payload); the moat is unchanged
+  and lives on the **ownership axis** (local/encrypted/correctable/vendor-portable memory — provenance even
+  records `claimed_by:'codex'`). The consequence for *this doc* is sequencing (§8): the **pet-first
+  contingency is near-dead** (you can't out-cute a free incumbent skin) — **job→memory is effectively the
+  only bet**, and validation urgency is up.
 
-**Read this honestly: the architecture is *ahead* of the product. The bottleneck is signal and craft,
-not capability.**
+**Read this honestly: the architecture is *further ahead* of the product than ever — and even more so
+after the rebuild. The bottleneck is, and remains, signal and validation, not capability.**
 
 ---
 
@@ -401,7 +412,10 @@ validated. This plan exists partly to impose *ship-and-learn before expand* on o
 ## 8. The re-plan checkpoint
 
 After the first cohort, **re-plan Arcs B and C against what users actually love** — do not pre-commit
-the far roadmap. Keep the vision (§2) as the compass and the grieve-test as the metric. **The lightweight
+the far roadmap. Keep the vision (§2) as the compass and the grieve-test as the metric. **Post-Codex-Pets
+(§1), the pet-first contingency starts from near-dead** — a second-soul / pet-pivot re-plan competes with a
+free incumbent skin and should clear a *high* bar; the wedge to re-plan *toward* is a deeper job→memory
+loop, not a cuter pet. **The lightweight
 decision rule (so the next bet is signal-driven, not vibes-driven):** for an **already-built** behavior,
 keep it only if a *majority* **of the co-located behavioral subset** (the group whose reopen is *observed*,
 not self-reported — Arc A step 4; remote testers' self-report **corroborates but never substitutes**) would

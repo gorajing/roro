@@ -35,40 +35,48 @@ A developer's ambient coding companion shaped like a pet you bond with: you **ta
 ## 2. Architecture
 
 ### Stack
-Electron 42 + electron-forge + Vite + TypeScript + PixiJS (the cat). Vitest. Local **Ollama** brain (`qwen2.5:3b` reason/decide/extract, `qwen2.5vl:7b` vision, `nomic-embed-text` embed → 768-dim). **memory2** = encrypted files-as-truth + a derived **PGlite-HNSW** index. On-device **voice** (Silero VAD + whisper STT + Kokoro TTS) behind `RORO_*_VOICE` flags. macOS-first.
+Electron 42 + electron-forge + Vite + TypeScript + PixiJS (the cat). Vitest. Local **Ollama** brain (`qwen2.5:3b` reason/decide/extract, `qwen2.5vl:7b` vision, `nomic-embed-text` embed → 768-dim). **memory2** = encrypted files-as-truth + a derived **in-memory index** (`memIndex`) with a **zero-authority** embeddings sidecar (`index/vectors.jsonl`) — PGlite/pgvector was **deleted** in the W5 rebuild (#147); brute-force cosine over a self-capped corpus is single-digit ms. On-device **voice** (Silero VAD + whisper STT + Kokoro TTS) is **extracted to `packages/voice`** (a standalone sub-package, ~510MB out of the app graph). The whole app is split into an **Electron-free `src/core/`** with a thin `src/main/` shell (#149). macOS-first.
+
+> **The rebuild (W0–W8, 2026-07-01 → 07-02).** Fifteen PRs (#134–#149) reshaped this codebase in two days: the core was carved Electron-free behind four platform ports, the orchestrator became a typed state machine, memory swapped PGlite for an in-memory index, an Agent-SDK executor with pre-execution gating landed dark, voice moved out to a sub-package, and Live2D + the Nebius cloud-brain fork were deleted. §2 below is the *current* architecture; §3's W0–W8 entry is the program log.
 
 ### Component map (`src/`)
+The W7 split (#149) put **all product logic in `src/core/`** (Electron-free) with a thin `src/main/` **shell** (the only Electron-aware layer). The core reaches the platform *only* through four ports; the boundary is enforced by an eslint electron-ban rule **and** `src/core/ports/boundary.test.ts` (a content scan that fails on any `electron` module reference — including a dynamic `import('electron')`).
+
 | Dir | What it is |
 |---|---|
-| `src/main.ts` + `src/main/` | Electron **main**. `orchestrator.ts` = the **turnRun chokepoint**. `siblings.ts` = lazy brain/memory/vision loaders. `factStore.ts` = supersede-not-overwrite fact writer. `workdir.ts`, `confirmGate.ts`, `bootstrapPlan.ts`, `identity.ts` (owner_id), `memoryContext.ts`. |
-| `src/brain/` | Local brain. `index.ts` (decide/extractFact/embed/describeScreen), `extractFact.ts` (marker gate + parser + value guard), `ollama.ts`, `eval/` (the **brain eval harness** + golden fixtures + `baseline.json`). |
-| `src/memory2/` | Memory engine. `index.ts` (production singleton + `traceExtraction`), `memoryStore.ts` (files-as-truth + reconcile), `adapter.ts` (MemoryModule contract), `profileFacts.ts` (safe correction/source view), `keyManager.ts` (envelope encryption), `safeStorageWrapper.ts` (OS-keychain seam), `cipher.ts`, `pgliteIndex.ts`, `tracer.ts`, `memoryScore.ts` (recall blend). |
-| `src/executor/` | Coding agent dispatch (edits files in `RORO_WORKDIR`). |
-| `src/renderer/` | PixiJS cat + UI. `character/`, `ask/`, `memory/forgetPanel.ts`, `voice/`, `bootstrap/`, `cosmetics/`, `confirm/`, `events/bridge.ts`. |
-| `src/vision/` | Screen capture + describe (sharp + vision model). |
-| `src/shared/` | IPC channels + shared types (`ipc.ts`, `events.ts`, `brain.ts`, `memory.ts`). |
+| `src/main.ts` + `src/main/` | Electron **shell**. Boots the app, derives `userData` (passed *into* core as a boot parameter — core never calls `app.getPath`), and installs the four platform ports via `registerPlatformPorts` (`platformPorts.ts`). Residue: `ipc.ts` (the IPC surface), `window.ts` + `windowRegistry.ts` (**named** windows), `safeSend.ts` (`sendToPetWindow` — never `getAllWindows()[0]`, which the pointer overlay would hijack), `pointerOverlay.ts` (the desktop paw overlay), `navigation.ts`/`openExternalGuard.ts`/`summon.ts`. |
+| `src/core/ports/` | The **four platform ports** (`ports.ts`): `RendererPushPort` (guarded MAIN→pet-window push), `NotificationPort` (OS "job done"), `PointerOverlayPort` (draw the paw), `KeyWrapperPort` (the OS-keychain object wrapping the memory DEK). The shell installs Electron impls at boot; **tests install capturing doubles via `testing.installTestPorts`** — the test seam that **replaced `vi.mock('electron')`**. Reading a port before it's registered *throws* (fail-loud). |
+| `src/core/orchestrator/` | The **turnRun chokepoint**, now a typed state machine. `orchestrator.ts` = the facade (`runTurn`/`runTask`/`cancelTask`/`resolveDestructiveConfirm`); `run/` = the **Turn machine** (`turnState.ts` — UI truth) + **Pump machine** (`pump.ts` — process truth) + `runRegistry.ts` (live Turns + the single-executor **slot** + the `DispatchSection` TOCTOU-lock-as-type) + `gates.ts` (the pre-dispatch pipeline) + `decisionRouter.ts` (the bounded two-pass decide loop). Plus `siblings.ts` (typed lazy brain/memory/vision loaders), `factStore.ts` (supersede-not-overwrite), `factProposals/` (the executor-facts pilot), `confirmGate.ts`, `destructive.ts`, `workdir.ts`, `identity.ts` (owner_id), `memoryContext.ts`. |
+| `src/core/brain/` | Local brain. `index.ts` (decide/extractFact/embed; `BRAIN_PROVIDER`≠`'ollama'` throws), `extractFact.ts` (marker gate + parser + value guard), `clarifyGate.ts`/`locateGate.ts`, `ollama.ts`, `eval/` (the eval harness: 50 behavioral fixtures + null-discipline axis + the `eval:proposals` runner + `baseline.json`). |
+| `src/core/memory2/` | Memory engine. `index.ts` (`createMemoryFacade` — the memory surface — + `traceExtraction`), `memoryStore.ts` (files-as-truth + reconcile), `memIndex.ts` (in-memory index behind `IndexStore`) + `vectorCache.ts` (the zero-authority `index/vectors.jsonl` sidecar), `manifestCompact.ts` (compaction **with** the fact-tier exemption), `profileFacts.ts` (correction/source view + executor-proposal provenance pass-through), `keyManager.ts`/`safeStorageWrapper.ts`/`cipher.ts` (envelope encryption), `tracer.ts`, `memoryScore.ts` (recall blend). The old `adapter.ts` + `pgliteIndex.ts` are **deleted**; the cursor is ephemeral (every open replays the manifest from files). |
+| `src/core/executor/` | Coding-agent dispatch (edits files in `RORO_WORKDIR`). Default = the `codex` + `claude` **CLI** adapters (`codex.ts`, `claude.ts`). A **dark, flag-gated** (`RORO_SDK_EXECUTOR`) **Agent-SDK** adapter (`claudeSdk.ts`) adds **pre-execution** destructive gating (`claudeSdkGate.ts`: a PreToolUse hook + `canUseTool`, memoized per `toolUseId`). |
+| `src/core/vision/` | Screen capture describe/locate (sharp + vision model). |
+| `src/core/ambient/` | The **dormant, gated-off** ambient track (belief-latch + eye + trigger). |
+| `src/renderer/` | PixiJS pixel cat + UI. `character/`, `ask/`, `memory/` (the correction panel + the fact-proposal confirm), `voice/` (a thin client of `packages/voice`), `bootstrap/`, `cosmetics/`, `confirm/`, `events/bridge.ts`. |
+| `src/shared/` | Pure leaf: IPC channels + cross-seam types (`ipc.ts`, `events.ts`, `brain.ts`, `memory.ts` — the canonical `Entry`/tier contract + `MemoryMatch = {entry, similarity, guaranteed}`; `factProposals.ts`, `deferredEnvKeys.ts`, `voicePacks.ts`, `pointing.ts`). |
+| `packages/voice/` | The on-device voice stack (Silero VAD + whisper STT + Kokoro TTS), extracted to a **standalone sub-package** (~510MB out of the app graph; **not** an npm workspace — root `npm ci` never installs it; a path-filtered CI job keeps the TTS license firewall alive). |
 | `src/build/` | `macSigning.ts` — env-gated signing config + Developer-ID preflight. |
 | `forge.config.ts` | Packaging: asar+unpack, extendInfo, fuses, **prePackage** (signing preflight) + **postPackage** (ad-hoc re-seal) hooks. |
 
 ### The turnRun pipeline (the chokepoint — protect it)
-Every turn flows through **one** path in `orchestrator.ts`:
-**RECALL** (facts via getProfile + episodes via vector recall) → **DECIDE** (brain.decide → a Command) → **EXECUTE** (executor) / **NARRATE** (cat speaks) → **REMEMBER** (rememberEvent + `runFactExtraction`). Returns `{runId}` at *dispatch* (so Stop/barge-in work); events stream over push channels (`webContents.send`; `ipcMain.handle` is request/response only).
+Every turn flows through **one** path — now the typed run state machine under `src/core/orchestrator/` (`run/`, #146), fronted by the `orchestrator.ts` facade:
+**RECALL** (facts + episodes via `memory.recall`) → **DECIDE** (`brain.decide` → a `Command`, streaming reasoning/content to the renderer) → route: **run_agent** (the `RUN_AGENT_GATES` pipeline → `pumpRun` over the executor's `ActionEvent` stream) / **answer|clarify** (push narration, no executor) / **capture_screen** (vision → decide *once* more, re-route) → **REMEMBER** (`rememberEvent` + fact extraction). The invoke promise resolves with the final `{runId}` at *dispatch* (so Stop/barge-in work); all token/action streams go over guarded MAIN→renderer push channels (`ipcMain.handle` is request/response only). The **Turn machine** tracks UI truth ("has `runEnd` been pushed?"); the **Pump machine** tracks process truth ("has the child's stream drained?") — a watchdog Stop ends the UI at 1.5s while the single-executor slot stays held until the aborted stream truly drains.
 
-**Fragile seams inside the chokepoint** (preserved from the deleted 2026-06-22 architecture synthesis, git `feaad68`; each verified against current code 2026-07-01):
-- **`guardedDispatch` registration must stay synchronous** — it holds `dispatchLock` across clean-tree-check → preempt-check → dispatch; an `await` added before `activeRuns.set` silently breaks the no-TOCTOU single-executor invariant. Nothing tests it.
-- **Recall-before-store ordering** — `recallContext` runs *before* `rememberUserSaid` stores the transcript, specifically so the query can't self-match. Reorder and every recall is polluted by its own input.
-- **The `runId` re-stamp** (executors mint their own ids; the orchestrator re-stamps every event) is the single coordinate tying `activeRuns`, the confirm gate, and Stop. Remove it and Stop can't find its `AbortController`.
-- **Approval is structurally not an `ActionEvent`** — confirm/deny rides the disjoint `CH.confirmResolve` IPC pair (default-DENY). Any new path into `resolveConfirm`, or making confirm an event kind, breaks "no spoken word approves `rm -rf`".
-- **The preload import rule** — `src/preload.ts` may import only `electron` + pure `src/shared/*`; anything pulling a Node builtin collapses the renderer sandbox. The boundary rests on `shared/` staying a pure leaf.
+**Fragile seams inside the chokepoint** (originally from the deleted 2026-06-22 architecture synthesis, git `feaad68`; re-verified against the post-rebuild state machine 2026-07-02):
+- **The `DispatchSection` is the TOCTOU lock, now a type** (replacing the old module-level `dispatchLock`). It stays open across the awaited clean-tree check so no other turn can start an executor in between; `commit()` is **synchronous** and is the *only* way to occupy the slot. This is now typed *and* tested (`run/runRegistry.test.ts`) — the "nothing tests it" caveat is retired.
+- **Recall-before-store ordering** — recall runs *before* the transcript is stored, specifically so the query can't self-match. Reorder and every recall is polluted by its own input.
+- **The `runId` re-stamp** (executors mint their own ids; the **pump** re-stamps every event — `run/pump.ts`) is the single coordinate tying the slot, the confirm gate, and Stop. Remove it and Stop can't find its `AbortController`.
+- **Approval is structurally not an `ActionEvent`** — confirm/deny rides the disjoint `CH.confirmResolve` IPC pair (default-DENY). Any new path into `resolveConfirm`, or making confirm an event kind, breaks "no spoken word approves `rm -rf`". (The dark SDK executor keeps this pre-execution: its PreToolUse hook calls the same `confirmGate` before the tool runs.)
+- **The core import boundary** — `src/core/` holds **zero** `electron` imports (eslint electron-ban + `ports/boundary.test.ts` content scan); it reaches the platform only through the four ports. Separately, `src/preload.ts` may import only `electron` + pure `src/shared/*`; the boundary rests on `shared/` staying a pure leaf.
 
 ### 🔒 LOCKED INVARIANTS (breaking one is an architecture regression)
-1. **turnRun chokepoint** — one RECALL→DECIDE→EXECUTE→NARRATE→REMEMBER path. Hang things off it; don't fork it.
+1. **turnRun chokepoint** — one RECALL→DECIDE→EXECUTE→NARRATE→REMEMBER path, now the typed Turn/Pump state machine (`src/core/orchestrator/`, #146). Hang things off it; don't fork it.
 2. **Frozen `ActionEvent` union** (`src/shared/events.ts`) — consumed exhaustively (`eventToAvatarState`). Don't add variants casually.
 3. **Voice is mouth-not-brain** — a say-only `VoiceBackend` seam; committed transcripts route *through* `turnRun`, never a speech-to-speech model that bypasses recall→decide→remember.
 4. **Local-first / $0 / no app-owned cloud/model keys / offline-default** — no app-owned cloud accounts, telemetry, or required network for the default brain/memory path. Executor CLIs may still require their own local auth. (The old "undocumented cloud escape hatch" caveat is obsolete: the cloud-brain fork was **deleted outright** in #139 — `BRAIN_PROVIDER` now fails loud with a typed error on anything but `'ollama'`, which *strengthens* this invariant.)
 5. **Fail-loud over silent-degrade** — `keyManager` throws if the keychain is unavailable; **never** stores plaintext. No `catch { return null }`.
 6. **Owner-scoped memory** — every read/write scoped to `ownerId`.
-7. **Files-as-truth durability** — encrypted files on disk are truth; the PGlite-HNSW index is a *derived, rebuildable cache* (reconciled on reopen). **Proven** by `crosslaunch.durability.test.ts`.
+7. **Files-as-truth durability** — encrypted files on disk are truth; the in-memory `memIndex` + its zero-authority `index/vectors.jsonl` sidecar are a *derived, rebuildable cache*. The cursor is **ephemeral** — every open replays the manifest from files (files-as-truth is the *normal* open path). PGlite/pgvector was deleted (#147). **Proven** by `crosslaunch.durability.test.ts`.
 8. **Recency guarantee** — memory2 front-loads the top-2 newest episodes (recency rows carry cosine 0 → recall uses `minSimilarity: 0`; now typed via `MemoryMatch.guaranteed`, #138).
 
 > The **one authoritative invariants list** (this one merged with ROADMAP §4's additions — point-don't-act, present ≠ watching, restraint/never-needy) lives in [`FOUNDING.md`](./FOUNDING.md).
@@ -133,7 +141,7 @@ Every turn flows through **one** path in `orchestrator.ts`:
   longer imports from `renderer/voice`.
 - **Invariants encoded in types + CI (#138):** the recency guarantee is typed (`MemoryMatch.guaranteed`); the
   `KNOWN ABOUT THIS USER:` / `RELATED PAST CONTEXT:` labels are shared constants (`src/shared/memoryFormat.ts`);
-  executor mapper fixtures are CI-pinned (`src/executor/fixtures.test.ts`) with a zero-activity drift tripwire; and
+  executor mapper fixtures are CI-pinned (now `src/core/executor/fixtures.test.ts`) with a zero-activity drift tripwire; and
   `eval:brain` writes `latest.json` per run — `baseline.json` only updates via `npm run eval:brain -- --write-baseline`.
 - **Cloud-brain fork deleted (#139):** the openai-SDK cloud path is gone; `BRAIN_PROVIDER` throws a typed error on
   anything but `'ollama'`. Also removed: `electron-squirrel-startup` + the non-mac makers (Squirrel/Deb/Rpm); the
@@ -142,13 +150,43 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - **Live2D path deleted (#140):** the dependency, `public/live2d/`, and the seam are gone; Placeholder→Cat renames
   (`#cat-canvas`); CSP `'unsafe-eval'` removed (kept `'wasm-unsafe-eval'`). The procedural pixel cat **is** the
   identity, not a fallback.
+- **The two-day rebuild — W0–W8 (#134–#149, 2026-07-01 → 07-02).** A fresh-start analysis priced the codebase at
+  ~35% code / 65% lessons+evals+harness and recommended a rebuild adopted *incrementally* (not a restart). What
+  landed, by wave — every PR gated by TDD fail-first → tsc/vitest/eslint → multi-hat adversarial review → polled CI:
+  - **W0 (#134–#136):** paw-on-the-pixel (roro points a paw at what you ask about on screen). Its merge-gate caught a
+    **real P0 the six Codex rounds missed** — the pointer overlay hijacked `getAllWindows()[0]`, so every push hit the
+    preload-less overlay; fixed with a named window registry (`sendToPetWindow`). See `LESSONS.md`.
+  - **W1 (#137–#140):** dead-weight removal — VoicePack catalog → `shared`; **Live2D deleted** (+CSP `'unsafe-eval'`
+    removed); the **Nebius cloud-brain fork + `openai` dep deleted** (`BRAIN_PROVIDER`≠`'ollama'` throws); invariants
+    encoded in types + CI (`MemoryMatch.guaranteed`, shared memory-format constants, CI-pinned executor mapper fixtures).
+  - **W2 (#141, #143):** docs collapsed to canon (`FOUNDING.md` + `LESSONS.md`, fossils deleted); **voice extracted to
+    `packages/voice`** (npm-ci graph 838→322MB; the TTS license firewall kept alive by a path-filtered CI job).
+  - **W3 (#142, #145):** the **executor-facts pilot** (dark, `RORO_EXECUTOR_FACTS`) + the eval expansion (**5→50
+    behavioral fixtures**, 7-tag taxonomy, null-discipline axis, the `eval:proposals` runner). The eval panel caught a
+    **real P1 by executing the scorer** — a polarity-inverted value scored `ok`; fixed with an `inverted` scorer mode.
+  - **W4 (#146):** the orchestrator became the **typed Turn/Pump state machine** + `RunRegistry` + `DispatchSection`
+    + gate pipeline, replacing five module-level mutables (orchestrator 918→630 lines; the `RunSource` seam in `pump.ts`
+    is what W6 plugged into).
+  - **W5 (#147):** **PGlite deleted**; in-memory `memIndex` + zero-authority `vectors.jsonl` sidecar + ephemeral cursor
+    (files-as-truth exercised every open); Entry/tier contract unified in `src/shared/memory.ts`;
+    `createMemoryFacade` is the surface; `adapter.ts` deleted; vitest went parallel (74s→9s). Its panel proved by
+    execution **the program's most severe P0** — manifest compaction dropped a fact's `supersedeIds` and bricked
+    replay; fixed with a fact-tier compaction exemption + red-first regressions. See `LESSONS.md`.
+  - **W6 (#148):** the **Agent-SDK claude executor** (dark, `RORO_SDK_EXECUTOR`) — **pre-execution** destructive gating
+    via a `confirmGate` PreToolUse hook (the hard gate, before the CLI's `acceptEdits` auto-approval), memoized per
+    `toolUseId`. Kept the user's own CLI auth (no bundled binary). A **founder auth-policy gate + a live founder
+    smoke** must clear before any default-flip from the CLI adapter — see [`docs/plans/sdk-executor.md`](./docs/plans/sdk-executor.md).
+  - **W7 (#149):** the **Electron-free `src/core/` split** + the enforced import boundary + the four platform ports +
+    `userData` as a boot parameter; tests reach the platform via `installTestPorts`, not `vi.mock('electron')`.
+  - **W8:** this reconciliation (docs) + the packaged smoke suite consolidation (a parallel track).
 
 ---
 
-## 4. The eval scorecard (`src/brain/eval/baseline.json`, qwen2.5:3b, temp 0 — updates only via `npm run eval:brain -- --write-baseline`; `latest.json` is the per-run scratch)
+## 4. The eval scorecard (`src/core/brain/eval/baseline.json`, qwen2.5:3b, temp 0 — updates only via `npm run eval:brain -- --write-baseline`; `latest.json` is the per-run scratch)
 - **DECIDE 100%** (22/22) — the clarify trust gate now catches referent-less requests before the model.
 - **EXTRACT (null-discipline) 100%** (10/10) — the gate holds; no profile poisoning.
-- **BEHAVIORAL value-quality 40%** (2/5) — a real 2× gain (#65) **and a measured model ceiling** (the 3B is genuinely weak at describing habits; noun prefs extract cleanly). The guard guarantees no *garbage* is stored — it just sometimes stores nothing.
+- **BEHAVIORAL value-quality 40%** (2/5, the original fixture set) — a real 2× gain (#65) **and a measured model ceiling** (the 3B is genuinely weak at describing habits; noun prefs extract cleanly). The guard guarantees no *garbage* is stored — it just sometimes stores nothing.
+- **W3 expansion (#145) — behavioral fixtures 5→50** (7-tag taxonomy, pairwise+prompt-4-gram disjointness CI-checked), a separate **null-discipline axis**, and the `eval:proposals` runner (live opt-in + a deterministic CI tier). Live **report-only** numbers (baseline untouched): value-quality **74.3%** on the expanded set (the original 5 reproduce 40% exactly), null-discipline **46.7%** (hard negatives are where the 3B invents facts from marker-bearing questions — the gate is the only null discipline). The panel also armed the scorer against **polarity inversion** (an `inverted` mode via `mustAlsoContainOneOf`/`mustNotContainAnyOf`) after it scored "never force push"→"force-pushes" as `ok` — see `LESSONS.md`.
 
 ---
 
@@ -221,8 +259,9 @@ The stale design-history fossils were **deleted on 2026-07-01** (git history is 
 with commit shas); load-bearing content was moved to [`FOUNDING.md`](./FOUNDING.md) / [`LESSONS.md`](./LESSONS.md) /
 this file first. What remains in `docs/` is current: [`docs/ROADMAP.md`](./docs/ROADMAP.md) is the **live execution
 plan** (defers to this file + `PUBLIC.md` for invariants and gates); `docs/INTERACTION.md` is the interaction
-contract; `docs/MEMORY-ARCHITECTURE.md` / `MEMORY-RESEARCH.md` are the memory2 spec; `docs/VOICE-ARCHITECTURE.md` is
-the on-device voice plan of record (cut from v0); `docs/PRODUCT_PLAN.md` is the pet/companion **vision tier**
+contract; `docs/MEMORY-ARCHITECTURE.md` / `MEMORY-RESEARCH.md` are the memory2 spec (**note:** both predate the W5
+in-memory-index swap, #147 — for the *current* engine trust §2 above + `src/core/memory2/`, not the PGlite descriptions there);
+`docs/VOICE-ARCHITECTURE.md` is the on-device voice plan of record (cut from v0; the stack now lives in `packages/voice`); `docs/PRODUCT_PLAN.md` is the pet/companion **vision tier**
 (aspiration, not sequencing — see its banner + FOUNDING.md's strategy-of-record); `docs/strategy/` + `docs/plans/`
 (paw-on-the-pixel) are the north-star thinking and the current wedge work; `docs/design/` holds saved design-asset
 references (mute badges). When anything conflicts, **trust the most recent commit + FOUNDING.md + this file +
