@@ -116,8 +116,18 @@ export function mapClaudeMessage(
           ts,
         };
       }
-      const error =
-        typeof m.subtype === 'string' ? m.subtype : 'result error';
+      // The Agent SDK's SDKResultError carries a richer `errors: string[]` (e.g. error_during_execution
+      // → the underlying tool failures); the CLI path only ever gives a subtype. ADDITIVE arm: prefer
+      // the joined errors when present, else fall back to the subtype — so the CLI fixtures map
+      // byte-identically (no `errors` field → subtype) while the SDK surfaces the real cause.
+      const errors = Array.isArray(m.errors)
+        ? m.errors.filter((e): e is string => typeof e === 'string')
+        : [];
+      const error = errors.length
+        ? errors.join('; ')
+        : typeof m.subtype === 'string'
+          ? m.subtype
+          : 'result error';
       return { kind: 'run.failed', runId, ok: false, error, ts };
     }
 

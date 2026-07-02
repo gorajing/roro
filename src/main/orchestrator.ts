@@ -41,13 +41,13 @@ import { formatMemoryStatus, type ActionEvent, type AgentKind } from '../shared/
 import { newRunId } from '../shared/events';
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import type { EpisodeKind } from '../shared/memory';
-import { getExecutor } from '../executor';
+import { getExecutor, type DestructiveGate } from '../executor';
 import { loadBrain, loadMemory, loadVision, type MemoryModule } from './siblings';
 import { getOwnerId } from './identity';
 import { buildRecallContext } from './memoryContext';
 import { extractAndStoreFact } from './factStore';
 import { classifyDestructive, classifyDestructiveCommand } from './destructive';
-import { requestConfirm } from './confirmGate';
+import { requestConfirm, resolveConfirm } from './confirmGate';
 import { isCleanTree } from './gitTree';
 import { getRunRegistry, type DispatchSection } from './run/runRegistry';
 import { pumpRun } from './run/pump';
@@ -105,7 +105,9 @@ async function confirmIfDestructive(
   if (!verdict.destructive) return { ok: true, destructive: false };
   const approved = await requestConfirm(runId, verdict.reason ?? 'destructive command', pushConfirmRequest);
   if (!approved) return { ok: false, destructive: true, reason: `it looked destructive (${verdict.reason}) and wasn't approved` };
-  return { ok: true, destructive: true };
+  // Return the classifier reason on APPROVAL too — startPump seeds it as the SDK gate's
+  // preApprovedReason so the identical mid-run command isn't re-asked.
+  return { ok: true, destructive: true, reason: verdict.reason };
 }
 
 function pushReasoning(delta: string): void {
@@ -284,11 +286,31 @@ function startPump(ctx: GateContext, repo: string, destructiveApproved: boolean,
   // a bounded digest of the run's OWN events for the post-run proposal ask. Dark unless the
   // deferred-env flag is on — no accumulation, no ask, zero cost.
   const digestAcc = guardDeferredEnv(process.env).RORO_EXECUTOR_FACTS === '1' ? createDigestAccumulator() : null;
+  // The pre-execution destructive gate the SDK executor adjudicates (PreToolUse hook + canUseTool).
+  // The CLI adapters IGNORE opts.gate, so injecting it always is inert for them; the SDK adapter
+  // uses it to convert the post-hoc regex ABORT into a pre-execution default-deny confirm.
+  //  - classify: the SAME classifier the post-hoc guard uses, bound to this repo.
+  //  - ask: wraps confirmGate.requestConfirm UNCHANGED (15s default-DENY, dedicated channel).
+  //  - preApprovedReason: the pre-dispatch confirm's reason class, so the identical mid-run command
+  //    never re-asks.
+  //  - onCleared: records the approved-destructive toolUseId in a ledger the post-hoc guard consults,
+  //    so that guard is a no-op-by-construction for SDK runs (the gate already screened).
+  const approvedItemIds = new Set<string>();
+  const gate: DestructiveGate = {
+    classify: (command) => classifyDestructiveCommand(command, repo),
+    ask: (reason) => requestConfirm(runId, reason, pushConfirmRequest),
+    preApprovedReason: ctx.destructiveReason,
+    onCleared: (toolUseId) => { approvedItemIds.add(toolUseId); },
+  };
+  // Stop race: a Stop aborts the controller; deny any pending mid-run confirm SYNCHRONOUSLY so the
+  // gate resolves deny (→ the adapter's AbortError path) instead of hanging to the 15s timeout. A
+  // late renderer Approve for this runId is then confirmGate's unknown-id no-op.
+  controller.signal.addEventListener('abort', () => resolveConfirm(runId, false), { once: true });
   section.commit(controller); // occupies the single-executor slot synchronously (turn -> running)
   const executor = getExecutor(agent);
   void pumpRun(
     runId,
-    { events: executor.run({ repo, prompt, agent, signal: controller.signal }), controller },
+    { events: executor.run({ repo, prompt, agent, signal: controller.signal, gate }), controller },
     {
       emit: (e) => {
         pushEvent(e);
@@ -298,7 +320,14 @@ function startPump(ctx: GateContext, repo: string, destructiveApproved: boolean,
         void rememberEvent(sessionId, e);
       },
       notify: notifyJobDone,
-      guard: (e) => unapprovedDestructiveCommandReason(e, destructiveApproved, repo),
+      // The post-hoc destructive guard (belt). For SDK runs a command/started event only reaches
+      // here AFTER the gate cleared it (onCleared → the ledger), so this is a no-op-by-construction;
+      // for CLI runs the ledger stays empty and the original destructiveApproved check is unchanged.
+      // Keyed by itemId — never by command-string equality.
+      guard: (e) =>
+        e.kind === 'command' && e.status === 'started' && approvedItemIds.has(e.itemId)
+          ? null
+          : unapprovedDestructiveCommandReason(e, destructiveApproved, repo),
       onVerdict: (terminal) => {
         // Off-critical-path: extract AT MOST one durable fact from this turn (supersede-not-
         // overwrite). Fire-and-forget; this survives the Phase-B dispatch-return change.
