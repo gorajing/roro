@@ -24,9 +24,25 @@ export function scoreExtraction(
 }
 
 /** The descriptive-value contract for a behavioral-preference fixture (only meaningful for expect:'fact').
- *  mustContainOneOf: the value must mention at least one of these (on-topic); minWords: a floor on length. */
+ *  mustContainOneOf: the value must mention at least one of these (on-topic); minWords: a floor on length.
+ *
+ *  POLARITY GUARDS — a topic token alone is direction-blind: "force pushes to shared branches" contains
+ *  'force'+'push' yet states the OPPOSITE of "we never force push" — an INVERTED memory, worse for the
+ *  user than a missed one. Two conjunctive guards close that gap (both use the same whole-word-START
+ *  matcher; violating either scores the distinct mode 'inverted', never buried in off_topic):
+ *  - mustAlsoContainOneOf: the value must ADDITIONALLY carry one of these direction-carrying tokens
+ *    (e.g. 'never'/'not'/'avoid' for a negated habit) — topic present but direction absent → inverted.
+ *    A multi-word token can encode word ORDER ('over mysql' matches the correct "postgres over mysql"
+ *    but not the inverted "mysql over postgres") — use this where the model's natural correct form is
+ *    a comparison echo (observed live at temp 0), which a bare alternative-ban would false-flag.
+ *  - mustNotContainAnyOf: the value must NOT mention any of these (the disfavored alternative, e.g.
+ *    'jest' when vitest is the rule). Deliberately trades a rare false-inverted on an echoing-but-
+ *    correct value ("vitest, never jest") for NEVER scoring a wrong-direction value ok — the safe
+ *    direction; a false 'inverted' is visible and prompts a human read, a false 'ok' hides the P1. */
 export interface ValueContract {
   mustContainOneOf?: string[];
+  mustAlsoContainOneOf?: string[];
+  mustNotContainAnyOf?: string[];
   minWords?: number;
 }
 
@@ -41,19 +57,27 @@ function matchesToken(value: string, token: string): boolean {
 
 /** A SECOND, additive axis (separate from scoreExtraction's detection): is the extracted VALUE actually a
  *  usable recalled-memory line, or noise? null→missed_fact; below minWords→too_thin; off the topic→off_topic;
- *  else ok. NOTE: a bare-boolean value (value:"true") never reaches this on the LIVE path — the runtime guard
- *  (isUselessValue in extractFact.ts) converts it to null FIRST, so it scores 'missed_fact' (the user's true
- *  outcome: no recalled memory). This axis therefore measures the user-facing usable-value rate. */
+ *  on-topic but direction-flipped (polarity guard violated)→inverted; else ok. NOTE: a bare-boolean value
+ *  (value:"true") never reaches this on the LIVE path — the runtime guard (isUselessValue in extractFact.ts)
+ *  converts it to null FIRST, so it scores 'missed_fact' (the user's true outcome: no recalled memory).
+ *  This axis therefore measures the user-facing usable-value rate. */
 export function scoreFactValue(
   contract: ValueContract | undefined,
   got: FactCandidate | null,
-): 'ok' | 'missed_fact' | 'too_thin' | 'off_topic' {
+): 'ok' | 'missed_fact' | 'too_thin' | 'off_topic' | 'inverted' {
   if (got === null) return 'missed_fact';
   const value = got.value.trim();
   const c = contract ?? {};
   if (c.minWords !== undefined && value.split(/\s+/).filter(Boolean).length < c.minWords) return 'too_thin';
   if (c.mustContainOneOf && c.mustContainOneOf.length > 0) {
     if (!c.mustContainOneOf.some((t) => matchesToken(value, t))) return 'off_topic';
+  }
+  // Polarity, checked only AFTER the topic matched: an inverted value is on-topic by definition —
+  // 'inverted' stays distinct so the failure mode is visible (the eval-metric-DOA lesson), because an
+  // inverted memory recalled to the user is WORSE than a missed one.
+  if (c.mustNotContainAnyOf && c.mustNotContainAnyOf.some((t) => matchesToken(value, t))) return 'inverted';
+  if (c.mustAlsoContainOneOf && c.mustAlsoContainOneOf.length > 0) {
+    if (!c.mustAlsoContainOneOf.some((t) => matchesToken(value, t))) return 'inverted';
   }
   return 'ok';
 }

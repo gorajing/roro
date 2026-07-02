@@ -55,6 +55,52 @@ describe('scoreFactValue — the descriptive-value-quality axis (behavioral pref
   });
 });
 
+describe('scoreFactValue — the polarity guards (an inverted memory is worse than a missed one)', () => {
+  // The four contracts below mirror the guarded fixtures (fixtures.ts); each inverted value here was
+  // confirmed to score 'ok' before the guards existed — the exact gap this closes.
+  const forcePush = { mustContainOneOf: ['force', 'push'], mustAlsoContainOneOf: ['never', 'not', "doesn't", "don't", 'avoid'], minWords: 2 };
+  const greenMerge = { mustContainOneOf: ['merge'], mustAlsoContainOneOf: ['never', 'not', "doesn't", "don't", 'avoid', 'green', 'only', 'wait'], minWords: 2 };
+  const postgres = { mustContainOneOf: ['postgres'], mustAlsoContainOneOf: ['default', 'never', 'not', 'over mysql'] };
+  const denoQuotes = { mustContainOneOf: ['deno', 'quote'], mustAlsoContainOneOf: ['deno', 'double'] };
+
+  it("mustAlsoContainOneOf: on-topic values missing every direction token score 'inverted', not ok/off_topic", () => {
+    expect(scoreFactValue(forcePush, { key: 'k', value: 'force pushes to shared branches' })).toBe('inverted');
+    expect(scoreFactValue(greenMerge, { key: 'k', value: 'merges while red' })).toBe('inverted');
+    expect(scoreFactValue(denoQuotes, { key: 'k', value: 'single quotes' })).toBe('inverted');
+    expect(scoreFactValue(postgres, { key: 'k', value: 'prefers mysql over postgres' })).toBe('inverted');
+  });
+
+  it("mustNotContainAnyOf: naming the disfavored alternative scores 'inverted'", () => {
+    expect(scoreFactValue({ mustContainOneOf: ['tab'], mustNotContainAnyOf: ['space'] }, { key: 'k', value: 'spaces over tabs' })).toBe('inverted');
+    expect(scoreFactValue({ mustContainOneOf: ['vitest'], mustNotContainAnyOf: ['jest'] }, { key: 'k', value: 'jest over vitest' })).toBe('inverted');
+  });
+
+  it('correct direction-carrying values still score ok', () => {
+    expect(scoreFactValue(forcePush, { key: 'k', value: 'never force-pushes to shared branches' })).toBe('ok');
+    expect(scoreFactValue(forcePush, { key: 'k', value: "doesn't force push" })).toBe('ok');
+    expect(scoreFactValue(greenMerge, { key: 'k', value: 'only merges when the pipeline is green' })).toBe('ok');
+    expect(scoreFactValue(postgres, { key: 'k', value: 'uses postgres by default' })).toBe('ok');
+    // The 3B's LIVE correct form for "X, never Y" transcripts is the comparison echo (observed at temp 0):
+    // the phrase token 'over mysql' encodes word ORDER, which a bare mustNot ['mysql'] ban cannot —
+    // regression-pinned so the guard never re-penalizes the model's natural correct phrasing.
+    expect(scoreFactValue(postgres, { key: 'k', value: 'prefers postgres over mysql' })).toBe('ok');
+    expect(scoreFactValue(denoQuotes, { key: 'k', value: 'double quotes in ts files' })).toBe('ok');
+    expect(scoreFactValue(denoQuotes, { key: 'k', value: 'deno for scripts' })).toBe('ok'); // multi-fact: either fact, right direction
+    expect(scoreFactValue({ mustContainOneOf: ['tab'], mustNotContainAnyOf: ['space'] }, { key: 'k', value: 'tab characters' })).toBe('ok'); // bare favored noun under mustNot stays ok
+  });
+
+  it('polarity is judged only AFTER the topic: off-topic stays off_topic, thin stays too_thin', () => {
+    expect(scoreFactValue(forcePush, { key: 'k', value: 'writes conventional commits' })).toBe('off_topic');
+    expect(scoreFactValue(forcePush, { key: 'k', value: 'push' })).toBe('too_thin');
+  });
+
+  it('guards use the same whole-word-START matcher (no incidental substrings)', () => {
+    // 'npm' must NOT match inside 'pnpm' — the supersede guard rejects only the OLD tool
+    expect(scoreFactValue({ mustContainOneOf: ['pnpm'], mustNotContainAnyOf: ['npm'] }, { key: 'k', value: 'pnpm' })).toBe('ok');
+    expect(scoreFactValue({ mustContainOneOf: ['pnpm'], mustNotContainAnyOf: ['npm'] }, { key: 'k', value: 'switched from pnpm to npm' })).toBe('inverted');
+  });
+});
+
 describe('summarize — accuracy + per-failure-mode breakdown', () => {
   it('counts modes, computes accuracy = ok / total', () => {
     const s = summarize(['ok', 'ok', 'wrong_command', 'bad_json']);
