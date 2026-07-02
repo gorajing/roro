@@ -3,7 +3,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mapCodexThreadEvent } from './codex';
 import { mapClaudeMessage, mapClaudeMessageBlocks, mapClaudeStreamEvent, newClaudeCorrelation } from './claude';
+import { sdkMessagesToEvents } from './claudeSdk';
 import { CLAUDE_STREAM_SAMPLE } from './__fixtures__/claudeSample';
+import {
+  CLAUDE_SDK_STREAM_SAMPLE,
+  CLAUDE_SDK_RESULT_ERROR_SAMPLE,
+  CLAUDE_SDK_USER_REPLAY_SAMPLE,
+} from './__fixtures__/claudeSdkSample';
 import type { ActionEvent } from '../shared/events';
 
 // CI enforcement of the mapper contract — the most format-brittle code in the repo had ZERO CI
@@ -86,5 +92,45 @@ describe('executor mappers vs captured/documented streams (format-drift tripwire
     const events = mapClaudeSample();
     const commands = events.filter((e) => e.kind === 'command');
     expect(commands.map((c) => (c.kind === 'command' ? c.status : ''))).toEqual(['started', 'completed']);
+  });
+
+  it('claude SDK: the live-captured 0.3.198 stream maps to the exact pinned kind-sequence (mapper parity)', () => {
+    // The SDK adapter REUSES the CLI mapper, so a captured SDK stream must map to the same canonical
+    // shape a CLI stream would. This pins that the SDKMessage shapes did not drift out from under it.
+    const kinds = sdkMessagesToEvents(CLAUDE_SDK_STREAM_SAMPLE, 'run_fixture').map((e) => e.kind);
+    expect(kinds).toEqual([
+      'run.started', 'turn.started', 'reasoning',
+      'file_change', 'file_change', 'command', 'command',
+      'message.delta', 'message', 'run.completed',
+    ]);
+  });
+
+  it('claude SDK: correlation pairs Write→file_change and Bash→command started/completed; usage passes through', () => {
+    const events = sdkMessagesToEvents(CLAUDE_SDK_STREAM_SAMPLE, 'run_fixture');
+    const files = events.filter((e) => e.kind === 'file_change');
+    expect(files.map((f) => (f.kind === 'file_change' ? f.status : ''))).toEqual(['started', 'completed']);
+    const commands = events.filter((e) => e.kind === 'command');
+    expect(commands.map((c) => (c.kind === 'command' ? c.status : ''))).toEqual(['started', 'completed']);
+    const completed = events.find((e) => e.kind === 'run.completed');
+    expect(completed?.kind === 'run.completed' && completed.usage).toMatchObject({ input_tokens: 3849, output_tokens: 216 });
+  });
+
+  it('claude SDK: an SDKResultError maps to run.failed with errors.join("; ") (the additive arm)', () => {
+    const events = sdkMessagesToEvents([CLAUDE_SDK_RESULT_ERROR_SAMPLE], 'run_fixture');
+    expect(events).toEqual([
+      { kind: 'run.failed', runId: 'run_fixture', ok: false, error: 'tool Bash failed: exit 1; unrecoverable', ts: expect.any(Number) },
+    ]);
+  });
+
+  it('claude SDK: an SDKUserMessageReplay (isReplay) is skipped — no double-emit on resume', () => {
+    const events = sdkMessagesToEvents([CLAUDE_SDK_USER_REPLAY_SAMPLE], 'run_fixture');
+    expect(events).toEqual([]);
+  });
+
+  it('claude: a CLI-style result error (subtype only, NO errors array) still maps to the subtype — byte-identical', () => {
+    // The additive errors.join arm must not change the CLI path: a CLI result error carries only a
+    // subtype, so the fallback preserves today's exact behavior.
+    const ev = mapClaudeMessage({ type: 'result', subtype: 'error_max_turns' }, 'run_fixture', newClaudeCorrelation());
+    expect(ev).toEqual({ kind: 'run.failed', runId: 'run_fixture', ok: false, error: 'error_max_turns', ts: expect.any(Number) });
   });
 });

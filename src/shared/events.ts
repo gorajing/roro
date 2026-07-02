@@ -25,6 +25,11 @@ export interface ExecutorRunOptions {
   /** Read-only invocation (the fact-proposal ask): codex -> `-s read-only`; claude -> plan mode with
    *  Read as the only allowed tool. A reflection must never carry write capability (point-don't-act). */
   readOnly?: boolean;
+  /** ADDITIVE, optional: the pre-execution destructive gate the SDK executor adjudicates (PreToolUse
+   *  hook + canUseTool). Injected by startPump for coding runs; absent for readOnly reflections and
+   *  for the CLI adapters (which ignore it). Typed as `unknown` here so shared/events.ts stays free
+   *  of the executor's DestructiveGate shape — claudeSdk.ts narrows it. */
+  gate?: unknown;
 }
 export interface Executor { run(opts: ExecutorRunOptions): AsyncIterable<ActionEvent> }
 
