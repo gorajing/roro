@@ -20,6 +20,7 @@ interface Row {
   expect: string;
   got: string;
   mode: string;
+  taxonomy?: string;
 }
 
 const pct = (n: number): string => `${(n * 100).toFixed(1)}%`;
@@ -76,11 +77,17 @@ async function main(): Promise<void> {
     console.log(`[eval] EXTRACT ${pct(extractSummary.accuracy)} (${extractSummary.ok}/${extractSummary.total})  ${JSON.stringify(extractSummary.byMode)}`);
   }
 
-  // BEHAVIORAL — the VALUE-quality axis: is the extracted value a usable recalled-memory line, or noise
-  // like "true"? (scoreFactValue, separate from detection.) This is the axis the extraction-value fix moves.
-  console.log('\nBEHAVIORAL — is the extracted VALUE descriptive (not a bare boolean)?');
+  // BEHAVIORAL — two axes over the taxonomy-labeled set (see BehavioralTaxonomy in fixtures.ts):
+  //  - value-quality (expect:'fact' cases, scoreFactValue): is the extracted value a usable recalled-memory
+  //    line, or noise like "true"? Apples-to-apples with baseline.json's `behavioral` number.
+  //  - null-discipline (expect:'null' cases, scoreExtraction): hard negatives that PASS the marker gate but
+  //    state nothing durable (the model must stay silent) + marker-less cases pinning the gate's safe miss.
+  const behavioralFactCases = BEHAVIORAL_EXTRACT_CASES.filter((c) => c.expect === 'fact');
+  const behavioralNullCases = BEHAVIORAL_EXTRACT_CASES.filter((c) => c.expect === 'null');
+
+  console.log('\nBEHAVIORAL value-quality — is the extracted VALUE descriptive (not a bare boolean)?');
   const behavioralRows: Row[] = [];
-  for (const c of BEHAVIORAL_EXTRACT_CASES) {
+  for (const c of behavioralFactCases) {
     let mode: string;
     let got: string;
     try {
@@ -92,11 +99,42 @@ async function main(): Promise<void> {
       mode = 'error';
       got = `THREW: ${(e as Error).message.slice(0, 70)}`;
     }
-    behavioralRows.push({ id: c.id, expect: 'fact', got, mode });
-    console.log(`  ${mode === 'ok' ? '✓' : '✗'} ${c.id.padEnd(20)} got=${got.padEnd(52)} [${mode}]`);
+    behavioralRows.push({ id: c.id, expect: 'fact', got, mode, taxonomy: c.taxonomy });
+    console.log(`  ${mode === 'ok' ? '✓' : '✗'} ${c.id.padEnd(24)} [${c.taxonomy.padEnd(16)}] got=${got.padEnd(52)} [${mode}]`);
   }
   const behavioralSummary = summarize(behavioralRows.map((r) => r.mode));
   console.log(`\n[eval] BEHAVIORAL value-quality ${pct(behavioralSummary.accuracy)} (${behavioralSummary.ok}/${behavioralSummary.total})  ${JSON.stringify(behavioralSummary.byMode)}`);
+
+  console.log('\nBEHAVIORAL null-discipline — silent on marker-bearing negatives (and the gate holds on marker-less)?');
+  const behavioralNullRows: Row[] = [];
+  for (const c of behavioralNullCases) {
+    let mode: string;
+    let got: string;
+    try {
+      const f = await extractFact(c.input);
+      mode = scoreExtraction(c.expect, f);
+      got = f ? `fact(${f.key}=${JSON.stringify(f.value)})` : 'null';
+    } catch (e) {
+      mode = 'error';
+      got = `THREW: ${(e as Error).message.slice(0, 70)}`;
+    }
+    behavioralNullRows.push({ id: c.id, expect: 'null', got, mode, taxonomy: c.taxonomy });
+    console.log(`  ${mode === 'ok' ? '✓' : '✗'} ${c.id.padEnd(24)} [${c.taxonomy.padEnd(16)}] got=${got.padEnd(52)} [${mode}]`);
+  }
+  const behavioralNullSummary = summarize(behavioralNullRows.map((r) => r.mode));
+  console.log(`\n[eval] BEHAVIORAL null-discipline ${pct(behavioralNullSummary.accuracy)} (${behavioralNullSummary.ok}/${behavioralNullSummary.total})  ${JSON.stringify(behavioralNullSummary.byMode)}`);
+
+  // Per-taxonomy breakdown across BOTH axes — a 40% headline is only actionable when you can see WHICH
+  // failure family (boolean-collapse vs supersede vs hard-negative …) is dragging it.
+  const behavioralByTaxonomy: Record<string, EvalSummary> = {};
+  const allBehavioralRows = [...behavioralRows, ...behavioralNullRows];
+  for (const t of new Set(allBehavioralRows.map((r) => r.taxonomy as string))) {
+    behavioralByTaxonomy[t] = summarize(allBehavioralRows.filter((r) => r.taxonomy === t).map((r) => r.mode));
+  }
+  console.log('[eval] by taxonomy:');
+  for (const [t, s] of Object.entries(behavioralByTaxonomy)) {
+    console.log(`         ${t.padEnd(18)} ${pct(s.accuracy)} (${s.ok}/${s.total})  ${JSON.stringify(s.byMode)}`);
+  }
 
   // Results = the summaries only (stable, diffable). Non-deterministic at temperature>0, so a run is a
   // SNAPSHOT, not a fixture. Every full run writes latest.json (untracked scratch); baseline.json — the
@@ -104,7 +142,14 @@ async function main(): Promise<void> {
   // `--write-baseline` flag. The old behavior overwrote the baseline in place on every run, so a lucky
   // run silently raised the bar and an unlucky diff read as a regression.
   if (!onlyBehavioral && decideSummary && extractSummary) {
-    const results = { brain: describeBrain(), decide: decideSummary, extract: extractSummary, behavioral: behavioralSummary };
+    const results = {
+      brain: describeBrain(),
+      decide: decideSummary,
+      extract: extractSummary,
+      behavioral: behavioralSummary, // value-quality axis — same key/axis as the checked-in baseline
+      behavioralNull: behavioralNullSummary,
+      behavioralByTaxonomy,
+    };
     const latest = join(process.cwd(), 'src/brain/eval/latest.json');
     writeFileSync(latest, JSON.stringify(results, null, 2) + '\n');
     console.log(`\n[eval] wrote ${latest}`);

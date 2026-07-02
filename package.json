@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "eval:brain": "tsx src/brain/eval/runEval.ts",
+    "eval:proposals": "tsx src/brain/eval/runProposalEval.ts",
     "eval:trace-review": "tsx src/brain/eval/cohortTraceReviewCli.ts",
     "verify:floating": "node scripts/smoke-floating-ask.mjs",
     "verify:floating-geometry": "node scripts/smoke-floating-window-geometry.mjs",

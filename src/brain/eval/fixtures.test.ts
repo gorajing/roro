@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DECIDE_CASES, EXTRACT_CASES, BEHAVIORAL_EXTRACT_CASES } from './fixtures';
+import { DECIDE_CASES, EXTRACT_CASES, BEHAVIORAL_EXTRACT_CASES, type BehavioralTaxonomy } from './fixtures';
 import { FACT_SYSTEM_PROMPT, isPlausiblePreference } from '../extractFact';
 
 const COMMANDS = ['run_agent', 'answer', 'capture_screen', 'clarify'];
@@ -14,6 +14,12 @@ function ngrams(s: string, n: number): string[] {
 
 // The golden set is only as good as its hygiene — a typo'd expected command or a duplicate id silently
 // poisons the metric. This runs in CI (no model) to keep the fixtures well-formed and from shrinking.
+
+const TAXONOMIES: BehavioralTaxonomy[] = [
+  'noun-preference', 'behavioral-habit', 'hard-negative', 'marker-less', 'multi-fact', 'boolean-collapse', 'supersede',
+];
+/** Taxonomies whose cases expect a fact (and therefore carry a valueContract for the value-quality axis). */
+const FACT_TAXONOMIES = new Set<BehavioralTaxonomy>(['noun-preference', 'behavioral-habit', 'multi-fact', 'boolean-collapse', 'supersede']);
 
 describe('brain eval fixtures — well-formed golden set', () => {
   it('decide cases: unique ids, valid expected command, non-empty transcript, covers all 4 commands', () => {
@@ -39,35 +45,72 @@ describe('brain eval fixtures — well-formed golden set', () => {
     expect(EXTRACT_CASES.length).toBeGreaterThanOrEqual(8);
   });
 
-  it('behavioral value-quality cases: unique ids, all facts WITH a non-empty valueContract', () => {
+  it('behavioral cases: unique ids (across ALL extract sets), a known taxonomy, every taxonomy populated', () => {
     const ids = BEHAVIORAL_EXTRACT_CASES.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(BEHAVIORAL_EXTRACT_CASES.length).toBeGreaterThanOrEqual(5);
+    const allIds = [...ids, ...EXTRACT_CASES.map((c) => c.id)];
+    expect(new Set(allIds).size).toBe(allIds.length);
+    expect(BEHAVIORAL_EXTRACT_CASES.length).toBeGreaterThanOrEqual(45); // the 5→~50 expansion must not silently shrink
     for (const c of BEHAVIORAL_EXTRACT_CASES) {
-      expect(c.expect, c.id).toBe('fact');
-      expect((c.valueContract?.mustContainOneOf?.length ?? 0) > 0, `${c.id} missing valueContract.mustContainOneOf`).toBe(true);
+      expect(TAXONOMIES, `${c.id} has an unknown taxonomy`).toContain(c.taxonomy);
+      expect(c.input.transcript.trim().length, `${c.id} has empty transcript`).toBeGreaterThan(0);
+    }
+    for (const t of TAXONOMIES) {
+      const count = BEHAVIORAL_EXTRACT_CASES.filter((c) => c.taxonomy === t).length;
+      expect(count, `taxonomy '${t}' has too few cases`).toBeGreaterThanOrEqual(3);
     }
   });
 
-  it('behavioral cases all pass the marker gate (so a miss measures VALUE quality, not a gate reason)', () => {
+  it("fact-taxonomy cases expect 'fact' and carry a non-empty valueContract; null-taxonomy cases expect 'null'", () => {
     for (const c of BEHAVIORAL_EXTRACT_CASES) {
-      expect(isPlausiblePreference(c.input), `${c.id} lacks a PREFERENCE_MARKER → would be gated out, not scored`).toBe(true);
+      if (FACT_TAXONOMIES.has(c.taxonomy)) {
+        expect(c.expect, `${c.id} (${c.taxonomy}) must expect 'fact'`).toBe('fact');
+        expect((c.valueContract?.mustContainOneOf?.length ?? 0) > 0, `${c.id} missing valueContract.mustContainOneOf`).toBe(true);
+      } else {
+        expect(c.expect, `${c.id} (${c.taxonomy}) must expect 'null'`).toBe('null');
+        expect(c.valueContract, `${c.id} (${c.taxonomy}) must not carry a valueContract`).toBeUndefined();
+      }
     }
   });
 
-  it('ANTI-MEMORIZATION: behavioral ≠ detection, and NO fact fixture (either set) shares a 4-gram with the prompt', () => {
-    const extractTranscripts = new Set(EXTRACT_CASES.map((c) => c.input.transcript));
+  it('gate alignment: every case EXCEPT marker-less passes the marker gate; marker-less cases FAIL it', () => {
+    // Fact cases + hard negatives must reach the model (a miss measures the MODEL, not a gate reason).
+    // marker-less cases pin the gate's deliberate safe-direction miss: if the PREFERENCE_MARKERS list
+    // grows to cover one, this fails loudly and the case must be re-labeled (probably to a fact taxonomy)
+    // instead of the metric silently shifting.
     for (const c of BEHAVIORAL_EXTRACT_CASES) {
-      expect(extractTranscripts.has(c.input.transcript), `${c.id} duplicates an EXTRACT_CASES transcript`).toBe(false);
+      if (c.taxonomy === 'marker-less') {
+        expect(isPlausiblePreference(c.input), `${c.id} now PASSES the gate — re-label its taxonomy`).toBe(false);
+      } else {
+        expect(isPlausiblePreference(c.input), `${c.id} lacks a PREFERENCE_MARKER → would be gated out, not scored`).toBe(true);
+      }
     }
-    // No distinctive 4-word phrase of ANY fact-expecting fixture (behavioral OR detection) may appear in the
-    // prompt — that would let the model parrot the answer instead of generalizing. Covers both sets so a
-    // future prompt example can't silently collide with either.
+  });
+
+  it('ANTI-MEMORIZATION: no behavioral/fact fixture shares a 4-gram with the prompt', () => {
+    // No distinctive 4-word phrase of ANY behavioral fixture (either expectation) or fact-expecting
+    // detection fixture may appear in the prompt — that would let the model parrot the answer (fact OR
+    // null) instead of generalizing. Covers both sets so a future prompt example can't silently collide.
     const promptWords = words(FACT_SYSTEM_PROMPT).join(' ');
-    const factFixtures = [...BEHAVIORAL_EXTRACT_CASES, ...EXTRACT_CASES.filter((c) => c.expect === 'fact')];
-    for (const c of factFixtures) {
+    const checked = [...BEHAVIORAL_EXTRACT_CASES, ...EXTRACT_CASES.filter((c) => c.expect === 'fact')];
+    for (const c of checked) {
       for (const g of ngrams(c.input.transcript, 4)) {
         expect(promptWords.includes(g), `${c.id} shares phrase "${g}" with FACT_SYSTEM_PROMPT (memorization risk)`).toBe(false);
+      }
+    }
+  });
+
+  it('NO NEAR-DUPLICATES: no two extract/behavioral fixtures share a transcript 4-gram', () => {
+    // A near-duplicate pair double-counts one behavior and makes the accuracy number lie about coverage.
+    // 4-gram disjointness across ALL extract-side fixtures (detection + behavioral) is the same bar the
+    // prompt check uses — two cases may share a topic, never a distinctive phrase.
+    const all = [...EXTRACT_CASES, ...BEHAVIORAL_EXTRACT_CASES];
+    const seen = new Map<string, string>(); // 4-gram -> first case id that used it
+    for (const c of all) {
+      for (const g of new Set(ngrams(c.input.transcript, 4))) {
+        const prior = seen.get(g);
+        expect(prior === undefined || prior === c.id, `${c.id} shares phrase "${g}" with ${prior}`).toBe(true);
+        seen.set(g, c.id);
       }
     }
   });

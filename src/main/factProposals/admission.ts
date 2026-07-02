@@ -52,11 +52,20 @@ export interface AdmissionInput {
   existing: { key: string; value: string }[] | null;
 }
 
-export function admitProposals(raw: RawProposal[], input: AdmissionInput): AdmittedProposal[] {
-  const { digest, existing } = input;
+/** THE grounding receipt as a standalone predicate: the evidence must be a verbatim (normalized)
+ *  substring of the digest's provider-visible material, and long enough to prove anything. Used by
+ *  admitProposals below AND exported for the proposal eval (runProposalEval.ts), so the measured
+ *  grounding-rejection rate is computed by the SAME check admission enforces — never a re-derived copy. */
+export function isGroundedInDigest(evidence: string, digest: RunDigest): boolean {
   const haystack = canon(
     [digest.task, digest.finalText ?? '', ...digest.messages, ...digest.commands].join('\n'),
   );
+  const needle = canon(evidence);
+  return needle.length >= MIN_EVIDENCE_CHARS && haystack.includes(needle);
+}
+
+export function admitProposals(raw: RawProposal[], input: AdmissionInput): AdmittedProposal[] {
+  const { digest, existing } = input;
   const activeByKey = new Map((existing ?? []).map((f) => [normalizeKey(f.key), canon(f.value)]));
 
   const out: AdmittedProposal[] = [];
@@ -64,14 +73,12 @@ export function admitProposals(raw: RawProposal[], input: AdmissionInput): Admit
     if (out.length >= MAX_ADMITTED_PER_RUN) break;
     const normalizedKey = normalizeKey(p.key);
     const value = p.value.trim();
-    const evidence = canon(p.evidence);
     if (normalizedKey.length < MIN_KEY_CHARS || normalizedKey.length > MAX_KEY_CHARS) continue;
     if (value.length < MIN_VALUE_CHARS || value.length > MAX_VALUE_CHARS) continue;
     if (isUselessValue(value)) continue; // bare booleans/placeholders — shared guard, single source
     if (SECRET_SHAPE.test(value)) continue;
-    if (evidence.length < MIN_EVIDENCE_CHARS) continue;
     if (p.evidence.trim().length > MAX_EVIDENCE_CHARS) continue; // the ≤140 contract: reject, never truncate (verbatim stays verbatim)
-    if (!haystack.includes(evidence)) continue; // THE grounding receipt: unproven → dropped
+    if (!isGroundedInDigest(p.evidence, digest)) continue; // too short OR unproven → dropped
     // Exact (key,value) duplicate of an active fact adds nothing; a same-key DIFFERENT value is a
     // legitimate supersede candidate — admitted, the user's confirm decides.
     if (activeByKey.get(normalizedKey) === canon(value)) continue;
