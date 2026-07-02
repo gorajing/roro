@@ -79,7 +79,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22, not 20: the CDP harness (scripts/lib/packagedHarness.mjs) uses the global WebSocket,
+          # which is only a stable global from Node 22 — Node 20 fails with "WebSocket is not defined".
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
