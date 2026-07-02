@@ -119,3 +119,8 @@ roro-workspace-*.png
 # regenerable into the voice sub-package by packages/voice/scripts/stage-voice-assets.mjs. Never committed.
 packages/voice/public/
 src/brain/eval/latest.json
+
+# Voice runtime/model staging (dev-machine only; the app ships WITHOUT voice — packages/voice owns its own staging)
+public/models/
+public/ort/
+public/vad/
