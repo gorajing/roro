@@ -17,11 +17,11 @@ import { Notification } from 'electron';
 import { CH } from '../shared/ipc';
 import type { TurnInput } from '../shared/ipc';
 import { formatMemoryStatus, type ActionEvent, type AgentKind } from '../shared/events';
-import { newRunId, SCREEN_CAPTURE_STATUS_TEXT } from '../shared/events';
+import { newRunId } from '../shared/events';
 import type { Command, Decision, DecideInput } from '../shared/brain';
 import type { MemoryKind } from '../shared/memory';
 import { getExecutor } from '../executor';
-import { loadBrain, loadMemory, loadVision, type MemoryModule, type BrainModule } from './siblings';
+import { loadBrain, loadMemory, loadVision, type MemoryModule } from './siblings';
 import { getOwnerId } from './identity';
 import { buildRecallContext } from './memoryContext';
 import { extractAndStoreFact } from './factStore';
@@ -31,6 +31,7 @@ import { isCleanTree } from './gitTree';
 import { getRunRegistry, type DispatchSection } from './run/runRegistry';
 import { pumpRun } from './run/pump';
 import { buildStages, runGates, RUN_AGENT_GATES, RUN_TASK_GATES, type GateContext } from './run/gates';
+import { routeDecision, type RouterDeps } from './run/decisionRouter';
 import type { Turn } from './run/turnState';
 import { resolveWorkdir, tryResolveWorkdir } from './workdir';
 import { repoId as deriveRepoId } from '../memory2/repoId';
@@ -47,9 +48,6 @@ const RECALL_K = 5;
 // recent rows (which carry cosine 0). A positive caller-side cosine floor would drop exactly those,
 // nullifying the temporal-recall fix — so trust memory2's ranked top-k (0 = keep all it returns).
 const RECALL_MIN_SIMILARITY = 0;
-const DEFAULT_AGENT: AgentKind = 'codex';
-/** Gives the renderer one visible beat to show the privacy tell before an on-demand screen capture. */
-const SCREEN_CAPTURE_TELL_DWELL_MS = 500;
 
 // Lifecycle state (turns, preemption, the single-executor slot, the dispatch section) lives in
 // the typed run state machine: src/main/run/{turnState,runRegistry}.ts.
@@ -382,16 +380,10 @@ export async function runTurn(input: TurnInput): Promise<{ runId: string }> {
     return { runId };
   }
 
-  await actOnDecision(turn, input, decision, /* screenAlreadyCaptured */ false, memory);
+  await routeDecision(turn, input, decision, memory, ROUTER_DEPS);
   return { runId };
 }
 
-/**
- * Dispatch logic for a Decision; capture_screen may loop back into decide() exactly once.
- * `recalledMemory` is the recall computed in runTurn BEFORE this turn's transcript was stored —
- * the capture_screen re-decide reuses it rather than re-recalling (a second recall would
- * self-match the just-persisted transcript as top "RELATED PAST CONTEXT").
- */
 /** Draw the paw for a grounded box. BEST-EFFORT: never throws — the paw is a courtesy on top of the answer,
  *  and showing it is secondary to the grounding itself. The pointerOverlay (which imports electron) is loaded
  *  dynamically so the orchestrator's node unit tests don't statically pull in electron. */
@@ -404,170 +396,32 @@ async function showGroundedPoint(box: { x: number; y: number; w: number; h: numb
   }
 }
 
-async function actOnDecision(
-  turn: Turn,
-  input: TurnInput,
-  decision: Decision,
-  screenAlreadyCaptured: boolean,
-  recalledMemory: string | undefined,
-): Promise<void> {
-  const runId = turn.runId;
-  const { transcript, sessionId } = input;
-  const command: Command = decision.command;
-
-  // Always persist the narration the brain produced.
-  void rememberNarration(sessionId, decision.narration);
-
-  switch (command) {
-    case 'answer':
-    case 'clarify': {
-      // Push the narration for the renderer to speak; no executor, no run.
-      emitNarration(runId, decision.narration);
-      void runFactExtraction(sessionId, { transcript, narration: decision.narration, outcome: 'answered' });
-      turn.end({ kind: 'completed' });
-      return;
-    }
-
-    case 'capture_screen': {
-      if (screenAlreadyCaptured) {
-        // Guard against an infinite capture loop: if the brain asks again, fall back to
-        // answering with whatever narration it gave.
-        emitNarration(runId, decision.narration);
-        turn.end({ kind: 'completed' });
-        return;
-      }
-      turn.to({ kind: 'capturing' });
-      pushEvent({
-        kind: 'status',
-        runId,
-        text: SCREEN_CAPTURE_STATUS_TEXT,
-        ts: Date.now(),
-      });
-      await delay(SCREEN_CAPTURE_TELL_DWELL_MS);
-      if (turn.stopRequested) {
-        pushStopped(turn);
-        return;
-      }
-
-      // Fast locate path: a pure "point at X" turn (marked by the locate gate) grounds + points with ONE
-      // vision call and answers briefly — no caption + re-decide (which would double the vision latency).
-      if (decision.args.locate === true) {
-        let result: Awaited<ReturnType<BrainModule['groundTarget']>>;
-        try {
-          const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
-          const img = await vision.captureScreen();
-          // Grounding IS the core op here — let its errors (vision model missing, Ollama/API down) surface
-          // as a terminal failure (fail-loud), NOT get masked as an ordinary "I can't find that".
-          result = await brain.groundTarget(img, transcript);
-        } catch (err) {
-          pushEvent({ kind: 'run.failed', runId, ok: false, error: `vision failed: ${(err as Error).message}`, ts: Date.now() });
-          turn.end({ kind: 'failed', error: `vision failed: ${(err as Error).message}` });
-          return;
-        }
-        // Post-grounding stopCheckpoint: honor a Stop that arrived during capture/grounding,
-        // before showing the paw or speaking.
-        if (turn.stopRequested) {
-          pushStopped(turn);
-          return;
-        }
-        if (result) await showGroundedPoint(result.box, result.confidence); // best-effort paw
-        emitNarration(runId, result ? 'There it is.' : "I can't find that on your screen.");
-        turn.end({ kind: 'completed' });
-        return;
-      }
-
-      let screen: string;
-      try {
-        const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
-        // A NON-locate screen turn ("what's this error on my screen?") just captions the frame — no paw.
-        // The paw is a locate-turn thing (the fast path above); grounding here would queue a second call on
-        // the same serialized vision model and add a full grounding latency to an ordinary screen answer.
-        screen = await vision.askScreen(transcript, (img) => brain.describeScreen(img));
-      } catch (err) {
-        pushEvent({
-          kind: 'run.failed',
-          runId,
-          ok: false,
-          error: `vision failed: ${(err as Error).message}`,
-          ts: Date.now(),
-        });
-        turn.end({ kind: 'failed', error: `vision failed: ${(err as Error).message}` });
-        return;
-      }
-      // Loop back into decide() ONCE with the screen description, then re-dispatch. Reuse the
-      // pre-store recall (re-recalling here would self-match this turn's just-stored transcript).
-      let next: Decision;
-      turn.to({ kind: 'deciding', pass: 2 });
-      try {
-        next = await decideStreaming({ transcript, memory: recalledMemory, screen });
-      } catch (err) {
-        pushEvent({
-          kind: 'run.failed',
-          runId,
-          ok: false,
-          error: `decide (post-vision) failed: ${(err as Error).message}`,
-          ts: Date.now(),
-        });
-        turn.end({ kind: 'failed', error: `decide (post-vision) failed: ${(err as Error).message}` });
-        return;
-      }
-      // Post-re-decide stopCheckpoint: honor a Stop that arrived during the vision capture /
-      // second decide before recursing.
-      if (turn.stopRequested) {
-        pushStopped(turn);
-        return;
-      }
-      await actOnDecision(turn, input, next, /* screenAlreadyCaptured */ true, recalledMemory);
-      return;
-    }
-
-    case 'run_agent': {
-      turn.to({ kind: 'gating' });
-      const task =
-        typeof decision.args.task === 'string'
-          ? decision.args.task
-          : transcript;
-      // Opt-in proof capture (NOOP unless RORO_TRACE=1). Only the PRIMARY (non-screen) decision is captured,
-      // so the reconstructed prompt from {transcript, recalledMemory} is byte-exact; the vision re-decide
-      // path is skipped (its prompt also carried the screen, which isn't reconstructed here).
-      if (!screenAlreadyCaptured) {
-        captureDecide(
-          sessionId,
-          command,
-          transcript,
-          recalledMemory,
-          typeof decision.args.task === 'string' ? decision.args.task : undefined,
-        );
-      }
-      const agent: AgentKind =
-        decision.args.agent === 'claude' ? 'claude' : DEFAULT_AGENT;
-
-      // The run_agent gate pipeline: workdir (fail-loud repo) → readiness (+ narration once the
-      // selected coding agent is actually startable) → destructive confirm → stopCheckpoint →
-      // section-protected dispatch (fresh clean-tree check inside; resolves at DISPATCH — the
-      // action stream arrives over push channels; the pump commits synchronously).
-      await runGates(RUN_AGENT_GATES, STAGES, {
-        turn,
-        sessionId,
-        task,
-        agent,
-        narration: decision.narration,
-        factCtx: { transcript, narration: decision.narration, task },
-      });
-      return;
-    }
-
-    default: {
-      // Exhaustiveness guard: adding a Command must be handled above. The never-assignment fails the
-      // build until it is; if that is ever bypassed at runtime, END the run (a missing case used to
-      // fall through to a silent return — a hung run that never pushes run-end).
-      const _exhaustive: never = command;
-      pushEvent({ kind: 'run.failed', runId, ok: false, error: `unhandled command: ${String(_exhaustive)}`, ts: Date.now() });
-      turn.end({ kind: 'failed', error: `unhandled command: ${String(_exhaustive)}` });
-      return;
-    }
-  }
-}
+/** The decision router's effect sinks (src/main/run/decisionRouter.ts owns the bounded two-pass
+ *  routing; this facade injects the vision/brain loads and the push/persist effects). */
+const ROUTER_DEPS: RouterDeps = {
+  rememberNarration,
+  emitNarration,
+  pushStatus: (runId, text) => {
+    pushEvent({ kind: 'status', runId, text, ts: Date.now() });
+  },
+  failRun,
+  pushStopped,
+  runFactExtraction,
+  captureDecide,
+  decide: decideStreaming,
+  ground: async (transcript) => {
+    const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
+    const img = await vision.captureScreen();
+    return brain.groundTarget(img, transcript);
+  },
+  caption: async (transcript) => {
+    const [vision, brain] = await Promise.all([loadVision(), loadBrain()]);
+    return vision.askScreen(transcript, (img) => brain.describeScreen(img));
+  },
+  showGroundedPoint,
+  delay,
+  runAgentGates: (ctx) => runGates(RUN_AGENT_GATES, STAGES, ctx),
+};
 
 async function rememberNarration(sessionId: string, text: string): Promise<void> {
   if (!text) return;
