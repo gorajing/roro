@@ -1,18 +1,39 @@
-// src/main/orchestrator.ts — the MAIN-process orchestrator core.
+// src/main/orchestrator.ts — the MAIN-process orchestrator FACADE.
 //
-// turnRun (the PRIMARY entrypoint): final transcript -> memory.recall -> brain.decide
-// (streaming reasoning/content to the renderer) -> dispatch on Decision.command:
-//   - run_agent      -> executor.run(...) for-await the ActionEvent stream
+// The public surface is runTurn, runTask, cancelTask, cancelAllRuns, resolveDestructiveConfirm.
+// The lifecycle itself is the typed run state machine under src/main/run/
+// (docs/plans/run-state-machine.md):
+//   - turnState.ts      the TURN machine — UI truth ("has runEnd been pushed?"): minted →
+//                       deciding{1|2} → capturing → gating → confirming → dispatching → running
+//                       → ended{cause}; `stopping` is preemption AS a phase, consumed by
+//                       explicit stopCheckpoints
+//   - runRegistry.ts    all live Turns + the single-executor SLOT (occupancy = a committed
+//                       pump, freed only at stream drain) + the DispatchSection (the TOCTOU
+//                       lock as a type) + the total requestStop
+//   - pump.ts           the PUMP machine — process truth ("has the child's stream drained?"):
+//                       flowing → finishing → draining → closed; Stop watchdog, runId re-stamp,
+//                       mid-run destructive guard, no-verdict synthesis
+//   - gates.ts          the pre-dispatch pipeline: RUN_AGENT_GATES / RUN_TASK_GATES composed
+//                       from one stage library (workdir, readiness, destructiveConfirm,
+//                       stopCheckpoint, dispatch)
+//   - decisionRouter.ts the bounded two-pass decide loop (capture_screen re-decides ONCE;
+//                       the pass lives in the Turn phase)
+//
+// runTurn (the PRIMARY entrypoint): final transcript -> memory.recall -> brain.decide
+// (streaming reasoning/content to the renderer) -> routeDecision:
+//   - run_agent      -> RUN_AGENT_GATES -> pumpRun over executor.run(...)'s ActionEvent stream
 //   - answer/clarify -> push narration (a synthetic 'message' event), no executor
-//   - capture_screen -> vision.ask -> decide() ONCE more with the screen, then re-dispatch
+//   - capture_screen -> vision (locate fast path, or caption) -> decide() ONCE more, re-route
 //
-// runTask/cancelTask: direct executor dispatch (used after decide() already produced a
-// command). One AbortController per run; cancelTask aborts it (the CLI executors translate
-// an aborted signal into a run.failed('aborted')).
+// runTask/cancelTask: direct executor dispatch bypassing the brain (RUN_TASK_GATES). One
+// AbortController per run, created inside the dispatch section and owned by the pump;
+// cancelTask -> registry.requestStop (the CLI executors translate an aborted signal into a
+// run.failed('aborted')).
 //
 // STREAMING RULE (BUILD_GUIDE): ipcMain.handle is request/response only. ALL token/action
 // streams go over guarded MAIN->renderer push channels (CH.actionEvent, CH.runEnd, CH.brainReasoning,
-// CH.brainContent). The invoke promise resolves only with the final {runId}.
+// CH.brainContent). The invoke promise resolves only with the final {runId}. This facade owns the
+// IPC push sinks + the memory/fact side-effects it injects into the machine as deps.
 import { Notification } from 'electron';
 import { CH } from '../shared/ipc';
 import type { TurnInput } from '../shared/ipc';
@@ -65,16 +86,16 @@ function pushConfirmRequest(req: { runId: string; summary: string }): void {
 
 /** Emit a synthetic terminal failure (preempt / stop) + end the turn — the stopCheckpoint's
  *  consumer: it turns a pending `stopping` phase into ended{stopped}. */
-function pushStopped(turn: Turn, error = 'stopped'): void {
-  pushEvent({ kind: 'run.failed', runId: turn.runId, ok: false, error, ts: Date.now() });
+function pushStopped(turn: Turn): void {
+  pushEvent({ kind: 'run.failed', runId: turn.runId, ok: false, error: 'stopped', ts: Date.now() });
   turn.end({ kind: 'stopped' });
 }
 
 /**
  * Step 1 of the destructive gate (used by BOTH run_agent and the brain-bypassing runTask): classify
  * the task, and if dangerous require explicit approval via the dedicated CH.confirmResolve channel
- * (15s default-DENY). NO lock is held here (the confirm can take up to 15s). The clean-tree check is
- * NOT here — it's done inside guardedDispatch so it's fresh at dispatch (see that fn).
+ * (15s default-DENY). NO dispatch section is held here (the confirm can take up to 15s). The
+ * clean-tree check is NOT here — the dispatch gate does it in-section so it's fresh at dispatch.
  */
 async function confirmIfDestructive(
   runId: string,
@@ -579,9 +600,8 @@ export async function runTask(prompt: string, agent: AgentKind): Promise<{ runId
 }
 
 /**
- * Stop / preempt a turn (CH.cancelTask). Marks the turn preempted (honored at the decide/confirm
- * boundary if no executor is registered yet) AND aborts the executor if it's running (which arms the
- * Stop watchdog). If runId is omitted, targets the most recent run.
+ * Stop / preempt a turn (CH.cancelTask). Delegates to the registry's total requestStop.
+ * If runId is omitted, targets the most recent run.
  */
 export function cancelTask(runId?: string): void {
   // requestStop is total: pre-dispatch phases flip to 'stopping' (honored at the next

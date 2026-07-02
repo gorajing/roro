@@ -1,6 +1,6 @@
 // src/main/factProposals/runner.ts — fire-and-forget orchestration of one post-run proposal ask.
 //
-// Called (flag-gated) from dispatchExecutor's terminal branch, exactly like runFactExtraction:
+// Called (flag-gated) from the pump's terminal-verdict sink (startPump's onVerdict), exactly like runFactExtraction:
 // nothing here may disturb the turn — every failure is caught, traced, and swallowed. ONE proposer
 // slot exists globally: a run completing while an ask is in flight SKIPS (never queues asks, never
 // contends with the user's next coding turn). cancelAllProposers() is wired next to cancelAllRuns()

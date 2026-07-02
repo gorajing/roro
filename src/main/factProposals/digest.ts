@@ -1,6 +1,6 @@
 // src/main/factProposals/digest.ts — accumulate a bounded RunDigest from the run's own event stream.
 //
-// Fed from dispatchExecutor's existing for-await loop (no stream fork, no second consumer). Caps
+// Fed from the pump's emit sink in startPump (no stream fork, no second consumer). Caps
 // bound both memory and the proposal prompt's size; content is ONLY what the executor itself
 // emitted (plus the dispatched task, added at finish()) — see types.ts's privacy invariant.
 
