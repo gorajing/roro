@@ -29,13 +29,13 @@ import { classifyDestructive, classifyDestructiveCommand } from './destructive';
 import { requestConfirm } from './confirmGate';
 import { isCleanTree } from './gitTree';
 import { getRunRegistry, type DispatchSection } from './run/runRegistry';
+import { pumpRun } from './run/pump';
 import type { Turn } from './run/turnState';
 import { resolveWorkdir, tryResolveWorkdir } from './workdir';
 import { repoId as deriveRepoId } from '../memory2/repoId';
 import { isPlausiblePreference, type FactExtractInput } from '../brain/extractFact';
 import { buildDecisionPrompt } from '../brain/decisionPrompt';
 import { sendToPetWindow } from './safeSend';
-import { isActivityEvent, silentRunWarning } from '../executor/formatDrift';
 import { guardDeferredEnv } from '../shared/releaseChannel';
 import { createDigestAccumulator } from './factProposals/digest';
 import type { RunDigest } from './factProposals/types';
@@ -47,8 +47,6 @@ const RECALL_K = 5;
 // nullifying the temporal-recall fix — so trust memory2's ranked top-k (0 = keep all it returns).
 const RECALL_MIN_SIMILARITY = 0;
 const DEFAULT_AGENT: AgentKind = 'codex';
-/** How long after an abort we force a terminal event so Stop is provably terminal. */
-const STOP_WATCHDOG_MS = 1500;
 /** Gives the renderer one visible beat to show the privacy tell before an on-demand screen capture. */
 const SCREEN_CAPTURE_TELL_DWELL_MS = 500;
 
@@ -148,12 +146,6 @@ function notifyJobDone(ok: boolean, detail?: string): void {
   } catch (err) {
     console.error('[orchestrator] notification failed:', (err as Error).message);
   }
-}
-
-function terminalEventText(e: ActionEvent): string | undefined {
-  if (e.kind === 'run.completed') return e.finalText;
-  if (e.kind === 'run.failed') return e.error;
-  return undefined;
 }
 
 function unapprovedDestructiveCommandReason(e: ActionEvent, destructiveApproved: boolean, repo?: string): string | null {
@@ -288,8 +280,11 @@ function emitNarration(runId: string, text: string): void {
 }
 
 /**
- * Dispatch the executor for a run, streaming every ActionEvent to the renderer and memory.
- * Owns the AbortController lifecycle for `runId`. Resolves when the stream ends.
+ * Dispatch the executor for a run: resolve the executor, commit the pump into the slot, and hand
+ * the stream to pumpRun (src/main/run/pump.ts — watchdog, re-stamp, destructive guard, no-verdict
+ * synthesis live there). This caller owns WHAT flows into the sinks: the digest accumulator stays
+ * HERE so the factProposals digest is built ONLY from the dispatched prompt + the run's own
+ * events. Resolves when the stream truly ends.
  */
 async function dispatchExecutor(
   turn: Turn,
@@ -307,89 +302,22 @@ async function dispatchExecutor(
   // a bounded digest of the run's OWN events for the post-run proposal ask. Dark unless the
   // deferred-env flag is on — no accumulation, no ask, zero cost.
   const digestAcc = guardDeferredEnv(process.env).RORO_EXECUTOR_FACTS === '1' ? createDigestAccumulator() : null;
-  let terminalSeen = false;
-  let uiEnded = false;
-  let slotReleased = false;
-  let watchdog: ReturnType<typeof setTimeout> | null = null;
   section.commit(controller); // occupies the single-executor slot synchronously (turn -> running)
-
-  // UI-terminal: push the terminal failure (if forced) + end the turn (runEnd) exactly once. Does
-  // NOT free the executor slot — a watchdog-forced Stop is terminal to the USER while the possibly-
-  // still-alive child keeps the single-executor slot, so guardedDispatch won't start a concurrent
-  // run. (EndCause fidelity for stream verdicts arrives with the typed pump extraction; until then
-  // only forced ends carry a distinct cause.)
-  const endUi = (forcedError?: string): void => {
-    if (uiEnded) return;
-    uiEnded = true;
-    if (forcedError && !terminalSeen) {
-      pushEvent({ kind: 'run.failed', runId, ok: false, error: forcedError, ts: Date.now() });
-      notifyJobDone(false, forcedError);
-    }
-    turn.end(
-      forcedError === 'stopped'
-        ? { kind: 'stopped' }
-        : forcedError
-          ? { kind: 'failed', error: forcedError }
-          : { kind: 'completed' },
-    );
-  };
-  // Free the executor slot ONLY when the stream has truly ended (the child is confirmed gone), so a
-  // new run never starts against a repo an orphaned child may still be mutating.
-  const releaseSlot = (): void => {
-    if (slotReleased) return;
-    slotReleased = true;
-    if (watchdog) {
-      clearTimeout(watchdog);
-      watchdog = null;
-    }
-    getRunRegistry().releasePump(runId);
-  };
-
-  // Stop watchdog: if the child doesn't honor abort within STOP_WATCHDOG_MS, make the run terminal to
-  // the UI (so Stop is provably terminal). It does NOT free the slot — the slot frees when the stream
-  // truly ends. (The executor adapter SIGKILLs its child on abort, so the stream normally ends fast.)
-  controller.signal.addEventListener(
-    'abort',
-    () => {
-      watchdog = setTimeout(() => endUi('stopped'), STOP_WATCHDOG_MS);
-    },
-    { once: true },
-  );
-
-  try {
-    const executor = getExecutor(agent);
-    let activityCount = 0; // format-drift tripwire: a completed run that mapped ZERO activity is suspicious
-    for await (const ev of executor.run({
-      repo,
-      prompt,
-      agent,
-      signal: controller.signal,
-    })) {
-      // Already terminal (watchdog fired): DROP late events but keep DRAINING the stream until it
-      // truly ends, so releaseSlot (in finally) only frees the single-executor slot once the child
-      // has actually exited (the abort signal kills it). Breaking here would free the slot while an
-      // aborted-but-slow child is still alive, admitting a concurrent run against the same repo.
-      if (uiEnded) continue;
-      // Re-stamp to the orchestrator's runId — the executors mint their OWN run ids, but activeRuns
-      // (and so Stop/cancelTask) is keyed by THIS runId. Without this, a targeted Stop from the
-      // renderer (which sees the event's runId) never finds the controller. One id per turn.
-      const stamped = { ...ev, runId } as ActionEvent;
-      const destructiveReason = unapprovedDestructiveCommandReason(stamped, destructiveApproved, repo);
-      if (destructiveReason) {
-        controller.abort();
-        endUi(`blocked unapproved destructive command: ${destructiveReason}`);
-        continue;
-      }
-      pushEvent(stamped);
-      if (isActivityEvent(stamped.kind)) activityCount++;
-      digestAcc?.see(stamped);
-      // Native "job done" notification on terminal events — visible even when the
-      // window is hidden or in floating mode.
-      if (stamped.kind === 'run.completed' || stamped.kind === 'run.failed') {
-        terminalSeen = true;
-        const drift = silentRunWarning(activityCount, stamped.kind);
-        if (drift) console.warn(drift);
-        notifyJobDone(stamped.kind === 'run.completed', terminalEventText(stamped));
+  const executor = getExecutor(agent);
+  await pumpRun(
+    runId,
+    { events: executor.run({ repo, prompt, agent, signal: controller.signal }), controller },
+    {
+      emit: (e) => {
+        pushEvent(e);
+        digestAcc?.see(e);
+      },
+      remember: (e) => {
+        void rememberEvent(sessionId, e);
+      },
+      notify: notifyJobDone,
+      guard: (e) => unapprovedDestructiveCommandReason(e, destructiveApproved, repo),
+      onVerdict: (terminal) => {
         // Off-critical-path: extract AT MOST one durable fact from this turn (supersede-not-
         // overwrite). Fire-and-forget; this survives the Phase-B dispatch-return change.
         if (factCtx) {
@@ -397,51 +325,23 @@ async function dispatchExecutor(
             transcript: factCtx.transcript,
             narration: factCtx.narration,
             task: factCtx.task,
-            outcome: stamped.kind === 'run.completed' ? 'completed' : 'failed',
+            outcome: terminal.kind === 'run.completed' ? 'completed' : 'failed',
           });
         }
         // Executor-facts pilot: one post-run proposal ask, only on a COMPLETED run (a failed run
         // teaches about the repo, not the user). Fire-and-forget like runFactExtraction.
-        if (digestAcc && stamped.kind === 'run.completed') {
-          void proposeFactsFromRun(digestAcc.finish({ runId, sessionId, repo, agent, task: prompt, finalText: stamped.finalText }));
+        if (digestAcc && terminal.kind === 'run.completed') {
+          void proposeFactsFromRun(digestAcc.finish({ runId, sessionId, repo, agent, task: prompt, finalText: terminal.finalText }));
         }
-      }
-      // Fire-and-forget memory persistence so it never stalls the event stream.
-      void rememberEvent(sessionId, stamped);
-    }
-    if (!terminalSeen && !uiEnded && !controller.signal.aborted) {
-      // The executor stream ended with NO terminal event. Both adapters emit a terminal on success AND
-      // failure (+ exitAccounting.ts now fails loud on a nonzero/killed exit), so a MISSING verdict means
-      // the child died/exited without completing — FAIL LOUD, never synthesize a false success (which would
-      // also persist a fabricated outcome to memory). This is the catch-all behind the adapter accounting.
-      const failed: ActionEvent = {
-        kind: 'run.failed',
-        runId,
-        ok: false,
-        error: 'the coding agent ended without a result (no completion or failure was reported)',
-        ts: Date.now(),
-      };
-      pushEvent(failed);
-      notifyJobDone(false, failed.error);
-      void rememberEvent(sessionId, failed);
-    }
-  } catch (err) {
-    // The executors normally translate failures into a run.failed event, but guard the
-    // for-await itself so a thrown error still produces a terminal event + runEnd.
-    if (!terminalSeen && !uiEnded) {
-      pushEvent({
-        kind: 'run.failed',
-        runId,
-        ok: false,
-        error: (err as Error).message,
-        ts: Date.now(),
-      });
-      notifyJobDone(false, (err as Error).message);
-    }
-  } finally {
-    releaseSlot();
-    endUi();
-  }
+      },
+      endUi: (cause) => {
+        turn.end(cause);
+      },
+      releaseSlot: () => {
+        getRunRegistry().releasePump(runId);
+      },
+    },
+  );
 }
 
 /**
