@@ -1,4 +1,4 @@
-// src/renderer/voice/kokoroVoiceEngine.ts — the cat's MOUTH: play synthesized speech + drive lip-sync.
+// packages/voice/src/kokoroVoiceEngine.ts — the cat's MOUTH: play synthesized speech + drive lip-sync.
 //
 // The play/lipsync/stop/barge-in CORE, with everything hardware/model-specific injected so it's unit-
 // testable with fakes: `synthesize` (Kokoro raw-ONNX, an AsyncIterable so streaming + one-shot look the

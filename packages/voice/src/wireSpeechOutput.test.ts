@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { wireSpeechOutput } from './wireSpeechOutput';
-import type { ActionEvent } from '../../shared/events';
+import type { ActionEvent } from '../../../src/shared/events';
 
 function fakeBus() {
   let cb: ((e: ActionEvent) => void) | undefined;

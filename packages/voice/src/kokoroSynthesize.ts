@@ -1,4 +1,4 @@
-// src/renderer/voice/kokoroSynthesize.ts — the REAL on-device TTS: Kokoro-82M via raw-ONNX (transformers.js).
+// packages/voice/src/kokoroSynthesize.ts — the REAL on-device TTS: Kokoro-82M via raw-ONNX (transformers.js).
 //
 // License-clean by construction: we do NOT use kokoro-js (it statically imports `phonemizer` → bundles GPLv3
 // eSpeak) — we reimplement its tiny generate against @huggingface/transformers directly, with `phonemize`

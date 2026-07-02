@@ -7,21 +7,17 @@
 // component's tsc is green in isolation.
 
 import type { ActionEvent, AgentKind } from '../../shared/events';
-import type { TurnInput, MicStatus, BootstrapStatusMsg, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg } from '../../shared/ipc';
+import type { TurnInput, BootstrapStatusMsg, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg } from '../../shared/ipc';
 
 /** The slice of window.companion this component consumes. */
 interface CompanionBridgeLike {
   onActionEvent(cb: (e: ActionEvent) => void): () => void;
-  /** macOS TCC mic gate: status() reads it (no prompt); request() triggers the consent prompt (needs a user gesture). */
-  mic?: { status(): Promise<MicStatus>; request(): Promise<MicStatus> };
   onRunEnd?(cb: (p: { runId: string }) => void): () => void;
   turnRun?(input: TurnInput): Promise<{ runId: string }>;
   /** Abort the most recent run when called with no id (orchestrator aborts the latest). */
   cancelTask?(runId?: string): Promise<void>;
   /** Move the current floating BrowserWindow by screen-pixel deltas. */
   moveWindowBy?(delta: { dx: number; dy: number }): Promise<void>;
-  /** Subscribe to global demo mute toggles. */
-  onMicToggleMute?(cb: () => void): () => void;
   /** MAIN asks the renderer to open + focus the floating Ask input (⌘⇧Space summon). */
   onFocusAsk?(cb: () => void): () => void;
   /** Destructive-confirm request from MAIN (the renderer shows a confirm chip). */

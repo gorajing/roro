@@ -20,10 +20,6 @@ vi.mock('electron', () => ({
   shell: { openExternal: h.openExternal },
 }));
 
-vi.mock('./mic', () => ({
-  getMicStatus: () => 'unknown',
-  ensureMicAccess: async () => 'unknown',
-}));
 vi.mock('./orchestrator', () => ({
   runTurn: vi.fn(),
   runTask: vi.fn(),

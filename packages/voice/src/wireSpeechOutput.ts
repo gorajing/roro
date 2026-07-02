@@ -1,4 +1,4 @@
-// src/renderer/voice/wireSpeechOutput.ts — route the assistant's committed message to local TTS (mouth).
+// packages/voice/src/wireSpeechOutput.ts — route the assistant's committed message to local TTS (mouth).
 //
 // The cat "speaks" by rendering the EXISTING `message` ActionEvent through the local backend's speak()
 // — no new event kind, no orchestrator change (mouth-not-brain). It only speaks while voice is SUMMONED:
@@ -6,7 +6,7 @@
 // disturbs the event stream. (message.delta sentence-streaming lands in Phase 3; Phase 0 speaks the final
 // `message` text only.)
 
-import type { ActionEvent } from '../../shared/events';
+import type { ActionEvent } from '../../../src/shared/events';
 
 export interface SpeechOutputDeps {
   onActionEvent(cb: (e: ActionEvent) => void): () => void;

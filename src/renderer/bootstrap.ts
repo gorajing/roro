@@ -1,16 +1,16 @@
 // src/renderer/bootstrap.ts — wires the whole renderer together.
 //
 // Order:
-//   1. load config (on-device voice feature flags + window mode)
+//   1. load config (window mode + the dev/test harness flags)
 //   2. build the character (the procedural pixel cat) on #cat-canvas
 //   3. subscribe to the executor ActionEvent stream + brain reasoning
-//   4. bind the Mute control; optionally mount the on-device voice path (dev flags)
+//   4. mount the typed prompt + floating Ask surfaces
 //
-// There is no cloud-voice call. The default surface is the typed prompt path; the
-// on-device voice path (Silero VAD + whisper STT + Kokoro TTS) mounts only behind
-// RORO_*_VOICE flags. AudioContext still needs a user gesture to unlock.
+// Voice is CUT from v0 and lives ENTIRELY in packages/voice (outside the app's dependency graph).
+// The typed prompt path is the only turn surface; the re-integration seam is src/shared/voiceBackend.ts
+// (see packages/voice/README.md for how voice mounts back in).
 
-import { loadConfig, voiceSurfaceEnabled } from './config';
+import { loadConfig } from './config';
 import { sessionId } from './session';
 import { createCharacter } from './character/driver';
 import { CaptionPanel, ActionTimeline } from './character/captions';
@@ -28,15 +28,6 @@ import { mountWorkdirBanner } from './bootstrap/workdirBanner';
 import { mountTypedPrompt } from './bootstrap/typedPrompt';
 import { getCompanion } from './events/bridge';
 import { runState } from './events/runState';
-import { mountLocalVoiceMode } from './voice/mountLocalVoiceMode';
-import { activateVoice } from './voice/voiceActivation';
-import { createFakeVoiceEngine } from './voice/fakeVoiceEngine';
-import { createVadVoiceEngine } from './voice/vadVoiceEngine';
-import type { NativeVoiceEngine } from './voice/voiceLocalAdapter';
-import type { VoiceModeState } from './voice/voiceModeState';
-import type { KokoroSpeaker } from './voice/kokoroVoiceEngine';
-import { createVoiceSelection, listVoicePacks } from './voice/voicePacks';
-import type { CharacterDriver } from './character/types';
 
 function el<T extends HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
@@ -47,38 +38,8 @@ function setStatus(text: string): void {
   if (s) s.textContent = text;
 }
 
-/**
- * Build the cat's MOUTH (Phase 3): the Kokoro speaker driving lip-sync through the driver. Dynamically
- * imports the Kokoro glue (transformers.js + model) so it only loads when ttsVoice is on. A dedicated 24kHz
- * AudioContext matches Kokoro's rate (no resample); it's resumed on each speak (the cat replies after the
- * user has interacted, so the autoplay gesture is satisfied). The LipSyncDriver adapts the driver: amplitude
- * → setMouthOpen (its always-on AmplitudeLipSync), and start/stop → setTalking (which rests the mouth to 0).
- */
-async function buildKokoroSpeaker(
-  driver: Pick<CharacterDriver, 'setTalking' | 'setMouthOpen'>,
-  voiceId: () => string, // the selected voice-pack id, read per-utterance (Phase 5 cosmetic)
-): Promise<KokoroSpeaker> {
-  const { createKokoroVoiceEngine } = await import('./voice/kokoroVoiceEngine');
-  const { synthStream } = await import('./voice/kokoroSynthesize');
-  const ctx = new AudioContext({ sampleRate: 24000 });
-  return createKokoroVoiceEngine({
-    synthesize: (text, opts) => {
-      void ctx.resume(); // idempotent; ensure the context is running before playback
-      return synthStream(text, opts);
-    },
-    audio: ctx,
-    lipSync: {
-      start: () => driver.setTalking(true),
-      stop: () => driver.setTalking(false),
-      setAmplitude: (v) => driver.setMouthOpen(v),
-    },
-    voiceId,
-  });
-}
-
 export async function bootstrap(): Promise<void> {
   const config = loadConfig();
-  const voiceEnabled = voiceSurfaceEnabled(config);
   document.documentElement.classList.toggle('floating-window', config.floatingWindow);
   document.body.classList.toggle('floating-window', config.floatingWindow);
 
@@ -181,71 +142,17 @@ export async function bootstrap(): Promise<void> {
   // interactions (pet/summon/task), which is what makes idle->sleep reachable.
   getCompanion()?.onCursor?.((target) => driver.setGaze?.(target));
 
-  // The Mute button is the only call-era control that survives: it drives the SHARED mic-mute state the
-  // on-device voice path reads. Start/End-call were the legacy Vapi cloud surface and are gone.
-  const muteBtn = el<HTMLButtonElement>('mute-btn');
-  const voiceModeBtn = el<HTMLButtonElement>('voice-mode-btn');
-  if (voiceModeBtn) voiceModeBtn.hidden = !voiceEnabled;
-  if (muteBtn) muteBtn.hidden = !voiceEnabled;
-
-  let micMuted = false;
-  // Set by the local-voice block (below) when the on-device path is mounted, so the mic-mute toggle
-  // reaches the engine's at-the-source mute gate (deaf cat — no ear-perk, no STT compute). undefined
-  // when the on-device path isn't mounted (typed-only default).
-  let localVoiceMute: ((muted: boolean) => void) | undefined;
-  // Set by the local-voice block when the on-device engine mounts: toggles Voice Mode (off → probe + consent
-  // + summon; on → unsummon). Undefined when no voice engine is built this session — the button then explains
-  // how to enable it rather than being a dead control.
-  let voiceToggle: (() => void) | undefined;
-
-  const setMicMuted = (next: boolean, status?: string): void => {
-    micMuted = next;
-    driver.setMuted(next);
-    localVoiceMute?.(next); // on-device path: mute the cat's ears at the source (no perk, no whisper)
-    if (muteBtn) muteBtn.textContent = next ? 'Unmute' : 'Mute';
-    setStatus(status ?? (next ? 'Roro mic muted. Judge-talk is ignored.' : 'Roro mic live.'));
-  };
-
   if (config.floatingWindow) {
     canvas.setAttribute('role', 'button');
     canvas.setAttribute('aria-label', 'Pet or move Roro');
-    canvas.title = voiceEnabled
-      ? 'Click or hold to pet Roro. Drag to move. Right-click or M to mute.'
-      : 'Click or hold to pet Roro. Drag to move.';
+    canvas.title = 'Click or hold to pet Roro. Drag to move.';
     canvas.style.cursor = 'grab';
     // The cat's body carries ONLY affection + move (interaction spec §4.1). Talk
     // is no longer a body gesture — it moves to the menu/console (Phase B/C).
     installFloatingWindowGesture(canvas, {
       onPet: () => { driver.poke?.(); driver.pet?.(); },
     });
-    if (voiceEnabled) {
-      canvas.addEventListener('contextmenu', (ev) => {
-        ev.preventDefault();
-        setMicMuted(!micMuted);
-      });
-      document.addEventListener('keydown', (ev) => {
-        if (ev.key.toLowerCase() !== 'm' || ev.metaKey || ev.ctrlKey || ev.altKey) return;
-        ev.preventDefault();
-        setMicMuted(!micMuted);
-      });
-    }
   }
-
-  getCompanion()?.onMicToggleMute?.(() => {
-    if (!voiceEnabled) return;
-    setMicMuted(!micMuted);
-  });
-
-  muteBtn?.addEventListener('click', () => {
-    if (!voiceEnabled) return;
-    setMicMuted(!micMuted);
-  });
-
-  voiceModeBtn?.addEventListener('click', () => {
-    if (!voiceEnabled) return;
-    if (voiceToggle) voiceToggle();
-    else setStatus('Voice is not part of this build yet — the typed coding companion is ready.');
-  });
 
   // Text-input path: feed a typed task straight to MAIN's orchestrator. It shares the same
   // accepted-turn Stop contract as floating Ask: no-id cancel before the run id is known, then
@@ -258,137 +165,6 @@ export async function bootstrap(): Promise<void> {
     setStatus,
   });
 
-  // The ON-DEVICE voice path (mouth-not-brain), behind dev flags until the full whisper/Silero/Kokoro
-  // engine lands. Default (all flags off) mounts no voice surface — only the typed prompt path is live.
-  if (voiceEnabled) {
-    const c = getCompanion();
-    // The on-device engine is composed from ears + transcript + mouth, each behind its own flag:
-    //   vadVoice → REAL Silero VAD (Phase 1: ear-perk); sttVoice → + whisper STT (Phase 2: transcript);
-    //   ttsVoice → + Kokoro TTS (Phase 3: the mouth). Any real flag mounts the VAD. else fakeVoice → a
-    //   scripted engine. All glue is DYNAMICALLY imported here only, so its WASM + model loads never touch
-    //   non-voice users or the fake path.
-    const useRealVad = config.sttVoice || config.vadVoice || config.ttsVoice;
-    const fakeEngine = useRealVad ? undefined : createFakeVoiceEngine();
-    // Phase 5: the selected voice pack (only when the mouth is on). The engine reads voiceSel.current() per
-    // utterance, so __roroVoice.setVoice switches mid-session. A bad config / set falls back to af_heart.
-    const voiceSel = config.ttsVoice ? createVoiceSelection(config.voicePack) : undefined;
-    let engine: NativeVoiceEngine;
-    if (useRealVad) {
-      const { createSileroVad } = await import('./voice/sileroVad');
-      // createWhisperTranscribe() returns synchronously and warms the ~77MB base.en model in the BACKGROUND
-      // (the ears are live immediately; only the first transcript awaits any remaining load). progress → status.
-      const transcribe = config.sttVoice
-        ? (await import('./voice/whisperTranscribe')).createWhisperTranscribe((p) => {
-            if (p.status === 'progress') setStatus(`Loading speech model… ${Math.round(p.progress)}%`);
-            // Consent-gated now: the mic is closed until the user clicks Voice Mode — don't say "speak".
-            else if (p.status === 'ready') setStatus('Speech model ready — click 🎙 Voice Mode to talk to Roro.');
-          })
-        : undefined;
-      const speaker = voiceSel ? await buildKokoroSpeaker(driver, () => voiceSel.current()) : undefined;
-      engine = createVadVoiceEngine(createSileroVad, transcribe, speaker);
-    } else {
-      engine = fakeEngine!;
-    }
-    // Model ids — must match whisperTranscribe.ts / kokoroSynthesize.ts (and the staged public/models/ dirs).
-    const STT_MODEL_ID = 'onnx-community/whisper-base.en';
-    const TTS_MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX';
-    const want = { stt: config.sttVoice, tts: config.ttsVoice };
-
-    // The HONEST FSM indicator: the button label, the mute button's enabled-ness, and the status line all
-    // track the REAL Voice Mode state (never claim "listening" when the mic isn't open). Driven by
-    // createVoiceMode's onState on every transition.
-    const renderVoiceState = (s: VoiceModeState): void => {
-      const on = s.mode !== 'off';
-      if (voiceModeBtn) {
-        voiceModeBtn.textContent = on ? '■ Stop voice' : '🎙 Voice Mode';
-        voiceModeBtn.setAttribute('aria-pressed', String(on));
-      }
-      if (muteBtn) muteBtn.disabled = !on; // mute only matters while the mic is actually open
-      setStatus(
-        s.mode === 'hearing' ? 'Hearing you…'
-          : s.mode === 'working' ? 'Working on it…'
-            // Fake voice opens no real mic, so the mic-specific "speak" copy would lie — show the dev hint
-            // for both its off and listening states.
-            : fakeEngine
-              ? 'Fake voice mode — in DevTools call __roroVoice.utter("add a logout route").'
-              : s.mode === 'listening' ? "Voice Mode on — speak to Roro (the cat's ears perk ≤80ms)."
-                : 'Voice Mode off — click 🎙 Voice Mode to talk to Roro.',
-      );
-    };
-
-    const localVoice = mountLocalVoiceMode({
-      engine,
-      detect: () => true,
-      deps: {
-        // Return the bridge promise directly — when the bridge is MISSING this is undefined (non-thenable),
-        // so the router doesn't latch a dispatch that would never see a runEnd (it stays unlatched).
-        turnRun: (transcript) => c?.turnRun?.({ transcript, sessionId }),
-        cancelTask: () => { void c?.cancelTask?.(); },
-        isRunActive: () => runState.active,
-        onRunEnd: (cb) => c?.onRunEnd?.(({ runId }) => cb(runId)) ?? (() => undefined),
-      },
-      canStartTurn: () => brainGate.ensureReady(setStatus),
-      onActionEvent: (cb) => c?.onActionEvent?.(cb) ?? (() => undefined),
-      driver: { poke: () => driver.poke?.() },
-      captions,
-      onState: renderVoiceState,
-      isMuted: () => micMuted,
-    });
-    localVoiceMute = (muted) => localVoice.setMuted(muted); // mic-mute toggle → engine's deaf-cat gate
-    localVoice.setMuted(micMuted); // apply the current mute state at mount
-
-    // Voice Mode is OPT-IN + consent-gated (no auto-summon). The button toggles it: off → probe (mic + staged
-    // weights) → mic consent if undecided → open the mic; on → close it. Every refusal reports a reason.
-    // `activating` guards the async start window: the FSM stays 'off' until summon() applies, so without it a
-    // double-click would fire a second probe + consent prompt before the first resolved.
-    let activating = false;
-    voiceToggle = () => {
-      if (localVoice.mode.state.mode !== 'off') {
-        if (micMuted) setMicMuted(false); // each Voice Mode session starts live — mute is a within-session control
-        void localVoice.mode.unsummon();
-        return;
-      }
-      if (activating) { setStatus('Starting Voice Mode… one moment.'); return; } // acknowledge the impatient re-click
-      activating = true;
-      // Immediate, honest feedback: the mic-consent prompt + probe can take seconds, and the FSM stays 'off'
-      // (so the button label can't flip) until summon() applies — without this the button looks dead meanwhile.
-      setStatus('Starting Voice Mode…');
-      void activateVoice({
-        want,
-        micStatus: async () => (await c?.mic?.status()) ?? 'unknown',
-        requestMic: async () => (await c?.mic?.request()) ?? 'unknown',
-        weightsPresent: async (which) => {
-          const id = which === 'stt' ? STT_MODEL_ID : TTS_MODEL_ID;
-          try {
-            const res = await fetch(new URL(`models/${id}/config.json`, window.location.href).href, { method: 'HEAD' });
-            return res.ok;
-          } catch {
-            // A same-origin static HEAD shouldn't throw; if it does, treat as "not staged" → the probe shows
-            // the actionable stage-command blocker (fail-loud), never a silently dead button.
-            return false;
-          }
-        },
-        summon: () => localVoice.mode.summon(),
-        report: (m) => setStatus(m),
-      })
-        // Backstop: any UNEXPECTED rejection (mic IPC, etc.) must surface, not become a silent unhandled
-        // rejection that leaves the button looking dead. activateVoice already reports its own known failures.
-        .catch((e) => setStatus(`Voice start error: ${describeError(e)} — the typed path still works.`))
-        .finally(() => { activating = false; });
-    };
-    // The fake-voice path is a NO-MIC dev affordance (__roroVoice.utter): start it directly so utter() is live,
-    // since the consent-gated button is only for the REAL on-device mic. Real engines stay button-gated.
-    if (fakeEngine) void localVoice.mode.summon();
-    renderVoiceState(localVoice.mode.state); // paint the initial state (button label + hint)
-    (window as unknown as { __roroVoice?: unknown }).__roroVoice = {
-      state: () => localVoice.mode.state,
-      ...(voiceSel
-        ? { setVoice: (id: string) => voiceSel.set(id), voice: () => voiceSel.current(), voices: () => listVoicePacks() }
-        : {}),
-      ...(fakeEngine ? { utter: (t: string) => fakeEngine.utter(t), spoken: () => fakeEngine.spoken } : {}),
-    };
-  }
-
   if (config.debugBridge) {
     // Expose a tiny dev handle for manual testing in DevTools (drive the avatar without a model/keys).
     (window as unknown as { __companion?: unknown }).__companion = {
@@ -396,7 +172,7 @@ export async function bootstrap(): Promise<void> {
       setState: (s: Parameters<typeof driver.setState>[0]) => driver.setState(s),
       setActivity: (cue: Parameters<typeof driver.setActivity>[0]) => driver.setActivity(cue),
       setMouthOpen: (v: number) => driver.setMouthOpen(v),
-      setMuted: (v: boolean) => setMicMuted(v),
+      setMuted: (v: boolean) => driver.setMuted(v),
       pet: () => driver.pet?.(),
       setEnergy: (energy: Parameters<typeof avatar.cat['debugSetEnergy']>[0]) => {
         avatar.cat.debugSetEnergy(energy);
@@ -442,7 +218,7 @@ function installFloatingWindowGesture(
   }
 
   canvas.addEventListener('pointerdown', (ev) => {
-    if (!ev.isPrimary || ev.button !== 0) return; // left button only; right-click = mute/menu
+    if (!ev.isPrimary || ev.button !== 0) return; // left button only
     pointerId = ev.pointerId;
     startX = lastX = ev.screenX;
     startY = lastY = ev.screenY;
@@ -492,14 +268,4 @@ function installFloatingWindowGesture(
     if (pointerId !== ev.pointerId) return;
     resetGesture();
   });
-}
-
-function describeError(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === 'string') return e;
-  try {
-    return JSON.stringify(e);
-  } catch {
-    return String(e);
-  }
 }

@@ -1,4 +1,4 @@
-// src/renderer/voice/kokoroG2P.ts — English text → Kokoro-ready IPA, license-clean (MIT).
+// packages/voice/src/kokoroG2P.ts — English text → Kokoro-ready IPA, license-clean (MIT).
 //
 // Kokoro is a PHONEME-input model. The popular kokoro-js path phonemizes via espeak-ng (GPLv3) — which we
 // CANNOT ship. We use `phonemize` (MIT, pure-JS, no espeak, no WASM): its main entry auto-registers an

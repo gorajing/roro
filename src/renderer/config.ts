@@ -1,8 +1,10 @@
 // src/renderer/config.ts — renderer-side configuration.
 //
 // The renderer holds ONLY non-secret presentation/feature values (the
-// floating-window flag, the on-device voice dev flags). Every key
+// floating-window flag, the dev/test harness flags). Every key
 // (e.g. the Anthropic executor key) lives ONLY in MAIN — never read those here.
+// Voice is CUT from v0 and extracted to packages/voice — there are NO voice config
+// keys in the renderer (they return with the re-integration, see packages/voice/README.md).
 //
 // Resolution order for each value:
 //   1. window.RORO_CFG.<field>  (injected at runtime by MAIN/preload or a <script> tag;
@@ -17,23 +19,6 @@
 export interface RoroConfig {
   /** Opt-in transparent frameless window mode for the floating character demo. */
   floatingWindow: boolean;
-  /** Dev: mount the on-device voice path against a FAKE engine (no whisper/Silero/Kokoro, no mic) so the
-   *  local mouth-not-brain wiring is runnable end-to-end. Default false. */
-  fakeVoice: boolean;
-  /** Dev: mount the REAL VAD engine (Silero, on-device) — Phase 1 = the ear-perk + mic lifecycle (no STT/
-   *  TTS yet). Takes precedence over fakeVoice. Default false. */
-  vadVoice: boolean;
-  /** Dev: mount the REAL VAD + on-device STT (Silero + whisper base.en) — Phase 2 = the ear-perk PLUS a
-   *  committed transcript (partials → caption tell, final → turnRun). Implies vadVoice; takes precedence
-   *  over it. Default false. */
-  sttVoice: boolean;
-  /** Dev: give the cat a MOUTH — on-device Kokoro TTS + lip-sync (Phase 3). The assistant's committed
-   *  `message` is spoken on-device with a moving mouth. Mounts the real VAD engine too (ears), and composes
-   *  with sttVoice for the full local voice loop. Default false. */
-  ttsVoice: boolean;
-  /** The initial voice-pack id (Phase 5 cosmetic; RORO_VOICE_PACK). Empty/unknown → the free default
-   *  af_heart. Switchable at runtime via __roroVoice.setVoice. Only meaningful when ttsVoice is on. */
-  voicePack: string;
   /** WS5 validation (M9): mount the cosmetics fake-door (captures willingness-to-pay intent, no payment).
    *  OFF by default — the founder enables it to run the demand experiment. RORO_WS5_STORE=1. */
   cosmeticsStore: boolean;
@@ -43,10 +28,6 @@ export interface RoroConfig {
   floatingSmoke: boolean;
   /** Test-only: render the Memory panel against deterministic local facts for the keyboard/a11y smoke. */
   memoryPanelSmoke: boolean;
-}
-
-export function voiceSurfaceEnabled(config: Pick<RoroConfig, 'fakeVoice' | 'vadVoice' | 'sttVoice' | 'ttsVoice'>): boolean {
-  return config.fakeVoice || config.vadVoice || config.sttVoice || config.ttsVoice;
 }
 
 function viteEnv(_key: string): string | undefined {
@@ -59,11 +40,6 @@ function viteEnv(_key: string): string | undefined {
 function cfgField(field: keyof RoroConfig): string | boolean | undefined {
   if (typeof window === 'undefined') return undefined;
   return window.RORO_CFG?.[field];
-}
-
-function read(field: keyof RoroConfig, viteKey: string, fallback: string): string {
-  const fromWindow = cfgField(field);
-  return typeof fromWindow === 'string' ? fromWindow : viteEnv(viteKey) ?? fallback;
 }
 
 function readBool(field: keyof RoroConfig, viteKey: string, fallback: boolean): boolean {
@@ -80,11 +56,6 @@ export function loadConfig(): RoroConfig {
     // FLOATING_WINDOW_FLAG, which is on unless RORO_FLOATING_WINDOW=0). This fallback only applies when
     // RORO_CFG is absent (bare-browser/Vite dev) — kept in sync with MAIN so both default to floating.
     floatingWindow: readBool('floatingWindow', 'VITE_RORO_FLOATING_WINDOW', true),
-    fakeVoice: readBool('fakeVoice', 'VITE_RORO_FAKE_VOICE', false),
-    vadVoice: readBool('vadVoice', 'VITE_RORO_VAD_VOICE', false),
-    sttVoice: readBool('sttVoice', 'VITE_RORO_STT_VOICE', false),
-    ttsVoice: readBool('ttsVoice', 'VITE_RORO_TTS_VOICE', false),
-    voicePack: read('voicePack', 'VITE_RORO_VOICE_PACK', ''),
     cosmeticsStore: readBool('cosmeticsStore', 'VITE_RORO_WS5_STORE', false),
     debugBridge: readBool('debugBridge', 'VITE_RORO_DEBUG_BRIDGE', false),
     floatingSmoke: readBool('floatingSmoke', 'VITE_RORO_FLOATING_SMOKE', false),

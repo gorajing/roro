@@ -1,0 +1,22 @@
+{
+  "name": "@roro/voice",
+  "version": "0.0.1",
+  "description": "Roro's on-device voice stack (Silero VAD + whisper STT + Kokoro TTS) — a standalone sub-package, deliberately OUTSIDE the app's dependency graph so the app never pays its ~510MB of model-runtime deps. NOT an npm workspace: install here explicitly (see README.md).",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "stage:voice-assets": "node scripts/stage-voice-assets.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1",
+    "@ricky0123/vad-web": "0.0.30",
+    "onnxruntime-web": "1.27.0",
+    "phonemize": "1.2.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

@@ -1,6 +1,7 @@
 // src/shared/ipc.ts — ALL IPC channel names (the const CH) + small shared payload types. Imported by main + preload.
 // invoke = request/response; push = guarded MAIN->renderer send (streams; invoke can't stream).
-export type MicStatus = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+// NOTE: the mic channels (mic:status / mic:request / mic:toggleMute) were voice-only and left with the
+// voice stack — packages/voice/README.md documents how they come back at re-integration.
 export interface TurnInput { transcript: string; sessionId: string }
 
 /** First-run readiness pushed MAIN->renderer (M7b) so the renderer can offer a one-click model download. */
@@ -59,11 +60,9 @@ export interface ExecutorReadinessMsg {
 }
 
 export const CH = {
-  micStatus: 'mic:status', micRequest: 'mic:request',
   windowMoveBy: 'window:moveBy',
   focusAsk: 'window:focusAsk',
   cursorMove: 'cursor:move',
-  micToggleMute: 'mic:toggleMute',
   turnRun: 'turn:run', runTask: 'orch:runTask', cancelTask: 'orch:cancelTask',
   actionEvent: 'orch:actionEvent', runEnd: 'orch:runEnd',
   confirmRequest: 'orch:confirmRequest', confirmResolve: 'orch:confirmResolve',

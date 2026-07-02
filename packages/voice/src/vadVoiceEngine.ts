@@ -1,4 +1,4 @@
-// src/renderer/voice/vadVoiceEngine.ts — the on-device LISTENING engine (Phases 1–2).
+// packages/voice/src/vadVoiceEngine.ts — the on-device LISTENING engine (Phases 1–2).
 //
 // The cat's EARS. Phase 1: on a Silero VAD rising edge it emits onSpeechStart — the <=80ms "I heard you"
 // tell, BEFORE any transcript. Phase 2: when the VAD reports end-of-utterance it hands the captured PCM

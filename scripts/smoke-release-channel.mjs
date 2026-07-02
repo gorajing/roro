@@ -9,9 +9,12 @@
 //   - window.RORO_CFG.debugBridge   === false   (renderer side)
 //   - window.companion.runTask is undefined     (the preload debug-bridge wrappers are NOT exposed — the
 //                                                 privileged runTask/brain.* handles stay hidden)
-//   - the voice flags are off too (fakeVoice/vadVoice/sttVoice/ttsVoice === false)
-// On a NON-release (dev/smoke) build these would all be honored — so a pass here proves the release channel
-// is baked and enforced at launch, not just documented.
+// The RORO_*_VOICE env vars are also SET at launch, but they are no longer guarded flags — the voice stack
+// was extracted to packages/voice, so the app has NO voice config surface at all. The smoke asserts the
+// stronger by-construction property: no voice key exists in window.RORO_CFG (a reappearing key means voice
+// plumbing crept back into MAIN without the packages/voice re-integration checklist).
+// On a NON-release (dev/smoke) build the deferred flags would all be honored — so a pass here proves the
+// release channel is baked and enforced at launch, not just documented.
 
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -61,6 +64,8 @@ function launchEnv(port) {
     // the deferred-v0 flags we expect the release channel to REFUSE:
     RORO_WS5_STORE: '1',
     RORO_DEBUG_BRIDGE: '1',
+    // voice env vars: NOT deferred flags anymore (no app-side reader) — set anyway to prove that even
+    // with them in the launch env, no voice config key materializes in window.RORO_CFG.
     RORO_FAKE_VOICE: '1',
     RORO_VAD_VOICE: '1',
     RORO_STT_VOICE: '1',
@@ -193,8 +198,9 @@ async function main() {
     if (parsed) {
       check('cosmetics fake-door REFUSED (RORO_WS5_STORE=1 ignored)', parsed.cosmeticsStore === false, `cosmeticsStore=${parsed.cosmeticsStore}`);
       check('debug bridge REFUSED in renderer cfg (RORO_DEBUG_BRIDGE=1 ignored)', parsed.debugBridge === false, `debugBridge=${parsed.debugBridge}`);
-      check('voice flags REFUSED', parsed.fakeVoice === false && parsed.vadVoice === false && parsed.sttVoice === false && parsed.ttsVoice === false,
-        `fake=${parsed.fakeVoice} vad=${parsed.vadVoice} stt=${parsed.sttVoice} tts=${parsed.ttsVoice}`);
+      const voiceKeys = ['fakeVoice', 'vadVoice', 'sttVoice', 'ttsVoice', 'voicePack'].filter((k) => k in parsed);
+      check('NO voice config surface exists (voice extracted to packages/voice)', voiceKeys.length === 0,
+        `unexpected RORO_CFG voice keys: ${voiceKeys.join(', ')}`);
     }
 
     // The REAL privilege boundary: the preload debug-bridge wrappers must NOT be exposed.

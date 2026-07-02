@@ -1,4 +1,5 @@
 {
+  "ignorePatterns": ["packages/"],
   "env": {
     "browser": true,
     "es6": true,

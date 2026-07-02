@@ -1,16 +1,15 @@
 import './main/processOutputGuard'; // MUST be first: broken stdout/stderr pipes must not crash Electron.
 import 'dotenv/config'; // Populates process.env from ./.env before app modules read it.
 import './shared/env-migrate'; // back-compat: COMPANION_* -> RORO_* BEFORE any module reads env at load.
-// src/main.ts — Electron MAIN process entry. Boots a secure window, gates the macOS mic via
-// TCC, installs Chromium permission handlers, registers all typed IPC, and a summon shortcut.
+// src/main.ts — Electron MAIN process entry. Boots a secure window, registers all typed IPC,
+// and a summon shortcut.
 //
-// Ordering matters: session permission handlers + the mic TCC prompt run INSIDE whenReady,
-// BEFORE the window is created, so the renderer's getUserMedia is never raced/denied.
+// The mic/TCC gate + Chromium media-permission handlers were voice-only and left with the voice
+// stack (packages/voice) — nothing app-side touches the microphone. See packages/voice/README.md
+// for the re-integration checklist (mic IPC, TCC prompt ordering, permission handlers).
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
 
-import { ensureMicAccess, installPermissionHandlers } from './main/mic';
-import { voiceMicNeeded } from './main/voiceFlags';
 import { guardDeferredEnv } from './shared/releaseChannel';
 import { registerIpcHandlers } from './main/ipc';
 import { createWindow, registerSummonShortcut, unregisterShortcuts, startCursorTracking } from './main/window';
@@ -73,23 +72,7 @@ app.whenReady().then(async () => {
   await hydrateWorkdirConfig();
   const ownerId = await initOwnerId();
 
-  // 1. Chromium-level media permission grant for the renderer's getUserMedia (request+check).
-  //    Cheap + promptless, so it is always installed; it only matters if voice later opens the mic.
-  installPermissionHandlers();
-
-  // 2. macOS TCC mic consent up-front — ONLY when an on-device voice flag that opens the mic is set.
-  //    The default typed-only launch never touches the mic, so it must never surface the system prompt.
-  if (voiceMicNeeded(guardDeferredEnv(process.env))) {
-    const micStatus = await ensureMicAccess();
-    if (micStatus !== 'granted') {
-      console.warn(
-        `[main] microphone access is '${micStatus}'. The renderer must prompt the user to ` +
-          `enable it in System Settings and relaunch.`,
-      );
-    }
-  }
-
-  // 3. Secure window + summon shortcut.
+  // 1. Secure window + summon shortcut.
   // Tear the pointing overlay down whenever the main window closes, so the transparent, click-through
   // overlay never lingers in BrowserWindow.getAllWindows() — otherwise it would block `window-all-closed`
   // (non-macOS), suppress dock re-creation on `activate`, and let first-window sends/shortcuts target it.
@@ -101,7 +84,7 @@ app.whenReady().then(async () => {
   startCursorTracking(win);
   registerSummonShortcut();
 
-  // 4. Memory warmup: initialize keychain/PGlite shortly after first paint, off the first-turn path.
+  // 2. Memory warmup: initialize keychain/PGlite shortly after first paint, off the first-turn path.
   //    Non-blocking — a very fast first turn still degrades independently if memory is unavailable, while
   //    the common path gets a warmed store without delaying the packaged renderer target.
   if (memoryWarmupDisabled(guardDeferredEnv(process.env))) {
@@ -117,7 +100,7 @@ app.whenReady().then(async () => {
     }
   }
 
-  // 5. Brain self-check (local-first): verify Ollama/models up-front. Non-blocking — never gates the
+  // 3. Brain self-check (local-first): verify Ollama/models up-front. Non-blocking — never gates the
   //    window; logs + surfaces a renderer diagnostic on failure (see verifyBrainAtStartup).
   void verifyBrainAtStartup(win);
 

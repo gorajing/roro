@@ -5,7 +5,7 @@
   <!-- Chromium/V8 JIT-compiles JS at runtime. -->
   <key>com.apple.security.cs.allow-jit</key>
   <true/>
-  <!-- V8 + on-device WASM (transformers.js, PGlite, VAD) write+execute memory the hardened runtime
+  <!-- V8 + on-device WASM (PGlite in MAIN) write+execute memory the hardened runtime
        would otherwise forbid. -->
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
   <true/>
@@ -13,10 +13,9 @@
        reject them under the hardened runtime; disabling it lets our re-signed native modules load. -->
   <key>com.apple.security.cs.disable-library-validation</key>
   <true/>
-  <!-- Roro's on-device voice (STT) captures the microphone. Paired with NSMicrophoneUsageDescription
-       in the Info.plist (forge.config.ts extendInfo) — both are required or a signed build crashes on
-       first mic access. -->
-  <key>com.apple.security.device.audio-input</key>
-  <true/>
+  <!-- NO audio-input entitlement: nothing app-side touches the microphone — the on-device voice stack
+       (the only mic consumer) was extracted to packages/voice. Re-add com.apple.security.device.audio-input
+       here AND NSMicrophoneUsageDescription in forge.config.ts extendInfo together when voice
+       re-integrates (both are required or a signed build crashes on first mic access). -->
 </dict>
 </plist>

@@ -17,49 +17,15 @@ import {
 } from './src/build/macSigning';
 
 const macSigning = macSigningConfig(process.env);
-const includeVadAssets =
-  process.env.RORO_VAD_VOICE === '1' ||
-  process.env.RORO_STT_VOICE === '1' ||
-  process.env.RORO_TTS_VOICE === '1';
-const includeTransformersOrtAssets =
-  process.env.RORO_STT_VOICE === '1' ||
-  process.env.RORO_TTS_VOICE === '1';
-const includeSttModel = process.env.RORO_STT_VOICE === '1';
-const includeTtsModel = process.env.RORO_TTS_VOICE === '1';
 
+// No voice asset gates here anymore: the on-device voice stack (and its vad/ort/models staging) lives
+// in packages/voice, outside the app's dependency graph — a voice payload cannot enter this build by
+// construction. verify-release-artifact.mjs keeps a cheap regression tripwire on the packaged asar.
 function ignorePackagedFile(file: string): boolean {
   if (!file) return false;
 
   // Preserve the Electron Forge Vite plugin's default copy filter: packaged apps only need .vite.
-  if (!file.startsWith('/.vite')) return true;
-
-  // v0 ships typed-only by default. Voice is still available for dev/opt-in builds, but ignored in
-  // normal packages so stale generated public/ assets cannot silently bloat the stranger-download app.
-  const rendererPrefix = '/.vite/renderer/main_window/';
-  if (!file.startsWith(rendererPrefix)) return false;
-  const rel = file.slice(rendererPrefix.length);
-
-  if ((rel === 'vad' || rel.startsWith('vad/')) && !includeVadAssets) return true;
-  if ((rel === 'ort' || rel.startsWith('ort/')) && !includeTransformersOrtAssets) return true;
-  if ((rel === 'models' || rel === 'models/onnx-community') && !includeSttModel && !includeTtsModel) return true;
-  if (rel.startsWith('assets/')) {
-    const assetName = rel.slice('assets/'.length);
-    if (/^sileroVad-.*\.js$/.test(assetName) && !includeVadAssets) return true;
-    if (/^whisperTranscribe-.*\.js$/.test(assetName) && !includeSttModel) return true;
-    if (/^kokoro(?:Synthesize|VoiceEngine)-.*\.js$/.test(assetName) && !includeTtsModel) return true;
-    if (/^onnxRuntimeEnv-.*\.js$/.test(assetName) && !includeTransformersOrtAssets) return true;
-    if (/^ort-wasm-simd-threaded\.jsep-.*\.wasm$/.test(assetName) && !includeTransformersOrtAssets) return true;
-  }
-  if (rel === 'models/onnx-community/whisper-base.en' || rel.startsWith('models/onnx-community/whisper-base.en/')) {
-    return !includeSttModel;
-  }
-  if (
-    rel === 'models/onnx-community/Kokoro-82M-v1.0-ONNX' ||
-    rel.startsWith('models/onnx-community/Kokoro-82M-v1.0-ONNX/')
-  ) {
-    return !includeTtsModel;
-  }
-  return false;
+  return !file.startsWith('/.vite');
 }
 
 const config: ForgeConfig = {
@@ -72,12 +38,11 @@ const config: ForgeConfig = {
     // sharp's libvips .dylib (a separate package the AutoUnpackNatives plugin's .node-only glob misses);
     // forge merges this with the plugin's .node glob so BOTH the addon and its .dylib land unpacked.
     asar: { unpack: MAC_NATIVE_UNPACK_GLOB },
-    // The mic usage string the OS shows on first voice capture. REQUIRED: a hardened-runtime app that
-    // touches the microphone without it crashes (pairs with the audio-input entitlement).
+    // No NSMicrophoneUsageDescription: nothing app-side touches the microphone (voice lives in
+    // packages/voice). Re-add it together with the audio-input entitlement when voice re-integrates —
+    // a hardened-runtime app that opens the mic without BOTH crashes on first capture.
     extendInfo: {
       CFBundleIconFile: 'roro-icon.icns',
-      NSMicrophoneUsageDescription:
-        'Roro listens only after you start Voice Mode, and transcribes your speech on-device.',
     },
     // macOS code signing + notarization — gated on the Apple creds being present in the environment
     // (no creds -> unsigned dev/CI build keeps working; partial creds -> fail loud). See src/build/macSigning.ts.

@@ -1,4 +1,4 @@
-// src/renderer/voice/mountLocalVoiceMode.ts — compose the on-device voice path (the Phase-0 glue).
+// packages/voice/src/mountLocalVoiceMode.ts — compose the on-device voice path (the Phase-0 glue).
 //
 // Wires the local backend (an injected NativeVoiceEngine behind the fail-loud `available` gate) through
 // createVoiceMode (INPUT: committed utterance -> turnRun, mouth-not-brain + ear-perk + FSM) and
@@ -10,8 +10,8 @@
 import { createLocalVoiceBackend, type NativeVoiceEngine } from './voiceLocalAdapter';
 import { createVoiceMode, type VoiceMode, type VoiceModeDeps } from './voiceMode';
 import { wireSpeechOutput } from './wireSpeechOutput';
-import type { ActionEvent } from '../../shared/events';
-import type { CharacterDriver, CaptionSink } from '../character/types';
+import type { ActionEvent } from '../../../src/shared/events';
+import type { VoiceCharacterDriver, CaptionSink } from './characterSeam';
 import type { VoiceModeState } from './voiceModeState';
 
 export interface MountLocalVoiceOptions {
@@ -21,7 +21,7 @@ export interface MountLocalVoiceOptions {
   detect?: () => boolean;
   deps: VoiceModeDeps;
   onActionEvent(cb: (e: ActionEvent) => void): () => void;
-  driver: Pick<CharacterDriver, 'poke'>;
+  driver: VoiceCharacterDriver;
   captions?: CaptionSink;
   onState?: (state: VoiceModeState) => void;
   isMuted?: () => boolean;

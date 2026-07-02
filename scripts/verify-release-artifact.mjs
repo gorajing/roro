@@ -1,7 +1,9 @@
 // scripts/verify-release-artifact.mjs - packaged release artifact verifier.
 //
-// v0 ships the typed remembering companion. Real on-device voice remains an opt-in/dev surface, so default
-// packages must not silently include stale generated VAD/ORT/model payloads from public/.
+// v0 ships the typed remembering companion. The on-device voice stack lives in packages/voice, OUTSIDE
+// the app's dependency graph, so a voice payload is absent by construction — the scan below is a cheap
+// regression tripwire (e.g. someone re-staging vad/ort/models into public/, or re-adding voice deps),
+// not an active exclusion mechanism.
 //
 // Run after `npm run package`: npm run verify:release-artifact
 // Run after `npm run make`: npm run verify:release-artifact:dmg
@@ -67,23 +69,26 @@ const required = [
   '/.vite/build/preload.js',
   '/.vite/renderer/main_window/index.html',
 ];
+// Minimal by-construction tripwire: no ONNX/transformers/voice-model payload may appear in the packaged
+// app. Voice cannot enter the build today (its deps live only in packages/voice), so any hit here means
+// a regression (stale public/ staging leaked in, or voice deps crept back into the app graph).
 const forbidden = [
   {
-    label: 'Silero VAD runtime',
+    label: 'Silero VAD runtime (packages/voice staging)',
     prefix: '/.vite/renderer/main_window/vad',
   },
   {
-    label: 'transformers ORT runtime',
+    label: 'transformers ORT runtime (packages/voice staging)',
     prefix: '/.vite/renderer/main_window/ort',
   },
   {
-    label: 'voice/STT/TTS model weights',
+    label: 'voice/STT/TTS model weights (packages/voice staging)',
     prefix: '/.vite/renderer/main_window/models',
   },
   {
-    label: 'voice dynamic chunks',
-    prefix: '/.vite/renderer/main_window/assets/',
-    pattern: /\/(?:sileroVad|whisperTranscribe|kokoroSynthesize|kokoroVoiceEngine|onnxRuntimeEnv)-.*\.js$|\/ort-wasm-simd-threaded\.jsep-.*\.wasm$/,
+    label: 'ONNX runtime/model payload',
+    prefix: '/',
+    pattern: /ort-wasm|\.onnx$/,
   },
 ];
 
@@ -358,7 +363,12 @@ if (process.platform === 'darwin') {
     const info = plistJson();
     check('bundle identifier is com.jinchoi.roro', info.CFBundleIdentifier === 'com.jinchoi.roro');
     check('bundle name is Roro', info.CFBundleName === 'Roro');
-    check('microphone usage string is present', info.NSMicrophoneUsageDescription?.includes('Roro listens'));
+    // Nothing app-side opens the microphone (voice lives in packages/voice), so forge extendInfo no longer
+    // injects Roro's voice-era mic usage string. Electron's DEFAULT Info.plist ships a generic
+    // "This app needs access to the microphone" boilerplate that packager inherits for every app — that is
+    // expected and inert (no audio-input entitlement, no TCC request path). The regression tripwire is OUR
+    // string reappearing: it means someone re-added mic extendInfo without the packages/voice checklist.
+    check('Roro voice-era mic usage string is absent', !info.NSMicrophoneUsageDescription?.includes('Roro listens'));
     check('asar integrity is present', info.ElectronAsarIntegrity?.['Resources/app.asar']?.algorithm === 'SHA256');
 
     const rawIconFile = info.CFBundleIconFile;

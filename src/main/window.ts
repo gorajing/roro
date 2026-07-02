@@ -10,22 +10,18 @@ import { pathToFileURL } from 'node:url';
 import { CH } from '../shared/ipc';
 import { cursorToGazeTarget } from '../shared/gaze';
 import { decideSummonAction } from './summon';
-import { withCrossOriginIsolation } from './crossOriginIsolation';
 import { isSafeNavigation } from './navigation';
 import { sendToWindow } from './safeSend';
 import { getPetWindow, registerPetWindow } from './windowRegistry';
-import { voiceRuntimeEnabled } from './voiceFlags';
 import { guardDeferredEnv } from '../shared/releaseChannel';
 
 const SUMMON_ACCELERATOR = 'CommandOrControl+Shift+Space';
-const MUTE_ACCELERATOR = 'CommandOrControl+Shift+M';
 // roro is a floating desktop pet by DEFAULT: a transparent, frameless, always-on-top window you can
 // drag anywhere on screen (see the BrowserWindow options below + the renderer drag gesture). Setting
 // RORO_FLOATING_WINDOW=0 opts back into the legacy opaque 1024x768 framed dev window, which the typed-prompt
 // path and the packaged smokes rely on. Any value other than '0' (incl. unset) keeps the floating pet.
 // Window mode is NOT a deferred-v0 flag, so it is read straight from process.env (not guardDeferredEnv).
 const FLOATING_WINDOW_FLAG = process.env.RORO_FLOATING_WINDOW !== '0';
-const VOICE_RUNTIME_ENABLED = voiceRuntimeEnabled(guardDeferredEnv(process.env));
 const FLOATING_WINDOW_SIZE = {
   width: 190,
   height: 200,
@@ -39,19 +35,13 @@ export function createWindow(): BrowserWindow {
   // Only non-secret values cross into the renderer; private keys stay in MAIN. Passed via additionalArguments
   // (a single argv element — these values contain no spaces).
   // Every deferred-v0 flag below is read through guardDeferredEnv: on a release/cohort build it is
-  // refused (the env key is stripped), so a cohort tester can never reach the cosmetics fake-door, the
-  // voice stack, or the debug bridge — regardless of launch env. On dev/smoke builds it passes through.
+  // refused (the env key is stripped), so a cohort tester can never reach the cosmetics fake-door or
+  // the debug bridge — regardless of launch env. On dev/smoke builds it passes through.
   const env = guardDeferredEnv(process.env);
   const roroCfg = {
     floatingWindow: FLOATING_WINDOW_FLAG, // not deferred-v0 (window mode); read straight from process.env
-    // On-device voice dev flags — the renderer's only activation path (config.ts reads window.RORO_CFG, and
-    // its viteEnv() is a deliberate no-op). RORO_STT_VOICE=1 npm start → real VAD + whisper STT; RORO_VAD_VOICE
-    // → VAD ear-perk only; RORO_FAKE_VOICE → scripted engine (no mic/models). All default off.
-    fakeVoice: env.RORO_FAKE_VOICE === '1',
-    vadVoice: env.RORO_VAD_VOICE === '1',
-    sttVoice: env.RORO_STT_VOICE === '1',
-    ttsVoice: env.RORO_TTS_VOICE === '1',
-    voicePack: env.RORO_VOICE_PACK ?? '',
+    // NO voice keys by construction: the on-device voice stack lives in packages/voice, outside the app's
+    // dependency graph — RORO_*_VOICE env vars have no reader here (smoke-release-channel asserts absence).
     // WS5 validation (M9): the cosmetics fake-door, OFF by default — RORO_WS5_STORE=1 to run the experiment.
     cosmeticsStore: env.RORO_WS5_STORE === '1',
     // Dev/security escape hatch: exposes direct brain/vision/debug handles only when deliberately enabled.
@@ -121,13 +111,9 @@ export function createWindow(): BrowserWindow {
   });
   mainWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
 
-  // Cross-origin isolation: COOP same-origin + COEP credentialless on the renderer's responses, so the
-  // on-device voice WASM (whisper/Silero/Kokoro) can use SharedArrayBuffer + threads (the ~3x threaded-SIMD
-  // path, not slow single-thread). credentialless keeps the first-run model downloads working. Set on the
-  // window's session BEFORE load so the document itself is isolated.
-  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    callback({ responseHeaders: withCrossOriginIsolation(details.responseHeaders) });
-  });
+  // NOTE: the COOP/COEP cross-origin-isolation headers existed ONLY for the on-device voice WASM
+  // (SharedArrayBuffer + threaded SIMD). Voice moved to packages/voice; nothing left in the renderer
+  // needs crossOriginIsolated (PGlite's WASM runs in MAIN). Re-enable per packages/voice/README.md.
 
   // Keep the template's MAIN_WINDOW_VITE_* loading logic (dev server vs packaged file).
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
@@ -203,17 +189,6 @@ export function registerSummonShortcut(): void {
     console.error(
       `[main] globalShortcut '${SUMMON_ACCELERATOR}' registration failed (already taken)`,
     );
-  }
-
-  if (VOICE_RUNTIME_ENABLED) {
-    const muteOk = globalShortcut.register(MUTE_ACCELERATOR, () => {
-      sendToWindow(getPetWindow(), CH.micToggleMute);
-    });
-    if (!muteOk) {
-      console.error(
-        `[main] globalShortcut '${MUTE_ACCELERATOR}' registration failed (already taken)`,
-      );
-    }
   }
 }
 

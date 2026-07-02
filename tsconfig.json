@@ -11,5 +11,8 @@
     "outDir": "dist",
     "moduleResolution": "node",
     "resolveJsonModule": true
-  }
+  },
+  // packages/* are standalone sub-packages with their OWN dependency graphs + tsconfigs (packages/voice
+  // holds the ~510MB voice stack) — root tsc must never pull them into the app's program.
+  "exclude": ["packages"]
 }

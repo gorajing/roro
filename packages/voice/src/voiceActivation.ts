@@ -1,4 +1,4 @@
-// src/renderer/voice/voiceActivation.ts — the consent-gated Voice Mode start orchestrator.
+// packages/voice/src/voiceActivation.ts — the consent-gated Voice Mode start orchestrator.
 //
 // Turns a "Voice Mode" click into a deliberate, fail-loud start: probe the voice-specific preconditions
 // (mic permission + staged weights), and ONLY if they pass, prompt for mic consent when undecided, then open
