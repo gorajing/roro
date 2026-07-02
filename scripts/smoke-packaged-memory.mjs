@@ -22,13 +22,24 @@
 //   npm run verify:packaged-natural-memory-turn # requires local Ollama + required models
 
 import { randomUUID } from 'node:crypto';
-import { spawn, spawnSync } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
-import { createServer } from 'node:net';
-import { basename, join, resolve } from 'node:path';
+import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { stripV0DeferredEnv } from './v0-deferred-env.mjs';
+import {
+  appBinaryPath,
+  collectFiles,
+  evaluate,
+  exists,
+  filesContaining,
+  installTemporaryKeychain,
+  protectKeychainRestore,
+  readJson,
+  readText,
+  readTraceEvents,
+  withPackagedRenderer,
+} from './lib/packagedHarness.mjs';
 
 const BOOT_TIMEOUT_MS = Number(process.env.RORO_MEMORY_BOOT_TIMEOUT_MS || 120_000);
 const MEMORY_TIMEOUT_MS = Number(process.env.RORO_MEMORY_OP_TIMEOUT_MS || 45_000);
@@ -39,13 +50,7 @@ const LIVE_TURN = process.env.RORO_PACKAGED_MEMORY_LIVE_TURN === '1';
 const NATURAL_LANGUAGE_TURN = process.env.RORO_PACKAGED_MEMORY_NATURAL_LANGUAGE_TURN === '1';
 const NEEDS_LIVE_OLLAMA = LIVE_TURN || NATURAL_LANGUAGE_TURN;
 
-function appBinaryPath(rawPath) {
-  const candidate = resolve(rawPath || `out/Roro-darwin-${process.arch}/Roro.app/Contents/MacOS/Roro`);
-  return candidate.endsWith('.app') ? join(candidate, 'Contents', 'MacOS', 'Roro') : candidate;
-}
-
 const APP_BIN = appBinaryPath(process.env.RORO_PACKAGED_APP);
-let nextId = 1;
 const failures = [];
 
 function check(name, cond, detail = '') {
@@ -54,53 +59,6 @@ function check(name, cond, detail = '') {
     console.error(`  fail ${name}${detail ? ` - ${detail}` : ''}`);
     failures.push(name);
   }
-}
-
-async function exists(path) {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readJson(path) {
-  return JSON.parse(await readFile(path, 'utf8'));
-}
-
-async function readText(path) {
-  return readFile(path, 'utf8').catch(() => '');
-}
-
-async function readTraceEvents(path) {
-  const text = await readText(path);
-  return text
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line);
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean);
-}
-
-async function freePort() {
-  return new Promise((resolvePort, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : null;
-      server.close(() => {
-        if (port) resolvePort(port);
-        else reject(new Error('could not allocate a debug port'));
-      });
-    });
-  });
 }
 
 function smokeEnv(port, ollamaPort) {
@@ -124,149 +82,6 @@ function smokeEnv(port, ollamaPort) {
   stripped.RORO_DEBUG_BRIDGE = '1';
   if (NATURAL_LANGUAGE_TURN) stripped.RORO_FLOATING_SMOKE = '1';
   return stripped;
-}
-
-function launchApp({ cwd, userDataDir, port, ollamaPort, label }) {
-  const child = spawn(APP_BIN, [`--user-data-dir=${userDataDir}`], {
-    cwd,
-    env: smokeEnv(port, ollamaPort),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: true,
-  });
-  const run = { child, logs: [], stopping: false };
-  child.on('error', (err) => failures.push(`spawn ${label}: ${err.message}`));
-  const collect = (stream, prefix) => {
-    stream.setEncoding('utf8');
-    stream.on('data', (chunk) => {
-      for (const line of chunk.split(/\r?\n/)) {
-        if (!line) continue;
-        run.logs.push(`${prefix}${line}`);
-        if (!run.stopping && /DevTools listening|brain preflight|memory2|safeStorage|keychain|error|failed/i.test(line)) {
-          const display = line.length > 1000 ? `${line.slice(0, 1000)}... [truncated ${line.length - 1000} chars]` : line;
-          console.log(`[${label}] ${display}`);
-        }
-      }
-    });
-  };
-  collect(child.stdout, '');
-  collect(child.stderr, '');
-  return run;
-}
-
-async function waitForChildExit(child, timeoutMs) {
-  if (child.exitCode !== null || child.signalCode !== null) return true;
-  return new Promise((resolveDone) => {
-    const timer = setTimeout(() => {
-      child.off('close', onClose);
-      resolveDone(false);
-    }, timeoutMs);
-    const onClose = () => {
-      clearTimeout(timer);
-      resolveDone(true);
-    };
-    child.once('close', onClose);
-  });
-}
-
-async function killApp(run) {
-  run.stopping = true;
-  if (!run.child.pid) return;
-  try {
-    process.kill(-run.child.pid, 'SIGTERM');
-  } catch {
-    try {
-      run.child.kill();
-    } catch {
-      // already gone
-    }
-  }
-  if (await waitForChildExit(run.child, 5000)) return;
-  try {
-    process.kill(-run.child.pid, 'SIGKILL');
-  } catch {
-    try {
-      run.child.kill('SIGKILL');
-    } catch {
-      // already gone
-    }
-  }
-  await waitForChildExit(run.child, 2000);
-}
-
-async function fetchJson(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 1000);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    return await res.json();
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function waitForRendererTarget(port, child, label) {
-  const deadline = Date.now() + BOOT_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null || child.signalCode !== null) {
-      throw new Error(`${label} app exited before renderer CDP target appeared (code=${child.exitCode}, signal=${child.signalCode})`);
-    }
-    try {
-      const targets = await fetchJson(`http://127.0.0.1:${port}/json`);
-      const page = targets.find((t) => t.type === 'page' && t.webSocketDebuggerUrl);
-      if (page) return page;
-    } catch {
-      // port not up yet, or Chromium is still starting
-    }
-    await sleep(500);
-  }
-  throw new Error(`${label} renderer CDP target never appeared on port ${port}`);
-}
-
-function cdpClient(url) {
-  const ws = new WebSocket(url);
-  const pending = new Map();
-  ws.addEventListener('message', (ev) => {
-    const msg = JSON.parse(ev.data);
-    if (!msg.id || !pending.has(msg.id)) return;
-    const { resolve: ok, reject } = pending.get(msg.id);
-    pending.delete(msg.id);
-    msg.error ? reject(new Error(msg.error.message)) : ok(msg.result);
-  });
-  const ready = new Promise((ok, reject) => {
-    ws.addEventListener('open', ok);
-    ws.addEventListener('error', () => reject(new Error('CDP websocket error')));
-  });
-  const send = (method, params = {}) =>
-    new Promise((ok, reject) => {
-      const id = nextId++;
-      const timer = setTimeout(() => {
-        pending.delete(id);
-        reject(new Error(`CDP command ${method} timed out after ${CDP_COMMAND_TIMEOUT_MS}ms`));
-      }, CDP_COMMAND_TIMEOUT_MS);
-      pending.set(id, {
-        resolve: (value) => {
-          clearTimeout(timer);
-          ok(value);
-        },
-        reject: (err) => {
-          clearTimeout(timer);
-          reject(err);
-        },
-      });
-      ws.send(JSON.stringify({ id, method, params }));
-    });
-  return { ready, send, close: () => ws.close() };
-}
-
-async function evaluate(cdp, expression, params = {}) {
-  const result = await cdp.send('Runtime.evaluate', {
-    expression,
-    returnByValue: true,
-    ...params,
-  });
-  if (result.exceptionDetails) throw new Error(`eval failed: ${result.exceptionDetails.text}`);
-  return result.result.value;
 }
 
 async function runRendererMemoryOp(cdp, expression, label, timeoutMs = MEMORY_TIMEOUT_MS) {
@@ -580,168 +395,6 @@ async function waitForRendererBridge(cdp, child, label) {
   throw new Error(`${label} renderer bridge never became ready (${lastError})`);
 }
 
-async function withPackagedRenderer({ cwd, userDataDir, label, operation }) {
-  const port = await freePort();
-  const ollamaPort = await freePort();
-  console.log(`[smoke] launching ${label} packaged app (userData=${userDataDir}, RORO_DEBUG_PORT=${port})...`);
-  const run = launchApp({ cwd, userDataDir, port, ollamaPort, label });
-  let cdp;
-  try {
-    const target = await waitForRendererTarget(port, run.child, label);
-    cdp = cdpClient(target.webSocketDebuggerUrl);
-    await cdp.ready;
-    await cdp.send('Runtime.enable');
-    await cdp.send('Page.enable');
-    const dom = await waitForRendererBridge(cdp, run.child, label);
-    const result = await operation({ cdp, evaluate, dom });
-    return { ...result, dom, logs: run.logs };
-  } finally {
-    cdp?.close();
-    await killApp(run);
-  }
-}
-
-async function collectFiles(dir) {
-  const out = [];
-  async function walk(path) {
-    let entries;
-    try {
-      entries = await readdir(path, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const next = join(path, entry.name);
-      if (entry.isDirectory()) await walk(next);
-      else if (entry.isFile()) out.push(next);
-    }
-  }
-  await walk(dir);
-  return out;
-}
-
-async function filesContaining(dir, needle) {
-  const needleBytes = Buffer.from(needle);
-  const matches = [];
-  for (const file of await collectFiles(dir)) {
-    try {
-      const data = await readFile(file);
-      if (data.includes(needleBytes)) matches.push(file);
-    } catch {
-      // Ignore transient files under the derived PGlite index.
-    }
-  }
-  return matches;
-}
-
-function unquoteKeychain(line) {
-  return line.trim().replace(/^"|"$/g, '');
-}
-
-function runSecurity(args) {
-  const res = spawnSync('/usr/bin/security', args, { encoding: 'utf8' });
-  if (res.status !== 0) {
-    const detail = (res.stderr || res.stdout || '').trim();
-    throw new Error(`security ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`);
-  }
-  return res.stdout.trim();
-}
-
-function readDefaultKeychain() {
-  return unquoteKeychain(runSecurity(['default-keychain', '-d', 'user']));
-}
-
-function readKeychainSearchList() {
-  return runSecurity(['list-keychains', '-d', 'user'])
-    .split(/\r?\n/)
-    .map(unquoteKeychain)
-    .filter(Boolean);
-}
-
-function setDefaultKeychain(path) {
-  runSecurity(['default-keychain', '-d', 'user', '-s', path]);
-}
-
-function setKeychainSearchList(paths) {
-  runSecurity(['list-keychains', '-d', 'user', '-s', ...paths]);
-}
-
-function protectKeychainRestore(restore) {
-  let restored = false;
-  const signalHandlers = new Map();
-
-  const runRestore = () => {
-    if (restored) return;
-    restored = true;
-    process.off('exit', onExit);
-    for (const [signal, handler] of signalHandlers) {
-      process.off(signal, handler);
-    }
-    restore();
-  };
-
-  const onExit = () => {
-    try {
-      runRestore();
-    } catch {
-      // The process is already exiting; do not mask the original termination.
-    }
-  };
-
-  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
-    const handler = () => {
-      try {
-        runRestore();
-      } catch (err) {
-        console.error(`[smoke] keychain restore error during ${signal}: ${err.message}`);
-      } finally {
-        process.exit(signal === 'SIGINT' ? 130 : signal === 'SIGTERM' ? 143 : 129);
-      }
-    };
-    signalHandlers.set(signal, handler);
-    process.once(signal, handler);
-  }
-  process.once('exit', onExit);
-
-  return runRestore;
-}
-
-function installTemporaryKeychain(root) {
-  const previousDefault = readDefaultKeychain();
-  const previousSearchList = readKeychainSearchList();
-  const keychainPath = join(root, 'roro-packaged-memory-smoke.keychain-db');
-  const password = randomUUID();
-
-  runSecurity(['create-keychain', '-p', password, keychainPath]);
-  runSecurity(['set-keychain-settings', '-lut', '21600', keychainPath]);
-  runSecurity(['unlock-keychain', '-p', password, keychainPath]);
-  // Keep the login keychain out of the search list during the smoke. Ad-hoc rebuilds can leave a
-  // stale "Roro Safe Storage" item there whose ACL prompts or blocks in Security.framework.
-  setKeychainSearchList([keychainPath]);
-  setDefaultKeychain(keychainPath);
-  console.log(`[smoke] using temporary unlocked keychain for safeStorage (${keychainPath})...`);
-
-  let restored = false;
-  return () => {
-    if (restored) return;
-    restored = true;
-    const errors = [];
-    try {
-      setKeychainSearchList(previousSearchList);
-    } catch (err) {
-      errors.push((err).message);
-    }
-    try {
-      if (previousDefault) setDefaultKeychain(previousDefault);
-    } catch (err) {
-      errors.push((err).message);
-    }
-    if (errors.length > 0) {
-      throw new Error(`failed to restore keychain settings: ${errors.join('; ')}`);
-    }
-  };
-}
-
 if (process.platform !== 'darwin') {
   console.error('[smoke] packaged memory smoke currently targets the darwin .app bundle.');
   process.exit(1);
@@ -770,9 +423,15 @@ let restoreKeychain = () => {};
 try {
   restoreKeychain = protectKeychainRestore(installTemporaryKeychain(root));
   const first = await withPackagedRenderer({
+    appBin: APP_BIN,
     cwd,
     userDataDir,
     label: 'write',
+    bootTimeoutMs: BOOT_TIMEOUT_MS,
+    commandTimeoutMs: CDP_COMMAND_TIMEOUT_MS,
+    failures,
+    buildEnv: smokeEnv,
+    waitForBridge: waitForRendererBridge,
     operation: async ({ cdp, dom }) => {
       check('packaged renderer URL is file:// app.asar', dom.href.startsWith('file://') && dom.href.includes('/Roro.app/Contents/Resources/app.asar/'));
       check('renderer body is not blank', dom.bodyText.includes('Roro'));
@@ -894,9 +553,15 @@ try {
   }
 
   const second = await withPackagedRenderer({
+    appBin: APP_BIN,
     cwd,
     userDataDir,
     label: 'recall',
+    bootTimeoutMs: BOOT_TIMEOUT_MS,
+    commandTimeoutMs: CDP_COMMAND_TIMEOUT_MS,
+    failures,
+    buildEnv: smokeEnv,
+    waitForBridge: waitForRendererBridge,
     operation: async ({ cdp, dom }) => {
       check('relaunch renderer URL is file:// app.asar', dom.href.startsWith('file://') && dom.href.includes('/Roro.app/Contents/Resources/app.asar/'));
       check('relaunch memory recall bridge exists', dom.memoryRecall === 'function');
