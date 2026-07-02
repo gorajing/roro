@@ -56,6 +56,9 @@ describe('memoryStore — reindex (the rebuildable-cache property: files+manifes
     const store = await createMemoryStore({ dir, embed, dim: DIM });
     await store.remember({ tier: 'episode', ownerId: 'o1', text: 'boom' });
     await store.close();
+    // Wipe the derived layer so the vector cache can't serve 'boom' (a warm cache would — correctly —
+    // make the flaky embedder irrelevant; this test is about the MISS + failure path).
+    rmSync(join(dir, 'index'), { recursive: true, force: true });
     // Reopen with an embedder that fails on 'boom', then rebuild — reindex must mark the row failed,
     // exactly like the incremental indexEntry path does (so a future re-embed retry sees both).
     const flaky = async (t: string): Promise<number[]> => { if (t === 'boom') throw new Error('embed down'); return embed(t); };
@@ -74,7 +77,7 @@ describe('memoryStore — reindex (the rebuildable-cache property: files+manifes
     await store.reindex();
     await store.reindex();
     await store.close();
-    const reopened = await createMemoryStore({ dir, embed, dim: DIM }); // reconcile must find nothing new (cursor honored)
+    const reopened = await createMemoryStore({ dir, embed, dim: DIM }); // the reopen replays the manifest; the live set must be identical
     try {
       expect((await reopened.recent({ ownerId: 'o1', k: 10 })).map((e) => e.text)).toEqual(['a']);
       expect((await reopened.getProfile('o1')).map((f) => f.text)).toEqual(['b']);

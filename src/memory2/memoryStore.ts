@@ -1,23 +1,26 @@
 // src/memory2/memoryStore.ts — the unified memory2 API (files-as-truth + derived index + embedder).
 //
-// Composes the durable write coordinator (store.ts), the PGlite-HNSW index (pgliteIndex.ts), and an
-// injected embedder. Every write is SERIALIZED through one chain so the derived index is updated in
-// manifest (seq) order. remember() commits durably (file+manifest) FIRST, then embeds + indexes, then
-// advances a persistent reconciliation cursor (applied_seq). recall()/recent()/getProfile() read the
-// derived index. On open we RECONCILE: replay manifest ops with seq > applied_seq, in order, advancing
-// the cursor per op — a CONTIGUOUS cursor that survives deletes (a regressing max(seq) would skip or
-// replay ops). A failed embed degrades gracefully (the row is indexed without a vector, marked failed),
-// so one bad op never blocks the cursor or loses a memory.
+// Composes the durable write coordinator (store.ts), the pure in-memory index engine (memIndex.ts),
+// the embeddings sidecar (vectorCache.ts), and an injected embedder. Every write is SERIALIZED
+// through one chain so the derived index is updated in manifest (seq) order. remember() commits
+// durably (file+manifest) FIRST, then embeds + indexes. recall()/recent()/getProfile() read the
+// derived index. On open we RECONCILE by replaying the FULL manifest from seq 0 — the reconciliation
+// cursor is EPHEMERAL (the in-memory engine starts empty every launch), so rebuild-from-files is the
+// NORMAL open path, exercised every single launch. The vectorCache makes that cheap: indexEntry
+// consults it by contentHash BEFORE embedding (a warm open costs ZERO embed calls); the cache holds
+// no authority — losing it (or its tail) means re-embedding, never data loss. A failed embed degrades
+// gracefully (the row is indexed without a vector, marked failed) and self-heals on a later open
+// (full replay re-consults the cache, misses, and re-embeds), so one bad op never loses a memory.
 //
-// (Hybrid retrieval and the atomic replaceFact/supersede land in the next increments; facts must go
-// through replaceFact — remember() rejects them so a duplicate active fact can't be durably written
-// before the index's unique constraint would reject it.)
+// (Facts must go through replaceFact — remember() rejects them so a duplicate active fact can't be
+// durably written before the index's uniqueness invariant would reject it.)
 
 import { randomUUID } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createMemoryWriter, type NewEntry } from './store';
-import { createPgliteIndex } from './pgliteIndex';
+import { createMemIndex } from './memIndex';
+import { openVectorCache, type VectorCache } from './vectorCache';
 import { readManifest } from './manifest';
 import { readEpisodes } from './episodeLog';
 import { readEntryFile, writeEntryFile, entryPath } from './entryFile';
@@ -94,10 +97,13 @@ export interface MemoryStore {
   close(): Promise<void>;
 }
 
-/** Index a (possibly-sealed) entry: embed from PLAINTEXT but store the SEALED doc. Degrades gracefully
- *  if the embedder is down (row stays usable, no vector). */
+/** Index a (possibly-sealed) entry: embed from PLAINTEXT but store the SEALED doc. Consults the
+ *  vectorCache by contentHash BEFORE embedding (the warm-open zero-embed path) and writes a fresh
+ *  embed through. Degrades gracefully if the embedder is down (row stays usable, no vector — and a
+ *  later open self-heals it: full replay re-consults the cache, misses, re-embeds). */
 async function indexEntry(
   index: IndexStore,
+  cache: VectorCache,
   entry: Entry,
   embed: (t: string) => Promise<number[]>,
   cipher?: Cipher,
@@ -105,20 +111,27 @@ async function indexEntry(
   const plain = cipher ? openEntry(entry, cipher) : entry; // decrypt for embedding only
   let embedding: number[] | undefined;
   if (plain.text.trim()) {
-    try {
-      embedding = await embed(plain.text);
-    } catch (err) {
-      console.warn(`[memory2] embed failed for ${entry.tier}/${entry.id} — indexed without a vector: ${(err as Error).message}`);
-      entry = { ...entry, embeddingStatus: 'failed' };
+    const cached = entry.contentHash ? cache.get(entry.contentHash) : undefined;
+    if (cached) {
+      embedding = Array.from(cached); // cache HIT — no embed call (contentHash is content-stable)
+    } else {
+      try {
+        embedding = await embed(plain.text);
+        if (entry.contentHash) await cache.put(entry.contentHash, embedding); // write-through
+      } catch (err) {
+        console.warn(`[memory2] embed failed for ${entry.tier}/${entry.id} — indexed without a vector: ${(err as Error).message}`);
+        entry = { ...entry, embeddingStatus: 'failed' };
+      }
     }
   }
   await index.upsert(entry, embedding); // the SEALED entry is the stored doc
 }
 
 /**
- * Replay manifest ops the index hasn't applied yet (files > manifest > DB), in seq order, advancing a
- * CONTIGUOUS persistent cursor per op. Survives deletes (cursor is not derived from row max) and never
- * skips a durable write whose prior index update failed.
+ * Replay manifest ops the (empty-at-open) index hasn't applied yet, in seq order. The cursor is
+ * EPHEMERAL (always 0 at open), so this replays the FULL manifest every launch — files-as-truth is
+ * the normal path, not a recovery mode; the vectorCache keeps it cheap. Returns the contentHashes of
+ * the live rows so the caller can bound the cache to them.
  */
 /** Materialize a per-file entry from a WAL op, but ONLY if the on-disk file is missing or BEHIND (older
  *  seq) — never regress a file that's already ahead. Closes the "stale existing file" divergence: an
@@ -161,10 +174,11 @@ async function liveEntries(dir: string): Promise<Entry[]> {
   return [...live.values()];
 }
 
-async function reconcile(dir: string, index: IndexStore, embed: (t: string) => Promise<number[]>, cipher?: Cipher): Promise<void> {
-  const applied = await index.getAppliedSeq();
+async function reconcile(dir: string, index: IndexStore, cache: VectorCache, embed: (t: string) => Promise<number[]>, cipher?: Cipher): Promise<Set<string>> {
+  const applied = await index.getAppliedSeq(); // ephemeral — 0 at open, so this is a FULL replay
   const ops = (await readManifest(dir)).filter((o) => o.seq > applied).sort((a, b) => a.seq - b.seq);
-  if (ops.length === 0) return;
+  const hashById = new Map<string, string>(); // id -> live contentHash (for bounding the vector cache)
+  if (ops.length === 0) return new Set();
 
   // Index log rows by SEQ (unique per row), not id: an id can repeat in the JSONL (an original + its
   // superseded re-append), so an id keyed map could let an OLD op pick up the NEWER uncommitted row.
@@ -173,12 +187,21 @@ async function reconcile(dir: string, index: IndexStore, embed: (t: string) => P
     for (const e of await readEpisodes(dir, tier)) if (e.seq != null) logBySeq.set(e.seq, e);
   }
 
+  const trackHash = (e: Entry): void => { if (e.contentHash) hashById.set(e.id, e.contentHash); };
+
   for (const op of ops) {
     if (op.op === 'delete') {
       await index.remove(op.id);
+      hashById.delete(op.id);
+      // Full replay materializes files from WAL puts as it goes — so a later delete op must ALSO
+      // remove the per-file entry again (mirroring writer.deleteEntry), or every relaunch would
+      // resurrect a hard-forgotten fact's file on disk. Log tiers are tombstoned by the op alone.
+      if (op.tier !== 'episode' && op.tier !== 'trace') {
+        await unlink(entryPath(dir, { tier: op.tier, id: op.id } as Entry)).catch(() => { /* already absent — the op tombstone is the source of truth */ });
+      }
     } else if (op.op === 'replace_fact') {
       // Redo the compound op idempotently from the WAL payload: supersede priors (files + index) BEFORE
-      // inserting the fresh fact (the unique index forbids two active), then materialize + index fresh.
+      // inserting the fresh fact (the uniqueness invariant forbids two active), then materialize + index fresh.
       for (const pid of op.supersedeIds ?? []) {
         let prior: Entry | undefined;
         try { prior = await readEntryFile(entryPath(dir, { tier: 'fact', id: pid } as Entry)); } catch { prior = undefined; }
@@ -190,14 +213,16 @@ async function reconcile(dir: string, index: IndexStore, embed: (t: string) => P
       }
       if (op.entry) {
         await materializeFile(dir, op.entry); // missing-or-behind, never regress
-        await indexEntry(index, op.entry, embed, cipher); // op.entry is sealed at rest; indexEntry opens to embed
+        await indexEntry(index, cache, op.entry, embed, cipher); // op.entry is sealed at rest; indexEntry opens to embed
+        trackHash(op.entry);
       }
     } else if (op.entry) {
       // WAL-FIRST put (an id-stable per-file overwrite: supersede/reinforce/core). The op carries the
       // entry as the redo payload, so a crash after the WAL append self-heals: materialize the file if
       // it's missing OR behind (never regress an ahead file), then index from the op's entry.
       await materializeFile(dir, op.entry);
-      await indexEntry(index, op.entry, embed, cipher);
+      await indexEntry(index, cache, op.entry, embed, cipher);
+      trackHash(op.entry);
     } else {
       let entry: Entry | undefined;
       if (op.tier === 'episode' || op.tier === 'trace') {
@@ -205,11 +230,12 @@ async function reconcile(dir: string, index: IndexStore, embed: (t: string) => P
       } else {
         try { entry = await readEntryFile(entryPath(dir, { tier: op.tier, id: op.id } as Entry)); } catch { entry = undefined; }
       }
-      if (entry) await indexEntry(index, entry, embed, cipher);
+      if (entry) { await indexEntry(index, cache, entry, embed, cipher); trackHash(entry); }
       else console.warn(`[memory2] reconcile: no file for ${op.tier}/${op.id} (seq ${op.seq}) — files win, skipped`);
     }
-    await index.setAppliedSeq(op.seq); // advance the contiguous cursor (processed, even if skipped/deleted)
+    await index.setAppliedSeq(op.seq); // advance the (ephemeral) cursor so in-open ordering stays honest
   }
+  return new Set(hashById.values());
 }
 
 export async function createMemoryStore(opts: {
@@ -231,16 +257,22 @@ export async function createMemoryStore(opts: {
   const safeEmit = (event: TraceEvent): void => {
     try { tracer.emit(event); } catch { /* one-way: a trace failure never disturbs the operation */ }
   };
-  // Ensure the data root exists before PGlite opens its (non-recursive) index subdir — the file-write
-  // helpers create their own tier dirs, but the index dir's parent must exist first.
+  // Ensure the data root exists before the index subdir (the vectorCache's home) is created — the
+  // file-write helpers create their own tier dirs, but the index dir's parent must exist first.
   await mkdir(dir, { recursive: true });
   // Encrypt-at-rest is all-or-nothing per store: fail loud on a mode mismatch (plaintext store + cipher,
   // or encrypted store + no cipher). The marker is files-as-truth (store root), so it survives an index
   // rebuild — unlike a derived-index marker, which a wiped index would lose.
   await assertEncryptionMode(dir, !!cipher);
   const writer = createMemoryWriter({ dir, cipher });
-  const index = await createPgliteIndex({ dataDir: join(dir, 'index'), dim, embedModel });
-  await reconcile(dir, index, embed, cipher);
+  // Open order: cache first (identity refusal / self-heal happens BEFORE any replay work), then the
+  // empty in-memory engine, then the full-manifest replay (files-as-truth every launch, cache-served).
+  const cache = await openVectorCache({ dir: join(dir, 'index'), embedModel: embedModel ?? '', dim: dim ?? 768 });
+  const index = createMemIndex({ dim });
+  const liveHashes = await reconcile(dir, index, cache, embed, cipher);
+  // Bound the sidecar: when it holds substantially more vectors than the live corpus references
+  // (pruned/forgotten/replaced content), rewrite it down to the live set (atomic, fsync'd).
+  if (cache.size() > liveHashes.size + Math.max(64, liveHashes.size)) await cache.compact(liveHashes);
 
   // Serialize the whole write path so the index is updated + the cursor advanced in seq order.
   let tail: Promise<unknown> = Promise.resolve();
@@ -269,7 +301,7 @@ export async function createMemoryStore(opts: {
         const entry = base.tier === 'episode' || base.tier === 'trace'
           ? await writer.putEntry(base)
           : await writer.commitOverwrite(base);
-        await indexEntry(index, entry, embed, cipher);
+        await indexEntry(index, cache, entry, embed, cipher);
         await index.setAppliedSeq(entry.seq ?? 0);
         safeEmit({ kind: 'remember', ownerId: entry.ownerId, id: entry.id, tier: entry.tier, sessionId: entry.sessionId });
         return open(entry); // plaintext for the caller
@@ -377,7 +409,7 @@ export async function createMemoryStore(opts: {
           accessCount: (opened.accessCount ?? 0) + 1,
           updatedAt: now,
         });
-        await indexEntry(index, bumped, embed, cipher);
+        await indexEntry(index, cache, bumped, embed, cipher);
         await index.setAppliedSeq(bumped.seq ?? 0);
         safeEmit({ kind: 'fact', op: 'reinforce', ownerId, factKey, id: bumped.id, confidence: bumped.confidence, sessionId: bumped.sessionId });
         return open(bumped);
@@ -401,8 +433,9 @@ export async function createMemoryStore(opts: {
           createdAt: new Date().toISOString(), embedModel, embedDim: dim, confidence: BASE_CONFIDENCE,
         };
         const { fresh: committed, superseded } = await writer.commitReplaceFact(fresh, priors.map((p) => p.id));
-        for (const sup of superseded) await index.upsert(sup); // priors first (unique-index safe), SEALED
+        for (const sup of superseded) await index.upsert(sup); // priors first (uniqueness-safe), SEALED
         await index.upsert(committed, embedding); // SEALED doc + plaintext embedding
+        if (committed.contentHash) await cache.put(committed.contentHash, embedding); // warm the next launch
         await index.setAppliedSeq(committed.seq ?? 0);
         safeEmit({ kind: 'fact', op: 'replace', ownerId: input.ownerId, factKey: input.factKey, id: committed.id, confidence: BASE_CONFIDENCE, supersededIds: priors.map((p) => p.id), sessionId: committed.sessionId });
         return open(committed); // plaintext for the caller
@@ -450,8 +483,13 @@ export async function createMemoryStore(opts: {
           // Embed from PLAINTEXT (open the sealed entry) but reindexFrom stores the sealed doc as-is.
           const text = open(entry).text;
           if (!text.trim()) return {};
-          try { return { embedding: await embed(text) }; }
-          catch { return { failed: true }; } // graceful: index without a vector, marked failed (like indexEntry)
+          const cached = entry.contentHash ? cache.get(entry.contentHash) : undefined;
+          if (cached) return { embedding: Array.from(cached) }; // cache HIT — no embed call
+          try {
+            const embedding = await embed(text);
+            if (entry.contentHash) await cache.put(entry.contentHash, embedding); // write-through
+            return { embedding };
+          } catch { return { failed: true }; } // graceful: index without a vector, marked failed (like indexEntry)
         });
         // Advance the cursor to the manifest head so a subsequent open's reconcile is a no-op.
         const maxSeq = (await readManifest(dir)).reduce((m, o) => Math.max(m, o.seq), 0);
@@ -460,6 +498,7 @@ export async function createMemoryStore(opts: {
     },
 
     async close(): Promise<void> {
+      await cache.close(); // the one fsync appended vectors get (zero-authority: a lost tail = re-embeds)
       await index.close();
     },
   };
