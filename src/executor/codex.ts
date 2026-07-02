@@ -219,6 +219,12 @@ function normalizeFileOp(kind: unknown): 'add' | 'update' | 'delete' {
   return kind === 'add' || kind === 'delete' ? kind : 'update';
 }
 
+/** Pure arg builder (exported for tests). `readOnly` maps to codex's read-only sandbox — used by
+ *  the fact-proposal ask, which must never carry write capability. */
+export function codexExecArgs(opts: Pick<ExecutorRunOptions, 'repo' | 'prompt' | 'readOnly'>): string[] {
+  return ['exec', '--json', '--skip-git-repo-check', '-s', opts.readOnly ? 'read-only' : 'workspace-write', '-C', opts.repo, opts.prompt];
+}
+
 /**
  * Spawn the codex CLI and yield normalized ActionEvents.
  *
@@ -235,16 +241,7 @@ export async function* runCodex(
     return;
   }
 
-  const args = [
-    'exec',
-    '--json',
-    '--skip-git-repo-check',
-    '-s',
-    'workspace-write',
-    '-C',
-    opts.repo,
-    opts.prompt,
-  ];
+  const args = codexExecArgs(opts);
 
   const child = spawn(CODEX_BIN, args, {
     stdio: ['ignore', 'pipe', 'pipe'], // stdin=/dev/null; no TTY hang

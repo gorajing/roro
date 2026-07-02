@@ -323,6 +323,15 @@ function toolResultText(content: unknown): string | undefined {
   return undefined;
 }
 
+/** Pure arg builder (exported for tests). `readOnly` (the fact-proposal ask) = plan mode with Read
+ *  as the ONLY allowed tool; the default coding invocation is pinned by execArgs.test.ts. */
+export function claudeArgs(opts: Pick<ExecutorRunOptions, 'prompt' | 'readOnly'>): string[] {
+  const base = ['-p', opts.prompt, '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
+  return opts.readOnly
+    ? [...base, '--permission-mode', 'plan', '--allowedTools', 'Read']
+    : [...base, '--permission-mode', 'acceptEdits', '--allowedTools', 'Read,Edit,Write,Bash'];
+}
+
 /**
  * Spawn the claude CLI and yield normalized ActionEvents.
  *
@@ -339,18 +348,7 @@ export async function* runClaude(
     return;
   }
 
-  const args = [
-    '-p',
-    opts.prompt,
-    '--output-format',
-    'stream-json',
-    '--verbose',
-    '--include-partial-messages',
-    '--permission-mode',
-    'acceptEdits',
-    '--allowedTools',
-    'Read,Edit,Write,Bash',
-  ];
+  const args = claudeArgs(opts);
 
   const child = spawn(CLAUDE_BIN, args, {
     cwd: opts.repo,
