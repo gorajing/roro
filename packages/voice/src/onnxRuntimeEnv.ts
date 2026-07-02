@@ -1,4 +1,4 @@
-// src/renderer/voice/onnxRuntimeEnv.ts — one place to configure the transformers.js ORT-WASM backend.
+// packages/voice/src/onnxRuntimeEnv.ts — one place to configure the transformers.js ORT-WASM backend.
 //
 // Shared by EVERY on-device transformers.js consumer in the renderer (whisper STT, Kokoro TTS) so the
 // load-bearing wasm/thread/model-loading config can't drift between them. Both run through the SAME

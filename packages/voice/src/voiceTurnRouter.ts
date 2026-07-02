@@ -1,4 +1,4 @@
-// src/renderer/voice/voiceTurnRouter.ts — the MOUTH-NOT-BRAIN router (Phase D).
+// packages/voice/src/voiceTurnRouter.ts — the MOUTH-NOT-BRAIN router (Phase D).
 //
 // THE law: voice never decides. A committed utterance routes THROUGH the orchestrator's turnRun
 // (recall -> decide -> execute -> remember) exactly like a typed task — NEVER a speech-to-speech

@@ -6,7 +6,6 @@
 // electron-shell union in the BUILD_GUIDE prose is deleted per the central design decision).
 import type { ActionEvent } from '../shared/events';
 import type {
-  MicStatus,
   TurnInput,
   WorkdirConfigMsg,
   ExecutorReadinessMsg,
@@ -24,14 +23,8 @@ import type {
 } from '../shared/memory';
 
 export interface CompanionBridge {
-  mic: {
-    /** Current macOS TCC mic status (never inferred from getUserMedia). */
-    status(): Promise<MicStatus>;
-    /** Triggers the TCC prompt (or returns the already-decided status). */
-    request(): Promise<MicStatus>;
-  };
   /**
-   * PRIMARY orchestration entrypoint: hand MAIN a final transcript to run a full voice
+   * PRIMARY orchestration entrypoint: hand MAIN a final transcript to run a full
    * turn (recall -> decide -> dispatch executor). Action/run events stream back over
    * onActionEvent / onRunEnd; this promise resolves only with the runId.
    */
@@ -46,8 +39,6 @@ export interface CompanionBridge {
   onActionEvent(cb: (e: ActionEvent) => void): () => void;
   /** Subscribe to run-finished markers; returns an unsubscribe fn. */
   onRunEnd(cb: (p: { runId: string }) => void): () => void;
-  /** Subscribe to global demo mute toggles; returns an unsubscribe fn. */
-  onMicToggleMute(cb: () => void): () => void;
   /** MAIN asks the renderer to open + focus the floating Ask input (⌘⇧Space summon). */
   onFocusAsk(cb: () => void): () => void;
   /** Destructive-confirm request from MAIN (the renderer shows a confirm chip). */

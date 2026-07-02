@@ -3,9 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <!-- No 'unsafe-eval': @pixi/unsafe-eval (imported in avatar.ts) patches PixiJS to render without
-         string-eval codegen. 'wasm-unsafe-eval' stays for the on-device voice WASM (whisper/Silero/Kokoro). -->
+         string-eval codegen. No 'wasm-unsafe-eval' either: the renderer's only WASM consumer was the
+         on-device voice stack, now extracted to packages/voice (PGlite's WASM runs in MAIN, which this
+         CSP does not govern). Re-add it with the voice re-integration (packages/voice/README.md). -->
     <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:*; font-src 'self' data:;" />
+      content="default-src 'self'; script-src 'self' blob:; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:*; font-src 'self' data:;" />
     <title>Roro</title>
 
   </head>
@@ -18,14 +20,12 @@
           <div id="brand">Roro</div>
           <div id="powered">Private local brain and memory</div>
           <div id="controls">
-            <!-- Hidden by default for the typed-only v0 build. bootstrap.ts reveals these only when an
-                 explicit voice dev flag mounts the on-device or scripted voice path. -->
-            <button id="voice-mode-btn" type="button" aria-pressed="false" hidden>Voice Mode</button>
-            <button id="mute-btn" type="button" disabled hidden>Mute</button>
+            <!-- Header controls mount here at runtime (project settings, Forget panel, the WS5 store
+                 fake-door). The Voice Mode / Mute buttons left with the voice stack (packages/voice). -->
           </div>
         </header>
 
-        <!-- Polite live region: every setStatus line (model-load, Voice Mode blockers, FSM transitions) is
+        <!-- Polite live region: every setStatus line (readiness blockers, turn progress, receipts) is
              announced to screen readers — the fail-loud "tell the user what's missing" promise must be audible. -->
         <div id="status" role="status" aria-live="polite">Loading…</div>
 
@@ -35,10 +35,9 @@
         </section>
 
         <!--
-          Text-input path. Drives the SAME orchestrator pipeline as the on-device voice
-          (window.companion.turnRun -> recall[memory2/PGlite] -> decide[local Ollama] ->
-          executor[Codex]) but needs no microphone, so it is the default surface and the
-          reliable demo path when the Electron mic misbehaves. See bootstrap.ts.
+          Text-input path — THE turn surface for v0 (voice is cut; see packages/voice).
+          Drives the orchestrator pipeline: window.companion.turnRun -> recall[memory2/PGlite]
+          -> decide[local Ollama] -> executor[Codex]. See bootstrap.ts.
         -->
         <form id="prompt-form" autocomplete="off">
           <input

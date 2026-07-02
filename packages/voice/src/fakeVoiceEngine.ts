@@ -1,4 +1,4 @@
-// src/renderer/voice/fakeVoiceEngine.ts — a scripted NativeVoiceEngine for dev + tests (no audio).
+// packages/voice/src/fakeVoiceEngine.ts — a scripted NativeVoiceEngine for dev + tests (no audio).
 //
 // Lets the WHOLE local voice path be exercised end-to-end — the cat's ears perk (onSpeechStart), a
 // committed utterance routes through turnRun (mouth-not-brain), and the cat "speaks" (speak() records) —

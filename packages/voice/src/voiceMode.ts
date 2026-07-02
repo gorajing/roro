@@ -1,4 +1,4 @@
-// src/renderer/voice/voiceMode.ts — the local-voice integration core (Phase D).
+// packages/voice/src/voiceMode.ts — the local-voice integration core (Phase D).
 //
 // Wires a VoiceBackend (voiceLocalAdapter, or the stub) to the CANONICAL voiceTurnRouter — the on-device
 // path's turn-manager — so the local path enforces mouth-not-brain (committed utterance -> turnRun) and
@@ -9,7 +9,7 @@
 import { makeVoiceTurnRouter, type VoiceTurnDeps } from './voiceTurnRouter';
 import { reduceVoiceMode, INITIAL_VOICE_MODE_STATE, type VoiceModeState, type VoiceModeEvent } from './voiceModeState';
 import type { VoiceBackend, VoiceBackendEvents } from './voiceBackend';
-import type { CharacterDriver, CaptionSink } from '../character/types';
+import type { VoiceCharacterDriver, CaptionSink } from './characterSeam';
 
 export interface VoiceModeDeps extends VoiceTurnDeps {
   /** Subscribe to the universal runEnd (window.companion.onRunEnd) so the router + FSM advance. Returns an
@@ -20,7 +20,7 @@ export interface VoiceModeDeps extends VoiceTurnDeps {
 export interface CreateVoiceModeOptions {
   backend: VoiceBackend;
   deps: VoiceModeDeps;
-  driver: Pick<CharacterDriver, 'poke'>;
+  driver: VoiceCharacterDriver;
   captions?: CaptionSink;
   /** Notified on every FSM transition so the UI can render the tell. */
   onState?: (state: VoiceModeState) => void;

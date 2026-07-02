@@ -10,7 +10,6 @@ vi.mock('./config', () => ({
     memoryPanelSmoke: false,
     cosmeticsStore: false,
   }),
-  voiceSurfaceEnabled: () => false,
 }));
 
 vi.mock('./character/driver', () => ({

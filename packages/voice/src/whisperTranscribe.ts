@@ -1,4 +1,4 @@
-// src/renderer/voice/whisperTranscribe.ts — the REAL on-device STT: whisper base.en via transformers.js.
+// packages/voice/src/whisperTranscribe.ts — the REAL on-device STT: whisper base.en via transformers.js.
 //
 // Hardware/model-gated glue (needs the WASM backend + a ~77MB model download): the engine LOGIC — the
 // commit/partial split, the mute gate, the transcription race, the empty/failed-transcript guards — is

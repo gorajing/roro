@@ -1,4 +1,4 @@
-// src/renderer/voice/voiceReadiness.ts — the Voice Mode readiness probe.
+// packages/voice/src/voiceReadiness.ts — the Voice Mode readiness probe.
 //
 // Voice is mouth-not-brain and OPT-IN: clicking "Voice Mode" must either start cleanly or tell the user
 // EXACTLY what's missing — never a silent dead button (fail-loud over silent-degrade). This pure function
@@ -41,10 +41,10 @@ export function voiceReadiness(input: VoiceReadinessInput): VoiceReadiness {
   // A wanted capability whose weights were never staged would 404 same-origin (allowRemoteModels=false), so
   // surface the exact stage command instead of letting the model load fail opaquely mid-utterance.
   if (input.want.stt && !input.sttWeightsPresent) {
-    blockers.push('Speech model not installed — run `RORO_STT_VOICE=1 npm run stage:voice-assets` to download it (~81MB).');
+    blockers.push('Speech model not installed — run `cd packages/voice && RORO_STT_VOICE=1 npm run stage:voice-assets` to download it (~81MB).');
   }
   if (input.want.tts && !input.ttsWeightsPresent) {
-    blockers.push('Voice model not installed — run `RORO_TTS_VOICE=1 npm run stage:voice-assets` to download it (~95MB).');
+    blockers.push('Voice model not installed — run `cd packages/voice && RORO_TTS_VOICE=1 npm run stage:voice-assets` to download it (~95MB).');
   }
 
   return { ready: blockers.length === 0, blockers };

@@ -1,37 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { loadConfig, voiceSurfaceEnabled, type RoroConfig } from './config';
-
-function config(overrides: Partial<RoroConfig> = {}): RoroConfig {
-  return {
-    floatingWindow: false,
-    fakeVoice: false,
-    vadVoice: false,
-    sttVoice: false,
-    ttsVoice: false,
-    voicePack: '',
-    cosmeticsStore: false,
-    debugBridge: false,
-    floatingSmoke: false,
-    memoryPanelSmoke: false,
-    ...overrides,
-  };
-}
+import { loadConfig } from './config';
 
 afterEach(() => {
   vi.unstubAllGlobals();
-});
-
-describe('voiceSurfaceEnabled', () => {
-  it('keeps voice UI hidden for the default typed-only v0 launch', () => {
-    expect(voiceSurfaceEnabled(config())).toBe(false);
-  });
-
-  it('reveals voice UI only when a scripted or real voice runtime is explicitly enabled', () => {
-    expect(voiceSurfaceEnabled(config({ fakeVoice: true }))).toBe(true);
-    expect(voiceSurfaceEnabled(config({ vadVoice: true }))).toBe(true);
-    expect(voiceSurfaceEnabled(config({ sttVoice: true }))).toBe(true);
-    expect(voiceSurfaceEnabled(config({ ttsVoice: true }))).toBe(true);
-  });
 });
 
 describe('loadConfig', () => {

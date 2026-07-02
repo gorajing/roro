@@ -1,4 +1,4 @@
-// src/renderer/voice/voicePacks.ts — voice-pack selection runtime (Phase 5, the cosmetics bridge).
+// packages/voice/src/voicePacks.ts — voice-pack selection runtime (Phase 5, the cosmetics bridge).
 //
 // Voice packs are roro's first monetizable COSMETIC: a free default voice (af_heart) + paid bundles. The
 // CATALOG itself (VoicePack type + VOICE_PACKS data) lives in src/shared/voicePacks.ts — a data-only module
@@ -11,11 +11,11 @@
 // purchase/ownership check exists yet (the store is gated by the cosmetics willingness-to-pay validation).
 // All catalogued voices are selectable today; entitlement slots in at createVoiceSelection.set() later.
 
-import { DEFAULT_VOICE_ID, VOICE_PACKS } from '../../shared/voicePacks';
-import type { VoicePack } from '../../shared/voicePacks';
+import { DEFAULT_VOICE_ID, VOICE_PACKS } from '../../../src/shared/voicePacks';
+import type { VoicePack } from '../../../src/shared/voicePacks';
 
-export type { VoiceTier, VoicePack } from '../../shared/voicePacks';
-export { DEFAULT_VOICE_ID, VOICE_PACKS } from '../../shared/voicePacks';
+export type { VoiceTier, VoicePack } from '../../../src/shared/voicePacks';
+export { DEFAULT_VOICE_ID, VOICE_PACKS } from '../../../src/shared/voicePacks';
 
 const BY_ID = new Map(VOICE_PACKS.map((p) => [p.id, p]));
 

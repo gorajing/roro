@@ -57,17 +57,11 @@ jobs:
       - name: Release doctor
         run: npm run release:doctor
 
-      # Fresh CI checkouts do not have ignored voice caches, so seed stale generated files that must not
-      # leak into the default typed-only v0 package.
-      - name: Seed forbidden voice cache sentinels
-        run: |
-          mkdir -p public/models/__release_verifier_should_not_ship__ public/vad public/ort
-          printf 'do-not-ship\n' > public/models/__release_verifier_should_not_ship__/sentinel.txt
-          printf 'do-not-ship\n' > public/vad/sentinel.txt
-          printf 'do-not-ship\n' > public/ort/sentinel.txt
-
+      # No voice sentinel seeding anymore: the voice stack (deps + staging + forge gates) lives in
+      # packages/voice, outside the app's dependency graph — the packaged app is voice-free by
+      # construction, and verify-release-artifact keeps a cheap tripwire scan on the asar.
       - name: Make default macOS app and DMG
-        run: env -u RORO_VAD_VOICE -u RORO_STT_VOICE -u RORO_TTS_VOICE npm run make
+        run: npm run make
 
       - name: Verify release artifact
         run: |

@@ -37,10 +37,7 @@
     "verify:release-artifact:signed": "node scripts/verify-release-artifact.mjs --mode signed",
     "verify:release-channel": "node scripts/smoke-release-channel.mjs",
     "verify:signing-readiness": "tsx scripts/verify-signing-readiness.ts",
-    "verify:signing-auth": "tsx scripts/verify-signing-readiness.ts --check-notary-auth",
-    "stage:voice-assets": "node scripts/stage-voice-assets.mjs",
-    "prestart": "node scripts/stage-voice-assets.mjs",
-    "prepackage": "node scripts/stage-voice-assets.mjs"
+    "verify:signing-auth": "tsx scripts/verify-signing-readiness.ts --check-notary-auth"
   },
   "keywords": [],
   "author": "Jin Choi",
@@ -69,11 +66,8 @@
   "dependencies": {
     "@electric-sql/pglite": "^0.5.3",
     "@electric-sql/pglite-pgvector": "^0.0.4",
-    "@huggingface/transformers": "^3.8.1",
     "@pixi/unsafe-eval": "^7.4.3",
-    "@ricky0123/vad-web": "^0.0.30",
     "dotenv": "^17.4.2",
-    "phonemize": "1.2.0",
     "pixi.js": "^7.4.3",
     "sharp": "^0.35.1",
     "yaml": "^2.9.0"

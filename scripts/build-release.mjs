@@ -5,13 +5,11 @@
 // a release build does that a dev/smoke build must not:
 //   1. Bake RORO_BUILD_CHANNEL=release so the in-binary guard (src/shared/releaseChannel.ts) refuses every
 //      deferred-v0 flag at runtime.
-//   2. STRIP the deferred-v0 env set BEFORE packaging, so forge.config.ts's package-time asset gates
-//      (which read RORO_*_VOICE) cannot bundle a voice payload the runtime would only refuse —
-//      otherwise the release artifact ships dead deferred payload.
+//   2. STRIP the deferred-v0 env set BEFORE packaging, so no package-time gate can read a deferred flag.
+//      (Voice needs no stripping anymore: its deps, staging, and forge asset gates all moved to
+//      packages/voice, outside the app's dependency graph — a voice payload can't enter this build.)
 //
-// We run electron-forge DIRECTLY (not `npm run make`, which IS this script → infinite recursion) and run
-// the asset-staging step explicitly first, with the stripped env, so it stages nothing. (The npm `premake`
-// hook is intentionally removed for the same reason: it would stage with the UN-stripped env before us.)
+// We run electron-forge DIRECTLY (not `npm run make`, which IS this script → infinite recursion).
 //
 // Usage: node scripts/build-release.mjs <package|make|publish>
 import { spawnSync } from 'node:child_process';
@@ -38,5 +36,4 @@ function run(cmd, args) {
 // Forward any extra Forge args transparently (e.g. `npm run make -- --arch=x64 --platform=darwin`).
 const forgeArgs = process.argv.slice(3);
 console.log(`[build-release] electron-forge ${[sub, ...forgeArgs].join(' ')} on the RELEASE channel — deferred-v0 env stripped.`);
-run('node', ['scripts/stage-voice-assets.mjs']); // staging, explicit (stages nothing — env is stripped)
 run('npx', ['electron-forge', sub, ...forgeArgs]);

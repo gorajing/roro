@@ -1,4 +1,4 @@
-// src/renderer/voice/sentenceSplit.ts — chunk assistant text for streamed Kokoro synthesis.
+// packages/voice/src/sentenceSplit.ts — chunk assistant text for streamed Kokoro synthesis.
 //
 // Kokoro (raw-ONNX, no kokoro-js) has no license-clean streaming generator, so we synthesize per chunk and
 // play chunk N while chunk N+1 synthesizes — the cat starts talking after the first sentence. Each chunk

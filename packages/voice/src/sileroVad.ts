@@ -1,4 +1,4 @@
-// src/renderer/voice/sileroVad.ts — the REAL VAD source: Silero (v5) via @ricky0123/vad-web.
+// packages/voice/src/sileroVad.ts — the REAL VAD source: Silero (v5) via @ricky0123/vad-web.
 //
 // Hardware-gated glue (needs a mic + the Silero WASM/worklet); the engine LOGIC + lifecycle are unit-
 // tested against a fake in vadVoiceEngine.test.ts. Dynamically imported by bootstrap ONLY when the local

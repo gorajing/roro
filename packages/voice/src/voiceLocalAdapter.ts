@@ -1,4 +1,4 @@
-// src/renderer/voice/voiceLocalAdapter.ts — the on-device VoiceBackend (Phase D).
+// packages/voice/src/voiceLocalAdapter.ts — the on-device VoiceBackend (Phase D).
 //
 // The local adapter is whisper.cpp (STT) + Silero VAD (turn/barge-in) + Kokoro (TTS), all on-device,
 // $0. Those need native binaries + a microphone, so the actual engine is injected on a machine that

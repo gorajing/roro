@@ -25,7 +25,7 @@ describe('releaseChannel', () => {
     const env = {
       RORO_WS5_STORE: '1',
       RORO_DEBUG_BRIDGE: '1',
-      RORO_FAKE_VOICE: '1',
+      RORO_MEMORY_PANEL_SMOKE: '1',
       RORO_MEMORY_HEALTH_SMOKE_FAIL: 'keychain',
       // a NON-deferred key must always survive
       RORO_FLOATING_WINDOW: '1',

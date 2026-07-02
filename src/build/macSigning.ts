@@ -161,7 +161,7 @@ export function macSigningConfig(env: Record<string, string | undefined>): MacSi
       // One superset entitlements file signed onto the app AND every Helper, with the hardened runtime on
       // (a notarization requirement). This is the documented Electron Forge pattern and is known to work.
       // Accepted tradeoff: the GPU/Network helpers receive entitlements they never exercise (e.g.
-      // disable-library-validation, audio-input) — a small residual relaxation of the hardened runtime on
+      // disable-library-validation) — a small residual relaxation of the hardened runtime on
       // those processes. Splitting into per-process plists would tighten it, but reliably matching each
       // Helper bundle by path is Electron-version-fragile and unverifiable without a signed on-device run,
       // so we keep the safe superset. (M6b review P3 — revisit if/when per-process signing is verifiable.)

@@ -12,11 +12,5 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 30_000,
     hookTimeout: 30_000,
-    server: {
-      // phonemize (the MIT G2P) ships attribute-less JSON imports that Node's strict ESM loader rejects
-      // when vitest externalizes node_modules. Inline it so Vite's json plugin handles it — the same way
-      // the renderer's Vite BUILD already does (rollup's json plugin). Targeted to this one dep.
-      deps: { inline: ['phonemize'] },
-    },
   },
 });

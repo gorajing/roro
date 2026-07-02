@@ -9,7 +9,7 @@
 // subscription returns an unsubscribe fn so the renderer can avoid listener leaks.
 import { contextBridge, ipcRenderer } from 'electron';
 import { CH } from './shared/ipc';
-import type { MicStatus, TurnInput, BootstrapStatusMsg, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg } from './shared/ipc';
+import type { TurnInput, BootstrapStatusMsg, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg } from './shared/ipc';
 import type { ActionEvent } from './shared/events';
 import type { Decision, DecideInput } from './shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch, ProfileFactSourceView, ProfileFactView } from './shared/memory';
@@ -38,11 +38,7 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
 }
 
 const companion = {
-  mic: {
-    status: (): Promise<MicStatus> => ipcRenderer.invoke(CH.micStatus),
-    request: (): Promise<MicStatus> => ipcRenderer.invoke(CH.micRequest),
-  },
-  // PRIMARY entrypoint: full voice turn (recall -> decide -> dispatch). Events stream back.
+  // PRIMARY entrypoint: full turn (recall -> decide -> dispatch). Events stream back.
   turnRun: (input: TurnInput): Promise<{ runId: string }> =>
     ipcRenderer.invoke(CH.turnRun, input),
   cancelTask: (runId?: string): Promise<void> =>
@@ -54,8 +50,6 @@ const companion = {
     subscribe<ActionEvent>(CH.actionEvent, cb),
   onRunEnd: (cb: (p: { runId: string }) => void): (() => void) =>
     subscribe<{ runId: string }>(CH.runEnd, cb),
-  onMicToggleMute: (cb: () => void): (() => void) =>
-    subscribe<void>(CH.micToggleMute, () => cb()),
   // MAIN asks the renderer to open + focus the floating Ask input (⌘⇧Space summon).
   onFocusAsk: (cb: () => void): (() => void) =>
     subscribe<void>(CH.focusAsk, () => cb()),
@@ -84,17 +78,12 @@ const companion = {
     subscribe<MemoryHealthStatusMsg>(CH.memoryHealthStatus, cb),
   getMemoryHealthStatus: (): Promise<MemoryHealthStatusMsg | null> => ipcRenderer.invoke(CH.memoryHealthStatusGet),
 } as {
-  mic: {
-    status: () => Promise<MicStatus>;
-    request: () => Promise<MicStatus>;
-  };
   turnRun: (input: TurnInput) => Promise<{ runId: string }>;
   runTask?: (prompt: string, agent: AgentKindArg) => Promise<{ runId: string }>;
   cancelTask: (runId?: string) => Promise<void>;
   moveWindowBy: (delta: { dx: number; dy: number }) => Promise<void>;
   onActionEvent: (cb: (e: ActionEvent) => void) => () => void;
   onRunEnd: (cb: (p: { runId: string }) => void) => () => void;
-  onMicToggleMute: (cb: () => void) => () => void;
   onFocusAsk: (cb: () => void) => () => void;
   onConfirmRequest: (cb: (req: { runId: string; summary: string }) => void) => () => void;
   confirmResolve: (runId: string, approved: boolean) => Promise<void>;

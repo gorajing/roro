@@ -1,0 +1,16 @@
+{
+  // Extends the app root's compilerOptions (same target/module/strictness family) so voice code keeps
+  // type-checking exactly as it did in-tree. The root tsconfig EXCLUDES packages/ — this package is
+  // checked only by its own `npm run typecheck` (and the path-filtered voice CI job), never by root tsc.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "noEmit": true
+  },
+  // Only src is rooted here; the shared seam modules (../../src/shared/voiceBackend.ts, voicePacks.ts,
+  // events.ts) are pulled in automatically as imported dependencies of these files.
+  "include": ["src"],
+  // Override the ROOT's `exclude: ["packages"]` (inherited paths resolve relative to the root config,
+  // which would otherwise exclude this very package from its own program).
+  "exclude": ["node_modules", "dist"]
+}

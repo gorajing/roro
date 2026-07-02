@@ -1,4 +1,4 @@
-// src/renderer/voice/voiceModeState.ts — the Voice Mode lifecycle FSM (Phase D).
+// packages/voice/src/voiceModeState.ts — the Voice Mode lifecycle FSM (Phase D).
 //
 // Summon-never-always-on: voice is a deliberate Mode. This pure reducer tracks the UX-visible state
 // that drives the tell (ear-perk on speech, "listening" caption, busy pose during a turn). It owns NO

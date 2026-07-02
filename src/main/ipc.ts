@@ -5,8 +5,6 @@
 // orchestrator / brain wiring. ipcMain.handle resolves with a final value only.
 //
 // Each handler's sibling call:
-//   CH.micStatus          -> mic.getMicStatus()                (this component)
-//   CH.micRequest         -> mic.ensureMicAccess()             (this component)
 //   CH.windowMoveBy       -> current BrowserWindow.setPosition()
 //   CH.turnRun            -> orchestrator.runTurn()            (recall+decide+dispatch)
 //   CH.runTask            -> orchestrator.runTask()            -> executor.getExecutor() (debug bridge only)
@@ -29,7 +27,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { OpenDialogOptions } from 'electron';
 import { CH } from '../shared/ipc';
-import type { MicStatus, TurnInput, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg, BootstrapStatusMsg } from '../shared/ipc';
+import type { TurnInput, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg, BootstrapStatusMsg } from '../shared/ipc';
 import { guardDeferredEnv } from '../shared/releaseChannel';
 import { pullModel } from '../brain/ollama';
 import { DEFAULT_MODEL_SPECS } from './bootstrapPlan';
@@ -39,7 +37,6 @@ import type { Decision, DecideInput } from '../shared/brain';
 import type { RememberInput, MemoryRow, MemoryMatch, ProfileFactSourceView, ProfileFactView } from '../shared/memory';
 import { assertRendererMemoryKind } from '../shared/memory';
 import type { AgentKind } from '../shared/events';
-import { getMicStatus, ensureMicAccess } from './mic';
 import { runTurn, runTask, cancelTask, resolveDestructiveConfirm } from './orchestrator';
 import { loadBrain, loadMemory, loadVision } from './siblings';
 import { getOwnerId } from './identity';
@@ -66,10 +63,6 @@ function debugBridgeEnabled(): boolean {
 
 export function registerIpcHandlers(): void {
   const debugBridge = debugBridgeEnabled();
-
-  // ---- Mic (this component) ----
-  ipcMain.handle(CH.micStatus, (): MicStatus => getMicStatus());
-  ipcMain.handle(CH.micRequest, (): Promise<MicStatus> => ensureMicAccess());
 
   // ---- Window chrome (floating Roro) ----
   ipcMain.handle(

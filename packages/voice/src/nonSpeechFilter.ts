@@ -1,4 +1,4 @@
-// src/renderer/voice/nonSpeechFilter.ts — drop whisper's non-speech annotations.
+// packages/voice/src/nonSpeechFilter.ts — drop whisper's non-speech annotations.
 //
 // On non-speech audio (music, a slam, silence) whisper emits a single bracketed/parenthesized ANNOTATION —
 // "[Music]", "[BLANK_AUDIO]", "(applause)" — not words. The VAD gates most non-speech, but a false-positive
