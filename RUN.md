@@ -20,24 +20,19 @@ diagnostic — it never silently falls back to the cloud. Verify end-to-end with
 opt-in smoke: `OLLAMA_AVAILABLE=1 npx vitest run src/brain/integration.test.ts`
 (see [`docs/WS1-OLLAMA-INTEGRATION-TEST.md`](docs/WS1-OLLAMA-INTEGRATION-TEST.md)).
 
-## 2. Optional `.env` — tuning + the Nebius escape hatch
+## 2. Optional `.env` — model tuning
 
-Copy [`.env.example`](.env.example) to `.env` only if you want to change models or opt
-into cloud. Defaults work with no `.env`.
+Copy [`.env.example`](.env.example) to `.env` only if you want to change models or set a dev
+workdir. Defaults work with no `.env`. There is no cloud-brain option: the old cloud fork was
+deleted (#139), and `BRAIN_PROVIDER` fails loud with a typed error on anything but `ollama`.
 
 ```
-BRAIN_PROVIDER=ollama          # default; set to 'nebius' for the cloud escape hatch
+BRAIN_PROVIDER=ollama          # 'ollama' is the ONLY supported value (any other fails loud)
 OLLAMA_HOST=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen2.5:3b
 OLLAMA_VISION_MODEL=qwen2.5vl:7b
 OLLAMA_EMBED_MODEL=nomic-embed-text
 OLLAMA_EMBED_DIM=768           # set this if OLLAMA_EMBED_MODEL is not 768-dim
-
-# Only used when BRAIN_PROVIDER=nebius:
-NEBIUS_API_KEY=...
-NEBIUS_MODEL=deepseek-ai/DeepSeek-V3.2
-NEBIUS_VISION_MODEL=Qwen/Qwen2.5-VL-72B-Instruct
-NEBIUS_EMBED_MODEL=Qwen/Qwen3-Embedding-8B
 
 RORO_WORKDIR=/abs/path/to/scratch-git-repo   # the repo the agent actually codes in
 ANTHROPIC_API_KEY=...                          # only if you use the Claude executor
@@ -59,11 +54,8 @@ recalled in the next (proven by `src/main/memorySpine.crosslaunch.test.ts`).
 
 The character is Roro, a procedurally-drawn 16-bit pixel cat that ships **in code** — it
 animates through agent state with posture (stands / sits / **walks** while working) and
-needs **no model files**. It renders out of the box.
-
-> **Internal dev only, not v0 release:** Live2D remains an optional architecture seam.
-> Set `LIVE2D_MODEL_URL` and provide matching `public/live2d/` assets only for an
-> internal build. Default v0 packages exclude those assets.
+needs **no model files**. It renders out of the box. The pixel cat **is** the identity:
+the old optional model-avatar seam was deleted outright in #140 (see `HANDOFF.md`).
 
 ## 5. Voice (internal dev only, fully on-device — no keys)
 
@@ -149,9 +141,9 @@ RORO_FLOATING_WINDOW=0 npm start
 ## Known notes
 
 - The local Ollama path streams the decision as **content** (no separate
-  `reasoning_content` channel), so the "thinking" pose is driven by content deltas; under
-  `BRAIN_PROVIDER=nebius`, `reasoning_content` drives the same thinking pose with a non-leaking
-  proof-of-life caption.
+  reasoning channel), so the "thinking" pose is driven by content deltas. (The
+  `onReasoning` seam remains in the brain contract for a future local provider that
+  emits reasoning deltas; the deleted cloud fork used to fire it.)
 - The Claude executor path is unit-checked; smoke-test once `ANTHROPIC_API_KEY` is set.
 - Binary path overrides: `RORO_CODEX_BIN`, `RORO_CLAUDE_BIN`. Local smoke-only
   CDP port: `RORO_DEBUG_PORT`; do not set it for cohort/release launches.

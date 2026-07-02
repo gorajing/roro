@@ -1,7 +1,9 @@
 # Verifying the local Ollama brain (WS1)
 
-Roro's brain is **local-first**: by default (`BRAIN_PROVIDER` unset → `ollama`) every brain call —
-`decide`, `embed`, `describeScreen` — runs against a local [Ollama](https://ollama.com) daemon. The
+Roro's brain is **local-only**: every brain call —
+`decide`, `embed`, `describeScreen` — runs against a local [Ollama](https://ollama.com) daemon
+(`BRAIN_PROVIDER` unset or `ollama`; any other value fails loud with a typed error — the old cloud
+fork was deleted in #139). The
 unit suite mocks/injects the embedder, so this runbook is how you confirm the **real** local stack
 works end-to-end on your machine.
 

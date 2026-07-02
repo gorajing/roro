@@ -18,7 +18,9 @@
 - **near-zero-idle**: voice is SUMMONED, never always-on (`start()`/`stop()` gated behind Voice Mode).
 - **Provider-seam law**: the engine is injected behind `NativeVoiceEngine`
   (`start/stop/speak/setMuted`); `createLocalVoiceBackend` wraps it with a fail-loud `available` gate.
-- **Monetization = cosmetics**: Kokoro's multiple voices are the basis for **voice packs**.
+- **Voice packs are a deferred cosmetics hypothesis (Phase-3+, never the wedge)**: Kokoro's multiple
+  voices are the basis for future **voice packs** (catalog: `src/shared/voicePacks.ts`, #137).
+  Cosmetics-as-monetization is downgraded per the job-first canon (`../FOUNDING.md`, `../LESSONS.md`).
 
 ## Engines + the packaging decision (empirically validated)
 

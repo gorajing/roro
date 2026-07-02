@@ -96,8 +96,9 @@ Roro is public-ready when **all** of these are observed (not code-read):
       mid-task surprise or a raw env-var error string.
 - [x] README leads with the **job + a 3-sentence privacy promise** (local brain/memory, encrypted-by-default, no
       app-owned telemetry) — not a feature list of face/voice/memory.
-- [ ] **Nothing half-baked ships:** voice and Live2D are either fully working behind onboarding *or* fully hidden (no
-      dead "relaunch with RORO_STT_VOICE=1" hints). A stranger sees nothing they can't actually use.
+- [ ] **Nothing half-baked ships:** voice is either fully working behind onboarding *or* fully hidden (no
+      dead "relaunch with RORO_STT_VOICE=1" hints). A stranger sees nothing they can't actually use. (The
+      legacy avatar-model path no longer needs hiding — it was deleted from the codebase in #140.)
 
 ---
 
@@ -204,14 +205,16 @@ v0 is **one thing done well: the remembering coding companion.** Deliberately cu
 
 - **Voice (STT/VAD/TTS)** — heavy, behind dev flags, the riskiest on-device surface. Ship OFF and **hidden** (remove the
   dead "relaunch with RORO_STT_VOICE=1" hint).
-- **Live2D avatar** — the procedural pixel cat is charming + complete; it *is* the v0 identity. A half-integrated model
-  deepens the "unfinished" impression.
+- **A second, model-based avatar substrate** — **DELETED from the codebase (#140), not merely cut**: the dependency,
+  seam, and assets are gone (see `HANDOFF.md` for the record). The procedural pixel cat is charming + complete; it
+  *is* the identity, not a fallback. (A half-integrated model would have deepened the "unfinished" impression.)
 - **Cosmetics store / pet variants** (WS5) — code-complete but fake-door. Monetization is post-PMF; validating the moment
   comes first.
 - **Windows / Linux** — the whole trust stack (hardened runtime, notarization, `safeStorage`) is macOS-first and proven
   there. Port after the macOS moment is validated.
-- **Cloud-brain option** (`BRAIN_PROVIDER=nebius`) — works in code, but adds an API-key path and dilutes the
-  local-first promise. Keep it out of the default quickstart and launch story; leave it as an explicit power-user env var.
+- **Cloud-brain option** — **DELETED from the codebase (#139, 2026-07-01), not merely cut**: it added an API-key path
+  and diluted the local-first promise, so the fork was removed outright. `BRAIN_PROVIDER` now fails loud with a typed
+  error on anything but `'ollama'`; there is no power-user cloud env var left.
 - **Ambient / clipboard proactivity** ("I notice you copied an error") — raises consent/creepiness stakes before basic
   trust is established. Wrong order.
 

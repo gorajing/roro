@@ -1,10 +1,11 @@
 # Roadmap — the living execution plan
 
 > **Status: LIVING execution plan** — how we get from where we are to the vision. Canonical remains
-> `../HANDOFF.md` + `../PUBLIC.md`; the vision tier is `PRODUCT_PLAN.md` + `COMPANION-ARCHITECTURE.md` —
-> **read as where-we're-going aspiration, *not* execution sequencing.** Where they read as "build now" (e.g.
-> COMPANION-ARCHITECTURE's "aligned-now" bond projection / second soul), **this roadmap's gating (§6 Arc C,
-> §8) governs the order**, not their language. This
+> `../FOUNDING.md` + `../HANDOFF.md` + `../PUBLIC.md`; the vision tier is `PRODUCT_PLAN.md` (the former
+> companion-architecture doc was folded into its banner + git history, 2026-07-01) —
+> **read as where-we're-going aspiration, *not* execution sequencing.** Where the vision tier reads as
+> "build now" (e.g. the bond projection / second soul), **this roadmap's gating (§6 Arc C,
+> §8) governs the order**, not its language. This
 > doc is **re-planned on real signal, not on a schedule** (§8). Treat everything past **Arc A** as a
 > compass bearing, not a commitment. The one metric that governs all of it: **"would a real user grieve
 > losing it?"**
@@ -53,7 +54,8 @@ with you, and is present; an AI you'd grieve losing because it knows you, has ne
 trust, and lives on your machine. Coding is the wedge; the moat is **restraint + relationship +
 ownership** — a wedge incumbents are poorly positioned to copy (their business models pull toward the
 cloud, the data, and engagement). Full articulation:
-`PRODUCT_PLAN.md` + `COMPANION-ARCHITECTURE.md`.
+`PRODUCT_PLAN.md` (the souls/companion model of record is summarized in its banner; the full
+companion-architecture doc lives in git history, `77b2241`).
 
 ---
 
@@ -79,17 +81,19 @@ relaunch → recall on a clean profile** (the Arc A rehearsal, step 1). It is no
 
 ## 4. The fixed frame — invariants (non-negotiable)
 
-These are the locked invariants (`../HANDOFF.md`). **Any plan step that requires breaking one is wrong by
+These are the locked invariants (one authoritative merged list: `../FOUNDING.md`; engineering detail:
+`../HANDOFF.md`). **Any plan step that requires breaking one is wrong by
 construction** — that is how the plan stays coherent with the long-term moat.
 
-- **Local-first / $0 / offline-default** — on the **default path**, brain, vision, memory, and embeddings run
-  on-device, and the default **never** sends memory to the cloud. The cloud (`BRAIN_PROVIDER=nebius`) escape
-  hatch is **privacy-affecting, *not* memory-safe**: in that mode brain calls — including **memory
-  embeddings** (`brain.embed` → Nebius) and **recalled memory injected into the DECIDE prompt** — leave the
-  machine (`brain/index.ts`, `memory2/index.ts`). That is exactly why it is **undocumented, off-by-default,
-  and cut from v0** (`../HANDOFF.md`) — it is **not** a "never touches memory" guarantee. (Separately, the
+- **Local-first / $0 / offline-default** — brain, vision, memory, and embeddings run
+  on-device, and memory **never** goes to the cloud. (This section used to carry a long caveat that the
+  cloud-brain escape hatch was *privacy-affecting, not memory-safe* — in that mode brain calls, including
+  memory embeddings and recalled memory injected into the DECIDE prompt, left the machine. That analysis was
+  real and correct, and it is **moot as of 2026-07-01**: the cloud fork was **deleted outright** (#139) and
+  `BRAIN_PROVIDER` now fails loud with a typed error on anything but `'ollama'` — the invariant got
+  *stronger*, not reworded.) (Separately, the
   **coding executor CLI** — Codex/Claude — is your own, signed in *outside* Roro, and may need its own local
-  auth and network; Roro's *default brain/memory path* requires neither — `../HANDOFF.md`, `../README.md`.)
+  auth and network; Roro's *brain/memory path* requires neither — `../HANDOFF.md`, `../README.md`.)
 - **Files-as-truth** durability; the index is a rebuildable cache.
 - **Owner-scoped** memory, identity injected main-side.
 - **Fail-loud** over silent-degrade.
@@ -110,8 +114,9 @@ construction** — that is how the plan stays coherent with the long-term moat.
 - ❌ A chatty assistant, or any engagement-maximizing / needy mechanic.
 - ❌ A persistent bond integer / greeting tier — **cut** as Tamagotchi-adjacent risk (the read-only
   "being-known" line is the non-violating equivalent).
-- ❌ Cloud sync/accounts/any cloud path for **memory** as a default or shipped feature (the `nebius` escape
-  hatch is the privacy-affecting, **cut-from-v0** exception, not a memory-safe path — §4).
+- ❌ Cloud sync/accounts/any cloud path for **memory**, period. (The old cloud-brain escape hatch — the
+  privacy-affecting exception §4 used to caveat — was deleted from the codebase in #139; there is no cloud
+  path left to except.)
 - ❌ Telemetry or silent analytics of any kind — measurement is tester self-report + observer notes +
   opt-in **local** trace packets only (`COHORT_TRACE_TO_EVAL.md`).
 - ❌ Always-on surveillance, or UI that implies it.
@@ -162,7 +167,8 @@ first-turn/memory validation** — otherwise it is deferred (§7 rule 4); C is s
     hardening/post-v0 proof work.
   - **(P2) Cohort/release-mode startup guard — *landed, keep green before cohort*** (cohort cleanliness +
     safety). A baked release-channel constant strips every deferred-v0 flag at app startup — cosmetics, voice,
-    Live2D, the privileged `RORO_DEBUG_BRIDGE`, smoke harnesses, and memory-health smoke failure — and
+    the privileged `RORO_DEBUG_BRIDGE`, smoke harnesses, and memory-health smoke failure (canonical list:
+    `src/shared/deferredEnvKeys.ts`; the legacy avatar-model flag left the list when that path was deleted, #140) — and
     `npm run verify:release-channel` proves launch-time env cannot re-enable them on a release build.
     Separate note: `RORO_DEBUG_PORT` is a local CDP smoke hook, not a deferred-v0 product feature; keep it
     unset for cohort/release launches until it is made smoke-channel-only in code.
@@ -363,9 +369,9 @@ first-turn/memory validation** — otherwise it is deferred (§7 rule 4); C is s
 - **Done =** the chosen organ clears the **same grieve bar** as the core.
 - **Steps:** build the signal-picked organ as a **pure, gated, behavior-preserving module** off an
   existing chokepoint (the pattern proved by the companion foundation). The brain/vision **provider seam
-  is cleaned up only *if* the chosen organ needs it** — not first, and not by default; the cloud
-  (`nebius`) path stays the intentionally power-user, cut-from-v0 escape hatch (`../HANDOFF.md`,
-  `../PUBLIC.md`), never elevated to a default story.
+  is cleaned up only *if* the chosen organ needs it** — not first, and not by default. (The old cloud
+  brain path was deleted outright in #139; any future cloud provider would be a deliberate new build
+  gated on the invariants in §4, never a default story.)
 
 ---
 

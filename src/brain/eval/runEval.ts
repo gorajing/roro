@@ -3,8 +3,10 @@
 //   npm run eval:brain                     # score the local brain (qwen2.5:3b)
 //
 // Scores both halves of the magic moment — DECIDE command-selection and extractFact null-discipline — over
-// the golden fixtures, prints a per-case + per-failure-mode report, and writes a checked-in baseline so
-// regressions are visible. NOT in CI (it needs a model + is non-deterministic at temperature>0); the pure
+// the golden fixtures and prints a per-case + per-failure-mode report. Each full run writes latest.json (the
+// untracked per-run scratch); the checked-in baseline.json only updates with an explicit
+// `npm run eval:brain -- --write-baseline`, so regressions are visible and a lucky run can't silently move
+// the reference. NOT in CI (it needs a model + is non-deterministic at temperature>0); the pure
 // scoring logic IS unit-tested (score.test.ts). The point: turn "is the 3B brain good enough?" into a number.
 
 import { writeFileSync } from 'node:fs';

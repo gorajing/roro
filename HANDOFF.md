@@ -3,7 +3,7 @@
 > **Purpose:** everything a fresh session (or a new engineer) needs to pick up Roro without re-deriving it.
 > What it is, how it's built, what's done, what's broken, what we learned, and what to do next.
 >
-> **This supersedes the 2026-06-21 handoff** (which led with a cosmetics-first monetization idea — now reconsidered; see §1 + §6). **Canonical companions:** [`PUBLIC.md`](./PUBLIC.md) = the launch plan (Path to Public). [`README.md`](./README.md) = user-facing. `docs/` = deep design history (**partly stale** — predates two pivots; see §11). When they conflict, **trust the most recent commit + this file + PUBLIC.md.**
+> **This supersedes the 2026-06-21 handoff** (which led with a cosmetics-first monetization idea — now reconsidered; see §1 + [`LESSONS.md`](./LESSONS.md)). **Canonical companions:** [`FOUNDING.md`](./FOUNDING.md) = identity + locked invariants + strategy of record (read it first). [`PUBLIC.md`](./PUBLIC.md) = the launch plan (Path to Public). [`README.md`](./README.md) = user-facing. [`LESSONS.md`](./LESSONS.md) = the falsified-assumptions ledger. `docs/` = current specs + the live roadmap (the stale design-history fossils were deleted 2026-07-01 — see §11 + the Rejected/superseded ledger below). When they conflict, **trust the most recent commit + this file + PUBLIC.md.**
 
 ---
 
@@ -54,15 +54,24 @@ Electron 42 + electron-forge + Vite + TypeScript + PixiJS (the cat). Vitest. Loc
 Every turn flows through **one** path in `orchestrator.ts`:
 **RECALL** (facts via getProfile + episodes via vector recall) → **DECIDE** (brain.decide → a Command) → **EXECUTE** (executor) / **NARRATE** (cat speaks) → **REMEMBER** (rememberEvent + `runFactExtraction`). Returns `{runId}` at *dispatch* (so Stop/barge-in work); events stream over push channels (`webContents.send`; `ipcMain.handle` is request/response only).
 
+**Fragile seams inside the chokepoint** (preserved from the deleted 2026-06-22 architecture synthesis, git `feaad68`; each verified against current code 2026-07-01):
+- **`guardedDispatch` registration must stay synchronous** — it holds `dispatchLock` across clean-tree-check → preempt-check → dispatch; an `await` added before `activeRuns.set` silently breaks the no-TOCTOU single-executor invariant. Nothing tests it.
+- **Recall-before-store ordering** — `recallContext` runs *before* `rememberUserSaid` stores the transcript, specifically so the query can't self-match. Reorder and every recall is polluted by its own input.
+- **The `runId` re-stamp** (executors mint their own ids; the orchestrator re-stamps every event) is the single coordinate tying `activeRuns`, the confirm gate, and Stop. Remove it and Stop can't find its `AbortController`.
+- **Approval is structurally not an `ActionEvent`** — confirm/deny rides the disjoint `CH.confirmResolve` IPC pair (default-DENY). Any new path into `resolveConfirm`, or making confirm an event kind, breaks "no spoken word approves `rm -rf`".
+- **The preload import rule** — `src/preload.ts` may import only `electron` + pure `src/shared/*`; anything pulling a Node builtin collapses the renderer sandbox. The boundary rests on `shared/` staying a pure leaf.
+
 ### 🔒 LOCKED INVARIANTS (breaking one is an architecture regression)
 1. **turnRun chokepoint** — one RECALL→DECIDE→EXECUTE→NARRATE→REMEMBER path. Hang things off it; don't fork it.
 2. **Frozen `ActionEvent` union** (`src/shared/events.ts`) — consumed exhaustively (`eventToAvatarState`). Don't add variants casually.
 3. **Voice is mouth-not-brain** — a say-only `VoiceBackend` seam; committed transcripts route *through* `turnRun`, never a speech-to-speech model that bypasses recall→decide→remember.
-4. **Local-first / $0 / no app-owned cloud/model keys / offline-default** — no app-owned cloud accounts, telemetry, or required network for the default brain/memory path. Executor CLIs may still require their own local auth. (`BRAIN_PROVIDER=nebius` is an undocumented escape hatch only.)
+4. **Local-first / $0 / no app-owned cloud/model keys / offline-default** — no app-owned cloud accounts, telemetry, or required network for the default brain/memory path. Executor CLIs may still require their own local auth. (The old "undocumented cloud escape hatch" caveat is obsolete: the cloud-brain fork was **deleted outright** in #139 — `BRAIN_PROVIDER` now fails loud with a typed error on anything but `'ollama'`, which *strengthens* this invariant.)
 5. **Fail-loud over silent-degrade** — `keyManager` throws if the keychain is unavailable; **never** stores plaintext. No `catch { return null }`.
 6. **Owner-scoped memory** — every read/write scoped to `ownerId`.
 7. **Files-as-truth durability** — encrypted files on disk are truth; the PGlite-HNSW index is a *derived, rebuildable cache* (reconciled on reopen). **Proven** by `crosslaunch.durability.test.ts`.
-8. **Recency guarantee** — memory2 front-loads the top-2 newest episodes (recency rows carry cosine 0 → recall uses `minSimilarity: 0`).
+8. **Recency guarantee** — memory2 front-loads the top-2 newest episodes (recency rows carry cosine 0 → recall uses `minSimilarity: 0`; now typed via `MemoryMatch.guaranteed`, #138).
+
+> The **one authoritative invariants list** (this one merged with ROADMAP §4's additions — point-don't-act, present ≠ watching, restraint/never-needy) lives in [`FOUNDING.md`](./FOUNDING.md).
 
 ---
 
@@ -109,8 +118,10 @@ Every turn flows through **one** path in `orchestrator.ts`:
   `Roro.app`. In Developer-ID builds, `postMake` notarizes/staples the DMG container too. This closes the
   packaging-format gap, not the signed/notarized clean-Mac gate.
 - **Release/cohort guard (#128):** release-channel builds strip every deferred-v0 flag, including cosmetics, voice,
-  Live2D, smoke harnesses, memory-health smoke failure, and the privileged debug bridge; `npm run verify:release-channel`
-  proves launch-time env cannot re-enable them on a release build.
+  Live2D (the flag existed then; the whole Live2D path was deleted in #140), smoke harnesses, memory-health smoke
+  failure, and the privileged debug bridge; `npm run verify:release-channel`
+  proves launch-time env cannot re-enable them on a release build. The canonical flag list is
+  `src/shared/deferredEnvKeys.ts` (kept in sync with `scripts/v0-deferred-env.mjs` by test).
 - **Showable cosmetics cleanup (#129):** the fake-door store lists only souls with an actual renderer, so Miro the dog
   is no longer presented as a cat recolor before dog art exists.
 - **Memory-steered proof capture (#130):** `RORO_TRACE=1` can capture DECIDE prompt/task evidence, and
@@ -118,10 +129,23 @@ Every turn flows through **one** path in `orchestrator.ts`:
   proof path.
 - **Floating default (#131):** Roro ships as the transparent 190x200 desktop pet by default; set
   `RORO_FLOATING_WINDOW=0` only for the legacy full dev window.
+- **VoicePack catalog to shared (#137):** the voice-pack catalog moved to `src/shared/voicePacks.ts`; cosmetics no
+  longer imports from `renderer/voice`.
+- **Invariants encoded in types + CI (#138):** the recency guarantee is typed (`MemoryMatch.guaranteed`); the
+  `KNOWN ABOUT THIS USER:` / `RELATED PAST CONTEXT:` labels are shared constants (`src/shared/memoryFormat.ts`);
+  executor mapper fixtures are CI-pinned (`src/executor/fixtures.test.ts`) with a zero-activity drift tripwire; and
+  `eval:brain` writes `latest.json` per run — `baseline.json` only updates via `npm run eval:brain -- --write-baseline`.
+- **Cloud-brain fork deleted (#139):** the openai-SDK cloud path is gone; `BRAIN_PROVIDER` throws a typed error on
+  anything but `'ollama'`. Also removed: `electron-squirrel-startup` + the non-mac makers (Squirrel/Deb/Rpm); the
+  `COMPANION_CFG` fallback (the `COMPANION_*` → `RORO_*` env-var migration warning REMAINS); `siblings.ts` types are
+  now derived (`Pick<typeof import(...)>`), so sibling drift is a compile error.
+- **Live2D path deleted (#140):** the dependency, `public/live2d/`, and the seam are gone; Placeholder→Cat renames
+  (`#cat-canvas`); CSP `'unsafe-eval'` removed (kept `'wasm-unsafe-eval'`). The procedural pixel cat **is** the
+  identity, not a fallback.
 
 ---
 
-## 4. The eval scorecard (`src/brain/eval/baseline.json`, qwen2.5:3b, temp 0)
+## 4. The eval scorecard (`src/brain/eval/baseline.json`, qwen2.5:3b, temp 0 — updates only via `npm run eval:brain -- --write-baseline`; `latest.json` is the per-run scratch)
 - **DECIDE 100%** (22/22) — the clarify trust gate now catches referent-less requests before the model.
 - **EXTRACT (null-discipline) 100%** (10/10) — the gate holds; no profile poisoning.
 - **BEHAVIORAL value-quality 40%** (2/5) — a real 2× gain (#65) **and a measured model ceiling** (the 3B is genuinely weak at describing habits; noun prefs extract cleanly). The guard guarantees no *garbage* is stored — it just sometimes stores nothing.
@@ -142,29 +166,22 @@ Every turn flows through **one** path in `orchestrator.ts`:
 - **Ad-hoc cross-build memory** — the #67 fix makes a *single* build work, but ad-hoc `cdhash` changes per build → the keychain ACL doesn't survive a rebuild/update. **Developer-ID (stable team identity) is needed for update durability + a Gatekeeper-clean install.**
 - **Release artifact shape:** the versioned `.dmg` artifact is generated and verified locally/CI, while Developer-ID
   notarization and clean-Mac Gatekeeper validation remain open until real Apple credentials are used.
-- **App icon is real now** — `assets/roro-icon.icns` is wired through Forge; voice + Live2D half-baked (**cut from v0**).
+- **App icon is real now** — `assets/roro-icon.icns` is wired through Forge; voice remains half-baked (**cut from v0**). (Live2D is no longer "half-baked" — the whole path was deleted in #140; the procedural pixel cat is the identity.)
 
 ---
 
-## 6. Everything we learned (the lessons)
+## 6. Everything we learned (the lessons) → [`LESSONS.md`](./LESSONS.md)
 
-**Product / strategy:** the magic moment is the recalled memory, not the voice. **Job-first, not feeling-first** (the skeptic's correction): a companion needs a real job; memory makes *that job* stickier. The cert is for *distribution + durability*, NOT for making memory work. The cosmetics-as-monetization headline (old handoff) is downgraded — cosmetics are a deferred Phase-3+ layer on the bond, never the wedge.
-
-**Engineering / process (hard-won):**
-- **Test the riskiest assumption *cheapest* and *first*.** The whole PUBLIC.md keystone rested on "a signed build fixes memory." A ~10-min, $0 test (a minimal ad-hoc app) **falsified** it before we built on it. Real cause: **forge ships an invalid signature** — the FusesPlugin fuse-flip + the `extendInfo` (`NSMicrophoneUsageDescription`, *we added* in #61) rewrite `Info.plist` *after* the seal → `errSecAuthFailed` → `safeStorage` false. Fixed by a **postPackage ad-hoc re-seal** as the last step.
-- **A green local suite can lie** — a `void`-dispatched unhandled rejection (extending `MemoryModule` broke 4 hand-rolled orchestrator mocks) was green locally, red on CI. *Grep for all mocks when extending a shared interface.*
-- **`gh run watch --exit-status` lies** — it returned 0 while the run *failed*; we merged a red PR. *Poll `gh run view <id> --json conclusion` until `completed/*` and require `success` before merging.*
-- **A green test can prove nothing** — the first durability test passed spuriously (warm index, never reconcile-from-files). *Sabotage a load-bearing test to prove it'd fail.*
-- **An eval metric can be dead-on-arrival** — the `bare_boolean` mode was unreachable (the guard nulls `"true"` first). *Separate "protect production" (guard) from "measure the model" (eval).*
-- **macOS gotchas:** `codesign` with a real cert pops a keychain prompt that *hangs* a non-interactive shell (use ad-hoc `--sign -` for local tests). The keychain ACL is **cdhash-pinned** for ad-hoc. `safeStorage` works in `npm start` + any *validly*-signed build.
-- **Codex review is unreliable here** (`codex exec` hung twice; orphan process — `pkill -9 -f "codex exec"`). We use **in-process multi-hat Workflow reviews** (parallel reviewers per dimension → per-finding adversarial verify) — every one caught a real bug.
+The falsified-assumptions ledger moved **verbatim** to [`LESSONS.md`](./LESSONS.md) (2026-07-01), organized by area
+(product/strategy, engineering/process, voice — including the kokoro/phonemizer GPL licensing landmine — interaction,
+memory/embeddings). Add new expensive lessons there, not here.
 
 ---
 
 ## 7. The plan → see [`PUBLIC.md`](./PUBLIC.md) (authoritative)
 **Definition of done:** a stranger installs a signed build (no Gatekeeper warning), runnable without a terminal, and observes a *correct* recalled fact across a full quit/relaunch.
 **Phases:** **0** prove-the-moment-on-a-packaged-build (the `safeStorage` half is **DONE**; remaining = human confirmation + the Developer-ID build for Gatekeeper/durability) → **1** runnable-without-a-terminal (**landed**) → **2** trust (correction loop + clarify gate + README job/privacy framing + bounded screen-capture tell landed) → **3** debut to a small cohort, measure week-2 reopen.
-**Cut from v0:** voice, Live2D, cosmetics store, Windows/Linux, the cloud-brain option, ambient/clipboard.
+**Cut from v0:** voice, cosmetics store, Windows/Linux, ambient/clipboard. (Live2D and the cloud-brain option graduated from "cut" to **deleted from the codebase** — #140 and #139 respectively.)
 
 ---
 
@@ -199,8 +216,28 @@ Every turn flows through **one** path in `orchestrator.ts`:
 
 ---
 
-## 11. Design docs (`docs/`) — deep reasoning, PARTLY STALE
-`docs/` holds the original design history (the "v2 spine" UX proposal is still the canonical *interaction* model; `docs/MEMORY-ARCHITECTURE.md` / `MEMORY-RESEARCH.md` are the memory2 spec). **But several docs predate two pivots:** (1) the memory2 rebuild, and (2) this session's **job-first strategy reframe** (which downgrades the old "cosmetics monetization" headline). `MONETIZATION.md` (the rejected $25-sync model) is superseded. **Trust this file + `PUBLIC.md` + the latest commit over `docs/`.** **Exception — current, not history:** [`docs/ROADMAP.md`](./docs/ROADMAP.md) is the **live execution plan** (how Path-to-Public work is sequenced); it post-dates the pivots and defers to this file + `PUBLIC.md` for invariants and gates — treat it as **current**, not stale.
+## 11. Docs (`docs/`) — current canon, fossils deleted (2026-07-01)
+The stale design-history fossils were **deleted on 2026-07-01** (git history is the archive — see §12 for the ledger
+with commit shas); load-bearing content was moved to [`FOUNDING.md`](./FOUNDING.md) / [`LESSONS.md`](./LESSONS.md) /
+this file first. What remains in `docs/` is current: [`docs/ROADMAP.md`](./docs/ROADMAP.md) is the **live execution
+plan** (defers to this file + `PUBLIC.md` for invariants and gates); `docs/INTERACTION.md` is the interaction
+contract; `docs/MEMORY-ARCHITECTURE.md` / `MEMORY-RESEARCH.md` are the memory2 spec; `docs/VOICE-ARCHITECTURE.md` is
+the on-device voice plan of record (cut from v0); `docs/PRODUCT_PLAN.md` is the pet/companion **vision tier**
+(aspiration, not sequencing — see its banner + FOUNDING.md's strategy-of-record); `docs/strategy/` + `docs/plans/`
+(paw-on-the-pixel) are the north-star thinking and the current wedge work; `docs/design/` holds saved design-asset
+references (mute badges). When anything conflicts, **trust the most recent commit + FOUNDING.md + this file +
+`PUBLIC.md`.**
+
+## 12. Rejected / superseded directions (deleted docs — git history is the archive)
+
+Recover any of these with `git show <sha>:<path>` (the sha is the file's last commit before deletion).
+
+- **$25-Pro/cloud-sync monetization** — rejected for v0 (local-first/job-first canon) 2026-07-01, see git history (`de7cd25` `MONETIZATION.md`). Durable guardrails preserved in `LESSONS.md`.
+- **"Recommended architecture" proposal (hosted tier, cross-agent MCP, MoodCore, PixiJS v8 governor)** — superseded by what was actually built 2026-07-01, see git history (`feaad68` `docs/ARCHITECTURE.md`). The "Memory API is banned positioning" insight preserved in `FOUNDING.md`/`LESSONS.md`.
+- **Point-in-time architecture synthesis (pre-memory2 / pre-#139/#140 world)** — superseded 2026-07-01, see git history (`feaad68` `docs/ARCHITECTURE-SYNTHESIS.md`). Still-true fragile-seam notes preserved in §2 above.
+- **Companion architecture & merge roadmap (Miro prototype, souls, ambient eye)** — superseded as a standalone doc 2026-07-01, see git history (`77b2241` `docs/COMPANION-ARCHITECTURE.md`). The souls model of record is summarized in `docs/PRODUCT_PLAN.md`'s banner; sequencing/gating lives in `docs/ROADMAP.md` §6.
+- **Exploratory specs/plans of the Nebius/Vapi/Insforge/Live2D era** — superseded 2026-07-01, see git history (`11a40f4` `docs/superpowers/`). Load-bearing extracts (two-brain voice bug, interaction timing laws, embedding-geometry lesson, WS5 pre-registered gate) preserved in `LESSONS.md` + `docs/INTERACTION.md`.
+- **2026 hackathon cloud-demo runbook** — superseded by the local-first path 2026-07-01, see git history (`feaad68` `docs/archive/DEMO_RUNBOOK.md`). The historical wow-moment measurement is noted in `DEMO_RUNBOOK.md`.
 
 ---
 

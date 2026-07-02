@@ -8,13 +8,15 @@ turns run through the user's own local Codex or Claude CLI.
 
 Do not add a hosted backend, account system, telemetry, payments, or app-owned
 cloud model dependency unless the user explicitly asks for that product change.
-Historical InsForge/Nebius demo material is archived context only, not the
-current architecture.
+Historical hosted-demo material (the predecessor cloud stack) lives in git
+history only, not the current architecture.
 
 ## Working Rules
 
-- Trust [`HANDOFF.md`](HANDOFF.md), [`PUBLIC.md`](PUBLIC.md), and
-  [`README.md`](README.md) over older docs when they conflict.
+- Read [`FOUNDING.md`](FOUNDING.md) first (identity, locked invariants, strategy
+  of record). Trust it plus [`HANDOFF.md`](HANDOFF.md), [`PUBLIC.md`](PUBLIC.md),
+  and [`README.md`](README.md) over older docs when they conflict; expensive
+  lessons live in [`LESSONS.md`](LESSONS.md).
 - Keep the `turnRun` path as the single recall -> decide -> execute/narrate ->
   remember chokepoint.
 - Keep memory fail-loud: never add a plaintext fallback if OS keychain storage
