@@ -1,10 +1,10 @@
 // src/memory2/indexStoreConformance.ts — the IndexStore behavioral contract as a runnable suite.
 //
-// Generalized from pgliteIndex.test.ts so EVERY engine behind the IndexStore seam proves the same
-// semantics: while both engines exist, the pglite arm proves the in-memory engine is a faithful swap
-// (parity by shared test, not by claim); after the cutover the suite keeps the seam honest for any
-// future engine. Engine-SPECIFIC behavior (pglite asset materialization / persisted-identity guards;
-// memIndex deterministic tiebreaks) stays in each engine's own test file.
+// Generalized from the retired pgliteIndex.test.ts so EVERY engine behind the IndexStore seam proves
+// the same semantics: while both engines coexisted, the pglite arm proved the in-memory engine was a
+// faithful swap (parity by shared test, not by claim); now the suite keeps the seam honest for any
+// future engine. Engine-SPECIFIC behavior (memIndex deterministic tiebreaks, zero-norm handling)
+// stays in the engine's own test file.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { IndexStore } from './indexStore';

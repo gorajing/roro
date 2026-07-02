@@ -215,7 +215,7 @@ async function recallContext(
 ): Promise<string | undefined> {
   try {
     const memory = await loadMemory();
-    // Owner-scoped recall: durable profile facts (getProfile) + episodic pgvector matches,
+    // Owner-scoped recall: durable profile facts (getProfile) + episodic vector matches,
     // composed into a single LABELED memory string. Facts come first so they survive truncation.
     // currentRepoId (M5b) boosts same-project episodes — "remembers you HERE" — without filtering out
     // cross-repo memories (a global preference still recalls everywhere, just unboosted elsewhere).

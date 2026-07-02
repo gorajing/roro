@@ -1,7 +1,7 @@
 // src/memory2/types.ts — the memory2 Entry model (files-as-truth system of record).
 //
-// One Entry per durable memory. Files are the source of truth; the index (PGlite+HNSW) is a derived,
-// rebuildable cache. The full field set is designed in NOW so the moat features (consolidation,
+// One Entry per durable memory. Files are the source of truth; the index (in-memory, rebuilt from the
+// manifest every open) is a derived, rebuildable cache. The full field set is designed in NOW so the moat features (consolidation,
 // forgetting, confidence, tracing, encryption, hard-delete) never require a migration — and with
 // files-as-truth, even a schema change is just a reindex.
 

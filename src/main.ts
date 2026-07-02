@@ -68,7 +68,8 @@ ipcMain.handle(CH.bootstrapStatusGet, (): BootstrapStatusMsg | null => getBootst
 
 app.whenReady().then(async () => {
   // 0. Device-stable owner_id — the memory spine. Must exist before any turn runs. The local
-  //    PGlite store lives beside owner.json in userData (single-writer, owned by main only).
+  //    memory2 store (files + derived index) lives beside owner.json in userData (single-writer,
+  //    owned by main only).
   process.env.RORO_DB_DIR ||= join(app.getPath('userData'), 'memory');
   await hydrateWorkdirConfig();
   const ownerId = await initOwnerId();
@@ -85,7 +86,7 @@ app.whenReady().then(async () => {
   startCursorTracking(win);
   registerSummonShortcut();
 
-  // 2. Memory warmup: initialize keychain/PGlite shortly after first paint, off the first-turn path.
+  // 2. Memory warmup: initialize the keychain + memory store shortly after first paint, off the first-turn path.
   //    Non-blocking — a very fast first turn still degrades independently if memory is unavailable, while
   //    the common path gets a warmed store without delaying the packaged renderer target.
   if (memoryWarmupDisabled(guardDeferredEnv(process.env))) {

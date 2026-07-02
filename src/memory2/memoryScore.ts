@@ -32,7 +32,7 @@ export interface Candidate {
 export interface ScoredEntry {
   entry: Entry;
   score: number;
-  /** Raw (unnormalized) pgvector cosine for the vector channel; undefined for recency-only candidates.
+  /** Raw (unnormalized) cosine from the vector channel; undefined for recency-only candidates.
    *  Carried through so callers (e.g. the old-contract adapter's MemoryMatch.similarity) can report true
    *  cosine, distinct from the blended `score`. */
   cosine?: number;

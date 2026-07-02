@@ -5,8 +5,8 @@
 // JSONL append for episode/trace) -> append the manifest op. The serialization also makes seq race-free
 // (an in-memory counter seeded once from the manifest), fixing nextSeq's read-modify-write hazard.
 //
-// (The derived PGlite-HNSW index + startup reconciliation `files > manifest > DB` are the NEXT
-// increment; this layer is the durable system of record they rebuild from.)
+// (The derived in-memory index + the full-manifest startup replay live in memoryStore.ts; this layer
+// is the durable system of record they rebuild from — files > manifest > index, always.)
 
 import { unlink } from 'node:fs/promises';
 import { writeEntryFile, readEntryFile, entryPath, computeContentHash, canonicalContent } from './entryFile';

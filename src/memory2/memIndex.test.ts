@@ -3,7 +3,7 @@ import { createMemIndex } from './memIndex';
 import { describeIndexStoreConformance, CONFORMANCE_DIM } from './indexStoreConformance';
 import type { Entry } from './types';
 
-// The shared IndexStore contract (the same suite the pglite engine runs — parity by test, not claim).
+// The shared IndexStore contract (the suite the retired pglite engine also passed — parity by test, not claim).
 describeIndexStoreConformance('memIndex (in-memory)', async () => createMemIndex({ dim: CONFORMANCE_DIM }));
 
 // ---- engine-specific guarantees (stronger than the seam requires) ----

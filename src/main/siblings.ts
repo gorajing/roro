@@ -2,8 +2,8 @@
 // (brain / memory / vision).
 //
 // WHY THIS SHAPE:
-//   - Each sibling is imported via a LAZY dynamic import so its heavy dependencies (PGlite,
-//     sharp, model clients) load on FIRST USE, not at app startup.
+//   - Each sibling is imported via a LAZY dynamic import so its heavy dependencies (sharp,
+//     model clients, the memory index rebuild) load on FIRST USE, not at app startup.
 //   - Types are DERIVED from the real modules (`typeof import(...)`), so any drift between what
 //     main calls and what a sibling actually exports is a COMPILE error, not a runtime surprise.
 //     (These used to be hand-rolled structural mirrors from the multi-agent build era, when the
