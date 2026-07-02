@@ -60,6 +60,11 @@ export interface ExecutorReadinessMsg {
 }
 
 export const CH = {
+  // Executor-facts pilot (RORO_EXECUTOR_FACTS, deferred-v0): proposal review flow. Handlers register
+  // ONLY when the flag is on; factProposalsPush is MAIN->renderer (chip), the others invoke/handle.
+  factProposalsGet: 'factProposals:get',
+  factProposalResolve: 'factProposals:resolve',
+  factProposalsPush: 'factProposals:push',
   windowMoveBy: 'window:moveBy',
   focusAsk: 'window:focusAsk',
   cursorMove: 'cursor:move',

@@ -17,7 +17,15 @@ export type ActionEvent =
   | { kind: 'run.completed'; runId: string; ok: true;  finalText?: string; usage?: unknown; ts: number }
   | { kind: 'run.failed';    runId: string; ok: false; error: string; ts: number };
 
-export interface ExecutorRunOptions { repo: string; prompt: string; agent?: AgentKind; signal?: AbortSignal }
+export interface ExecutorRunOptions {
+  repo: string;
+  prompt: string;
+  agent?: AgentKind;
+  signal?: AbortSignal;
+  /** Read-only invocation (the fact-proposal ask): codex -> `-s read-only`; claude -> plan mode with
+   *  Read as the only allowed tool. A reflection must never carry write capability (point-don't-act). */
+  readOnly?: boolean;
+}
 export interface Executor { run(opts: ExecutorRunOptions): AsyncIterable<ActionEvent> }
 
 export const SCREEN_CAPTURE_STATUS_TEXT = 'Taking one screen snapshot.';

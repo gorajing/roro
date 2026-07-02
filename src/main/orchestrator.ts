@@ -34,6 +34,9 @@ import { isPlausiblePreference, type FactExtractInput } from '../brain/extractFa
 import { buildDecisionPrompt } from '../brain/decisionPrompt';
 import { sendToPetWindow } from './safeSend';
 import { isActivityEvent, silentRunWarning } from '../executor/formatDrift';
+import { guardDeferredEnv } from '../shared/releaseChannel';
+import { createDigestAccumulator } from './factProposals/digest';
+import type { RunDigest } from './factProposals/types';
 import { getExecutorReadiness } from './executorReadiness';
 
 const RECALL_K = 5;
@@ -311,6 +314,10 @@ async function dispatchExecutor(
   factCtx?: { transcript: string; narration: string; task: string },
 ): Promise<void> {
   const controller = new AbortController();
+  // Executor-facts pilot (RORO_EXECUTOR_FACTS, spec: docs/plans/executor-facts-pilot.md): accumulate
+  // a bounded digest of the run's OWN events for the post-run proposal ask. Dark unless the
+  // deferred-env flag is on — no accumulation, no ask, zero cost.
+  const digestAcc = guardDeferredEnv(process.env).RORO_EXECUTOR_FACTS === '1' ? createDigestAccumulator() : null;
   let terminalSeen = false;
   let uiEnded = false;
   let slotReleased = false;
@@ -378,6 +385,7 @@ async function dispatchExecutor(
       }
       pushEvent(stamped);
       if (isActivityEvent(stamped.kind)) activityCount++;
+      digestAcc?.see(stamped);
       // Native "job done" notification on terminal events — visible even when the
       // window is hidden or in floating mode.
       if (stamped.kind === 'run.completed' || stamped.kind === 'run.failed') {
@@ -394,6 +402,11 @@ async function dispatchExecutor(
             task: factCtx.task,
             outcome: stamped.kind === 'run.completed' ? 'completed' : 'failed',
           });
+        }
+        // Executor-facts pilot: one post-run proposal ask, only on a COMPLETED run (a failed run
+        // teaches about the repo, not the user). Fire-and-forget like runFactExtraction.
+        if (digestAcc && stamped.kind === 'run.completed') {
+          void proposeFactsFromRun(digestAcc.finish({ runId, sessionId, repo, agent, task: prompt, finalText: stamped.finalText }));
         }
       }
       // Fire-and-forget memory persistence so it never stalls the event stream.
@@ -764,6 +777,34 @@ function captureDecide(
       console.error('[orchestrator] decide capture failed:', (err as Error).message);
     }
   })();
+}
+
+/**
+ * Executor-facts pilot: fire one post-run proposal ask (docs/plans/executor-facts-pilot.md).
+ * Lazy-imported so the pilot's module graph never loads unless a flagged run completes, and so
+ * orchestrator tests can mock './factProposals' wholesale. Never throws into the chokepoint.
+ */
+async function proposeFactsFromRun(digest: RunDigest): Promise<void> {
+  try {
+    const { maybeProposeFacts, executorProposalSource } = await import('./factProposals');
+    const ownerId = getOwnerId();
+    const memory = await loadMemory().catch(() => undefined);
+    await maybeProposeFacts(digest, {
+      source: executorProposalSource(),
+      getExisting: async () => {
+        if (!memory) return null;
+        try {
+          return (await memory.profileFacts(ownerId)).map((f: { key: string; value: string }) => ({ key: f.key, value: f.value }));
+        } catch {
+          return null; // dedupe is best-effort; the user's confirm is the real gate
+        }
+      },
+      notify: (count) => { sendToPetWindow(CH.factProposalsPush, { count }); },
+      trace: (e) => memory?.traceExtraction({ kind: 'propose', ownerId, sessionId: digest.sessionId, ...e }),
+    });
+  } catch (err) {
+    console.error('[orchestrator] fact proposal failed:', (err as Error).message);
+  }
 }
 
 /**

@@ -46,13 +46,19 @@ function button(className: string, label: string): HTMLButtonElement {
 function sourceSummary(source: ProfileFactSourceView['source']): string {
   if (!source) return "Source details aren't available for this memory yet.";
   const date = new Date(source.turn_ts);
-  if (Number.isNaN(date.getTime())) return 'Saved from a local Roro turn.';
-  return `Saved from a local Roro turn on ${date.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })}.`;
+  const when = Number.isNaN(date.getTime())
+    ? undefined
+    : date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  // Executor-proposal provenance: the trust surface must name WHO claimed the fact and show the
+  // evidence the user confirmed against — never misattribute it to an ordinary local turn.
+  if (source.channel === 'executor') {
+    const who = source.claimed_by ?? 'your coding agent';
+    const confirmed = when ? `you confirmed it on ${when}` : 'you confirmed it';
+    const quote = source.evidence ? ` Evidence: “${source.evidence}”` : '';
+    return `${who} suggested this after a coding run; ${confirmed}.${quote}`;
+  }
+  if (!when) return 'Saved from a local Roro turn.';
+  return `Saved from a local Roro turn on ${when}.`;
 }
 
 function memoryUnavailableCopy(status: MemoryHealthStatusMsg | null): string {
@@ -422,3 +428,5 @@ export function mountForgetPanel(
 
   return () => { toggle.remove(); panel.remove(); };
 }
+
+export const __test = { sourceSummary };

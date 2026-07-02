@@ -29,6 +29,8 @@ import type { OpenDialogOptions } from 'electron';
 import { CH } from '../shared/ipc';
 import type { TurnInput, ModelPullProgressMsg, WorkdirConfigMsg, MemoryHealthStatusMsg, ExecutorReadinessMsg, BootstrapStatusMsg } from '../shared/ipc';
 import { guardDeferredEnv } from '../shared/releaseChannel';
+import { extractAndStoreFact } from './factStore';
+import type { FactProposalView } from './factProposals/types';
 import { pullModel } from '../brain/ollama';
 import { DEFAULT_MODEL_SPECS } from './bootstrapPlan';
 import { isAllowedExternalUrl } from './openExternalGuard';
@@ -210,6 +212,62 @@ export function registerIpcHandlers(): void {
     await memory.forgetFact(getOwnerId(), id);
   });
   ipcMain.handle(CH.memoryHealthStatusGet, (): MemoryHealthStatusMsg | null => getMemoryHealthStatus());
+
+  // Executor-facts pilot (RORO_EXECUTOR_FACTS, deferred-v0): the proposal review flow. Registration
+  // itself is the gate — flag off (or a release build, where guardDeferredEnv strips the key) means
+  // these channels simply do not exist, same boundary as the debug bridge. ownerId is ALWAYS
+  // injected MAIN-side; the renderer only ever supplies the visible proposal id + a boolean.
+  const resolvingProposals = new Set<string>();
+  if (guardDeferredEnv(process.env).RORO_EXECUTOR_FACTS === '1') {
+    ipcMain.handle(CH.factProposalsGet, async (): Promise<FactProposalView[]> => {
+      const { pendingProposals } = await import('./factProposals/runner');
+      return pendingProposals.list().map((p) => ({
+        id: p.id, key: p.key, value: p.value, evidence: p.evidence, agent: p.agent, createdAt: p.createdAt,
+      }));
+    });
+    ipcMain.handle(
+      CH.factProposalResolve,
+      async (_e, input: { id: string; accept: boolean }): Promise<{ ok: boolean; gone?: boolean }> => {
+        if (typeof input?.id !== 'string' || typeof input?.accept !== 'boolean') {
+          throw new Error('factProposalResolve: expected { id: string, accept: boolean }');
+        }
+        const { pendingProposals } = await import('./factProposals/runner');
+        // Double-resolve guard: two rapid clicks (or a click racing the push-refresh) must count as
+        // ONE corroboration and ONE store. The second concurrent resolve for an id reports gone.
+        if (resolvingProposals.has(input.id)) return { ok: true, gone: true };
+        resolvingProposals.add(input.id);
+        const ownerId = getOwnerId();
+        const memory = await loadMemory();
+        const trace = (stage: 'confirmed' | 'rejected', p: { key: string; agent: string; sessionId: string }): void =>
+          memory.traceExtraction({ kind: 'propose', ownerId, sessionId: p.sessionId, runId: 'resolve', agent: p.agent, stage, factKey: p.key });
+        try {
+        if (!input.accept) {
+          const p = pendingProposals.take(input.id);
+          if (p) trace('rejected', p);
+          return { ok: true, gone: !p };
+        }
+        // Peek-don't-take: a failing store must leave the proposal queued so the panel can retry.
+        const p = pendingProposals.list().find((x) => x.id === input.id);
+        if (!p) return { ok: true, gone: true };
+        const outcome = await extractAndStoreFact(memory, { key: p.key, value: p.value }, {
+          ownerId,
+          sessionId: p.sessionId,
+          turnTs: p.createdAt,
+          provenance: { channel: 'executor', claimed_by: p.agent, evidence: p.evidence },
+        });
+        if (outcome === 'stored') {
+          // The user's click is one corroboration — the same verb the panel's "Looks right" uses.
+          await memory.reinforceFact({ owner_id: ownerId, key: p.key }).catch(() => null);
+        }
+        pendingProposals.take(input.id); // only leaves the queue after a successful store
+        trace('confirmed', p);
+        return { ok: true };
+        } finally {
+          resolvingProposals.delete(input.id);
+        }
+      },
+    );
+  }
 
   // Open an external URL in the default browser — STRICTLY allowlisted (https + ollama.com only, see
   // isAllowedExternalUrl) so a renderer can't turn this into an arbitrary shell.openExternal (file://,

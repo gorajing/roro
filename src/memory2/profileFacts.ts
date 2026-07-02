@@ -41,7 +41,14 @@ function sourceOf(row: MemoryRow): FactSource | undefined {
       ? source.turnTs
       : undefined;
   if (!sessionId || typeof turnTs !== 'number') return undefined;
-  return { session_id: sessionId, turn_ts: turnTs };
+  const out: FactSource = { session_id: sessionId, turn_ts: turnTs };
+  // Executor-proposal provenance (optional, additive): pass it THROUGH — the Source detail must be
+  // able to name WHO claimed a fact, and fixFact rebuilds payload.source from this view, so
+  // stripping here would both misattribute the fact and permanently erase provenance on a user fix.
+  if (source.channel === 'executor') out.channel = 'executor';
+  if (typeof source.claimed_by === 'string') out.claimed_by = source.claimed_by;
+  if (typeof source.evidence === 'string') out.evidence = source.evidence;
+  return out;
 }
 
 function fallbackSource(row: MemoryRow): FactSource {

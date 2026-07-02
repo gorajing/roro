@@ -31,6 +31,20 @@ export type TraceEvent =
   | { kind: 'remember'; ownerId: string; id: string; tier: string; sessionId?: string }
   | { kind: 'fact'; ownerId: string; factKey: string; op: 'replace' | 'reinforce'; id: string; confidence?: number; supersededIds?: string[]; sessionId?: string }
   | { kind: 'supersede'; ownerId: string; id: string; sessionId?: string }
+  // Executor-proposal channel (the RORO_EXECUTOR_FACTS pilot): lifecycle stages of one post-run ask.
+  // IDs/keys/counts ONLY — never proposal value or evidence text (same privacy stance as 'extract').
+  | {
+      kind: 'propose';
+      ownerId: string;
+      sessionId?: string;
+      runId: string;
+      agent: string;
+      stage: 'asked' | 'failed' | 'malformed' | 'queued' | 'skipped_busy' | 'confirmed' | 'rejected';
+      count?: number;
+      keys?: string[];
+      reason?: string;
+      factKey?: string;
+    }
   // reason distinguishes corpus-bound auto-prune ('cap') from a user-initiated hard delete ('forget') so a
   // retention/forgetting eval doesn't conflate the two.
   | { kind: 'prune'; ownerId?: string; count: number; ids: string[]; reason: 'cap' | 'forget' }

@@ -18,6 +18,7 @@ import { subscribeActionEvents } from './events/actionEvents';
 import { mountFloatingAsk } from './ask/floatingAsk';
 import { mountConfirmChip } from './confirm/confirmChip';
 import { mountForgetPanel } from './memory/forgetPanel';
+import { mountProposalsSection } from './memory/proposalsSection';
 import { createMemoryPanelSmokeDeps } from './memory/smokeBridge';
 import { mountProjectSettings } from './settings/projectSettings';
 import { mountCosmeticsStore } from './cosmetics/cosmeticsStore';
@@ -117,6 +118,17 @@ export async function bootstrap(): Promise<void> {
     document.getElementById('controls') ?? undefined,
     config.memoryPanelSmoke ? createMemoryPanelSmokeDeps() : undefined,
   );
+
+  // Executor-facts pilot (RORO_EXECUTOR_FACTS): the "Roro noticed — save it?" review section.
+  // Self-gating — the backing IPC handlers exist only when the flag is on; with them unregistered the
+  // fetch rejects and the section renders nothing. Refreshes at mount and on each MAIN push.
+  {
+    const proposalsHost = document.getElementById('controls') ?? document.body;
+    const proposals = mountProposalsSection(proposalsHost);
+    void proposals.refresh();
+    const memoryBridge = (window as unknown as { memory?: { onProposals?: (cb: () => void) => () => void } }).memory;
+    memoryBridge?.onProposals?.(() => { void proposals.refresh(); });
+  }
 
   // M9 (WS5): the cosmetics fake-door — OFF by default; the founder enables it (RORO_WS5_STORE=1) to run the
   // willingness-to-pay experiment. Intent is captured locally (console + a localStorage log the founder can
